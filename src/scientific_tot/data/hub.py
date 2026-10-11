@@ -137,6 +137,13 @@ class Dataset:
             )
         )
 
+    def get_file(self, name: str) -> Path:
+        """Select one exact artifact, using the Hub's revision cache incrementally.
+
+        No other file is downloaded. Local mode returns the existing file only.
+        """
+        return self._file(name)
+
     def read_json(self, name: str, *, max_bytes: int = 2_000_000) -> dict[str, Any]:
         """Read explicitly selected JSON metadata (2 MB default size limit)."""
         relative_path(name)

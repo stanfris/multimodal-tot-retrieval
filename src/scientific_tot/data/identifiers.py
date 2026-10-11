@@ -30,3 +30,21 @@ def document_id_for_paper(
     if len(matches) != 1:
         raise DatasetFormatError(f"Ambiguous PDF metadata entries for {source_path}")
     return identifier(matches[0].get("document_id"), "metadata.document_id")
+
+
+def extraction_path_candidates(source_path: str) -> tuple[str, str]:
+    """Look up an existing lean directory ID against source-verified path forms.
+
+    These are matching candidates only, never assigned as new paper IDs. Both
+    collision and non-collision forms are possible because upstream extraction
+    resolves collisions within its input batch, not the whole PDF index.
+    """
+    import hashlib
+    from pathlib import PurePosixPath
+
+    path = relative_path(source_path)
+    value = PurePosixPath(path).with_suffix("").as_posix()
+    base = "".join(c if c.isalnum() or c in "._-" else "_" for c in value).strip("._")
+    base = base or "unknown"
+    suffix = hashlib.sha256(path.encode()).hexdigest()[:12]
+    return base, f"{base}.{suffix}"

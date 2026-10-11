@@ -1,59 +1,84 @@
 # Architecture
 
-The initial release is an access layer. `Dataset` orchestrates Hub discovery and
-explicit file reads. `schemas.py` defines small inventory records and a local
-paper result. `validation.py` enforces structural invariants without deleting
-unknown fields. `identifiers.py` performs an exact source-path join between
-existing identifiers. The generation pipeline is an inspection reference only.
+`Dataset` owns discovery and exact-file retrieval. `DatasetAdapter` selects
+components and converts corpus, query, and relevance records. The public
+`load_corpus`, `load_queries`, `load_qrels`, and `load_metadata` functions are
+thin convenience wrappers. Shared Dataset instances pin all reads to one Hub
+commit; local roots never fall back to a remote source.
 
-## Dependencies and boundaries
+`data/artifacts.py` presents restored files or uncompressed TAR members as one
+logical extraction tree. It indexes TAR headers once, then seeks selected
+metadata/text members. A paper may span multiple domain shards. It never
+extracts files, decodes images, or implements PDF restoration/checksums. This
+avoids duplicating upstream restoration utilities; their restored output is
+supported unchanged. Physical restoration remains an external preparation step.
 
-The core uses `huggingface_hub` for all network file access. JSON, paths, and
-iteration use the standard library. Arrow is an optional `parquet` extra backed
-by an implemented reader; `datasets` is deferred until tabular conversion needs
-it. Development tools are a uv dependency group. There are no retrieval extras,
-empty export modules, configuration frameworks, or database dependencies.
+`data/identifiers.py` joins authoritative source paths and computes only lookup
+candidates for existing lean directory IDs. It does not assign new canonical
+IDs. Ambiguity is fatal. `data/validation.py` checks published query and PDF split
+invariants. The source generation repository remains an inspection reference,
+not a runtime dependency.
 
-No ranking, embeddings, evaluation metrics, PDF extraction, query generation,
-or archive extraction runs in this repository. Restoration remains an explicit
-external preparation step using the upstream utilities. This avoids duplicating
-checksum/security code or bringing its pandas/generation dependency tree into
-the package. An extraction-only reusable upstream API is a future integration
-requirement, not a current hidden dependency.
+## Record contract
 
-## Reproducibility and selection
+`Records` is an eagerly validated sequence of ordinary JSON-compatible records,
+stored internally as JSON to isolate them from caller edits. It exposes a
+structured `Report` and provenance. Separate corpus, query, qrel, and metadata
+collections can be loaded/exported independently. Eager validation avoids
+publishing a result whose iterator fails halfway through consumption; it also
+means memory use scales with the selected corpus. Large streaming exports are
+future work, not an undocumented promise.
 
-Discovery downloads no artifact content and records all listed filenames and
-sizes. Default remote use resolves main to a commit once; all later calls use
-that SHA. Supplied revisions must already be immutable SHAs. Local mode never
-uses the network or falls back to remote content, and it reports local coverage
-only. Passing a revision with local data is a caller assertion. Local integrity
-and origin are not inferred from directory names.
+JSONL is the Phase 2 export format. Each export has a checksum/provenance/report
+manifest. Data and manifest writes are individually atomic, not a two-file
+transaction. An output hash detects interrupted/stale pairs. Arrow is optional
+for reading the published PDF index; no `datasets` or retrieval framework is
+needed for the adapter. No Parquet corpus exporter or TREC adapter is implied.
 
-Reading collection metadata and query files requires an explicit selection.
-JSON metadata has a default size limit. JSONL loading downloads the selected
-file in full, then parses it lazily; it is not remote row streaming. Training
-files can be large. The inventory is cached per instance; callers create a new
-instance after adding local files. No global singleton or mutable config exists.
+## Identity and provenance
 
-## Identity and failure policy
+Extraction paper IDs are corpus `doc_id`; packaged PDF IDs stay in
+`pdf_document_id`. Full metadata provides authoritative source paths. Lean
+extractions retain their existing directory ID, using normal/collision path
+candidates only to establish a unique source join against the split/PDF index.
+Absent or ambiguous mappings never lead to invented identifiers. Figure IDs are
+preserved; lean image paths without metadata get null figure IDs. Page indices
+remain zero-based when present; no page IDs are generated.
 
-Keep extraction paper IDs, packaged PDF IDs, and original query IDs separate.
-Join only through authoritative source paths. Reject ambiguity rather than
-choosing the first normalized-name match. Query IDs are collection-scoped;
-future exports must record their namespacing policy and reverse mapping.
-Figure IDs and zero-based page coordinates remain metadata; no new IDs are
-assigned. Lean artifact identity restoration is explicitly deferred.
+Canonical query IDs are scoped by collection. An additional, explicit JSON
+compound `query_key` records domain/collection/mode/original ID. Queries and
+qrels expose both fields. Relevance is a declared binary mapping of source
+`relevant_ids` to grade 1, with no inferred negatives or quality-judgment grades.
+Every positive must resolve to a corpus record in the correct domain. Different
+known revisions/repositories are rejected; local provenance remains a caller
+assertion, not a certificate of origin.
 
-Missing components raise `MissingComponentError`; malformed content raises
-`DatasetFormatError` with filename/line context where applicable. Missing joins
-raise `LookupError`; ambiguous joins are format errors. Iterators may yield valid
-records before a later error; exhaust them to validate an entire collection.
-This is not a transactional corpus export API. Consumers must not publish a
-partially consumed export as a successfully validated dataset.
+Corpus content comes only from original markdown or available original
+bibliographic fields. Generated clues, prompts, and interpretations remain query
+provenance. Raw paper/PDF metadata, licenses, and unknown query fields survive
+conversion. Collection metadata is preserved in query provenance. No title or
+abstract is inferred from a filename, prompt, or LLM.
 
-Raw query metadata is retained for provenance, but only `query` is query text.
-Only extracted markdown becomes local `Paper.markdown`. Prompts, interpretations,
-and generated clues never enter original content implicitly. The paper reader
-requires full metadata and nonempty text; it does not certify images, hashes,
-or full-corpus extraction success. No missing item is automatically excluded.
+## Selection and failure policy
+
+Exact-file downloads use `huggingface_hub` and its immutable-revision cache.
+Discovery does not download contents. Queries select by domain/split/mode;
+metadata selects the global index then filters locally. Archive selection can
+only narrow domains without an upstream per-document shard manifest; split
+membership filters emitted corpus records after indexing all selected-domain
+shards. No full-corpus/PDF transfer happens just to inspect metadata or queries.
+
+`train+test` means the union of published PDF split lists. `all` means the corpus
+including distractors. Missing/incomplete documents are strict errors unless
+`missing='skip'` is chosen; exclusions remain in the report. Missing figures or
+bibliographic fields are nonfatal for usable text. Malformed records, unsafe
+paths, duplicate identities, and ambiguity always fail. Missing entire components
+raise actionable `MissingComponentError`. Unresolved relevance targets always
+raise `UnresolvedRelevanceError`, even with a partial corpus.
+
+Fulltext hashes are checked when supplied, but `_SUCCESS` is not mandatory for
+restored/lean data. Coverage can only be certified against actual split lists or
+a PDF index; `all` without an index describes discovered artifacts, not every
+source PDF. The current pinned Hub release has queries only. Source-verified
+archive/index contracts are covered by synthetic fixtures but remain unverified
+against a live full-corpus publication.

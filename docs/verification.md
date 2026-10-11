@@ -1,32 +1,38 @@
-# Verification — 2026-10-11
+# Verification — Phase 2, 2026-10-11
 
 Executed locally on macOS, CPython 3.11.14:
 
 | Check | Result |
 | --- | --- |
-| `HF_HUB_OFFLINE=1 .venv/bin/pytest` | 31 passed; live test deselected |
-| `.venv/bin/pytest -m live` | 1 passed; 31 offline tests deselected; pinned Hub inventory only |
+| `HF_HUB_OFFLINE=1 .venv/bin/pytest` | 64 passed; one live test deselected |
+| `.venv/bin/pytest -m live` | One passed; pinned inventory, collection metadata, and 110 ACL test queries |
 | `.venv/bin/ruff check .` | Passed |
-| `.venv/bin/ruff format --check .` | Passed for the complete project |
-| `uv lock --check --offline` | Passed |
+| `.venv/bin/ruff format --check .` | Passed |
+| `uv lock --check --offline` | Passed; no new runtime dependencies |
 | `uv build --offline` | Source distribution and wheel built successfully |
-| Wheel installed in a fresh uv environment outside the checkout | Import and offline JSON/split reads passed from `/private/tmp`; no Arrow or dev dependencies installed |
-| Downloaded ACL test queries loaded through `Dataset(local_dir=...)` | All 110 records validated offline |
+| Wheel installed in a fresh uv environment outside checkout | Public canonical API, full offline corpus/query/qrel conversion, and JSONL export passed from `/private/tmp`, without Arrow or development dependencies |
+| Executable local example | Two synthetic documents, one query, one resolving qrel; all three exports and manifests produced |
 
-A clean-wheel check caught an overly broad `data/` ignore rule that excluded
-package modules after Git initialization. The rule now anchors to `/data/`;
-the rebuilt wheel passed import and file-reading checks outside the checkout.
+Offline tests cover domain/split filtering; strict/skip missing-text policies;
+missing extractions and figures; original metadata/licensing; title-only and
+explicit original abstract fields; preservation of canonical IDs; collision-safe
+lean lookup; unsafe archives; cross-shard papers; image locators without decoding;
+mocked incremental/pinned selective downloads; duplicate IDs; malformed JSON;
+query scope across domains; export checksums; and unresolved relevance targets.
 
-CI is configured for Python 3.11 and 3.13, including locked dependency sync,
-offline tests, lint/format checks, wheel build, and isolated wheel import.
-GitHub-hosted CI and Python 3.13 have not been run in this local setup.
+CI is configured for Python 3.11 and 3.13. It runs locked dependency sync,
+offline tests, lint/format checks, wheel build, and the executable converter
+against the installed wheel in a separate environment. GitHub-hosted CI and
+Python 3.13 have not been executed locally.
 
-No full dataset, PDF/archive, retrieval model, or model weights were downloaded.
-Inspections fetched the Hub file inventory, ten small mode metadata files, ACL
-test root metadata, and one ACL test JSONL. The upstream generation test suite
-was inspected but not executed. Published full-corpus IDs, split membership,
-archive layouts, and figure completeness remain unverified because those
-components are absent from the inspected revision.
+The live Hub head was rechecked: it remains
+`3b764a4c6855925ec802a2560712c4f5cc96f980`, with 31 files and queries only.
+The optional integration test confirms query conversion and the expected
+missing-corpus error. No live corpus/qrel conversion is claimed. The downloaded
+ACL test file from Phase 1 was reused through the Hub cache. No dataset PDF,
+extraction archive, full dataset, model, or model weights were downloaded.
+Archive/PDF-index support is tested with small synthetic artifacts reflecting
+the pinned generation implementation, not a fabricated live schema.
 
 ## Repository structure
 
@@ -40,16 +46,23 @@ scientific-tot-retrieval/  # project in the provided multimodal-tot-retrieval wo
 ├── pyproject.toml
 ├── uv.lock
 ├── docs/
+│   ├── api.md
 │   ├── architecture.md
 │   ├── dataset-schema.md
 │   ├── hub-inventory.json
 │   ├── integration-plan.md
 │   └── verification.md
-├── examples/inspect_dataset.py
+├── examples/
+│   ├── convert_dataset.py
+│   └── inspect_dataset.py
 ├── src/scientific_tot/
 │   ├── __init__.py
+│   ├── adapter.py
+│   ├── api.py
+│   ├── records.py
 │   └── data/
 │       ├── __init__.py
+│       ├── artifacts.py
 │       ├── hub.py
 │       ├── identifiers.py
 │       ├── schemas.py
@@ -57,11 +70,11 @@ scientific-tot-retrieval/  # project in the provided multimodal-tot-retrieval wo
 └── tests/
     ├── conftest.py
     ├── fixtures/
+    │   ├── README.md
+    │   ├── adapter/  # complete synthetic two-paper dataset
     │   ├── query.json
     │   └── split.json
+    ├── test_adapter.py
     ├── test_data.py
     └── test_live.py
 ```
-
-Git initialized on `main`; no remote or commit created. Export/config/script
-folders are deferred until they contain implemented functionality.

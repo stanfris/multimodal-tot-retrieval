@@ -1,29 +1,33 @@
-# Remaining integration phases
+# Integration status and remaining phases
 
-1. **Publication and coverage.** Reinspect a pinned Hub commit when corpus
-   metadata, split definitions, and extraction artifacts become available.
-   Verify real archive layouts and checksums with upstream restoration tools.
-   Build explicit paper/PDF and lean-artifact mappings, retaining IDs and
-   rejecting collisions. Produce missing extraction, figure, and qrel reports.
-   Do not reconstruct missing splits from query labels.
-2. **Canonical corpus conversion.** Add incremental original-text corpus
-   construction with explicit inclusion policies, source-path provenance, and
-   manifests recording revisions, selected files, checksums, converter version,
-   and exclusions. Support figure/page records only after verifying available
-   metadata. Introduce Arrow or Hugging Face Datasets formats as needed.
-3. **Standard exports.** Add corpus/query JSONL and TREC qrels adapters with
-   declared binary relevance mapping. Preserve original IDs alongside any
-   necessary reversible query namespace; verify referential integrity before
-   publishing outputs. Keep quality judgments distinct from relevance labels.
-4. **Thin integrations.** Implement one maintained framework adapter/example
-   at a time (candidate interfaces include PyTerrier or BEIR-style datasets),
-   checking their current APIs and dependencies at implementation time. Let
-   those libraries provide ranking and evaluation. Add optional extras only
-   for integrations that exist and test their data boundary with small fixtures.
-5. **Multimodal integrations.** Provide figure/page inputs and established
-   framework examples once authoritative page/figure mapping and missing-data
-   policy are settled. Model inference, ColBERT/ColPali internals, vector
-   search, and custom evaluation metrics remain outside this package.
+## Implemented in Phase 2
 
-No framework installation, model download, full-corpus transfer, retrieval
-backend, or export implementation is part of the initial release.
+- Local/Hub canonical corpus, query, and independently validated positive qrel
+  records, with domain/split/component selection and pinned incremental downloads.
+- Fulltext and available title/abstract representations; exact source joins,
+  lean identity lookup, metadata/licensing preservation, and coverage reports.
+- Restored-file and read-only TAR support, including papers spanning shards;
+  figure metadata and locators without decoding image bytes.
+- Standard JSONL records with export hashes, reports, and provenance manifests.
+- Executable offline example and a separately selected live query integration test.
+
+## Publication and further work
+
+1. **Live corpus validation.** Reinspect a pinned Hub commit when metadata,
+   splits, and extractions are published. Verify real archive layouts, source
+   joins, and coverage. Current live availability is still query-only. Synthetic
+   archive/index tests are not proof of live corpus completeness.
+2. **Additional exports and scale.** Add explicit Arrow/Parquet corpus schemas,
+   TREC-compatible export conventions, and a streaming conversion API if needed.
+   Preserve original IDs and reversible query scope mappings. Any transactional
+   bundle format should validate all files before publication.
+3. **Thin framework examples.** Implement one maintained library adapter at a
+   time, checking its current data interface. Let that library supply ranking
+   and evaluation; add optional dependency groups only for adapters that exist.
+4. **Multimodal/page integration.** Provide established-library examples once
+   actual figure/page metadata and PDF availability can be verified. Null IDs,
+   missing images, and page boundaries require explicit policies. PDF rendering,
+   model inference, vector search, and custom metrics remain outside the adapter.
+
+The adapter deliberately does not package the generation pipeline, regenerate
+metadata, implement ranking, generate embeddings, or download models.

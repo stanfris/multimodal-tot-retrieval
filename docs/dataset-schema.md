@@ -71,8 +71,8 @@ concatenate collections and assume global uniqueness. This package retains the
 original IDs and exposes a collection key rather than silently rewriting them.
 
 Relevance is the `relevant_ids` list, not a TREC qrels file or graded judgments.
-Source generation sets it to `[paper_id]`. A future binary qrels export may map
-these positives to grade 1 with that convention recorded explicitly. Optional
+Source generation sets it to `[paper_id]`. The canonical adapter maps
+these positives to grade 1 and records that convention in export provenance. Optional
 `query_judgement` provenance in source is a query-quality assessment, not a
 retrieval relevance grade. Unlisted papers must not silently become judged
 negatives.
@@ -115,7 +115,7 @@ contains documents outside query-linked train/test subsets.
 
 `src/common/validation.py` rejects unsafe paths, duplicates, and overlap.
 Legacy extraction split indexes in `src/document_splits/` use other conventions;
-this loader intentionally only accepts the PDF split contract above.
+the canonical adapter intentionally only accepts the PDF split contract above.
 
 ### Extraction identifiers, figures, and pages
 
@@ -145,10 +145,12 @@ retain `(paper_id, page_idx)` rather than invent an upstream ID.
 `src/preprocessing/stage_preprocessed.py` also supports lean staging with only
 `markdown.md` and `images/`, deliberately omitting `paper.json` and success
 markers. Source readers can derive fallback image IDs from image paths; these
-are not evidence that an original authoritative figure ID survived. This
-package does not manufacture figure or paper IDs for lean files. Full local
-paper reads preserve metadata even when image files are unavailable; they do
-not claim multimodal completeness or verify markdown checksums.
+are not evidence that an original authoritative figure ID survived. The Phase 2
+adapter preserves existing lean directory paper IDs and resolves source paths
+only when normal/collision candidates uniquely match actual split/index paths.
+It never manufactures figure IDs: missing IDs stay null. The canonical adapter
+checks a supplied markdown checksum; the low-level Phase 1 `load_paper` reader
+does not. Neither reader claims multimodal completeness.
 
 Additional archives preserve paths relative to `preprocessed/<DOMAIN>/` and
 `clues/<DOMAIN>/`. Layout variants in source include domain/papers nesting;
@@ -166,11 +168,11 @@ standard corpus content. Neither PDFs nor images are required to inspect queries
 
 Malformed rows, ambiguous joins, duplicate query IDs within a collection,
 missing requested files, empty markdown, and split overlap fail explicitly.
-No missing document is silently dropped or replaced with clue text. The minimal
-loader does not assess complete corpus coverage: future conversion must report
-missing/incomplete extractions and unresolved qrels against the selected corpus.
-It must distinguish lean artifacts from extraction failures, retain missing
-figure/page information, and record any deliberate exclusion policy.
+No missing document is silently dropped or replaced with clue text. The Phase 2
+adapter reports coverage against selected PDF splits or the available PDF index,
+with strict or explicit skip policies. Every emitted positive qrel must resolve
+to the selected corpus. Lean identities, missing images, and metadata gaps are
+reported explicitly. See [the API contract](api.md) for exact policy semantics.
 
 ## Restoration and test evidence
 
@@ -182,8 +184,9 @@ nor imports their runtime. If archived artifacts become available, use those
 tools separately and pass the restored root to `Dataset(local_dir=...)`.
 The upstream downloader defaults to all components and has no revision argument;
 do not use its default invocation for a lightweight or pinned experiment.
-A future archive adapter needs an explicitly pinned download and extraction-only
-entry point before claiming reproducible restoration.
+The Phase 2 adapter reads pinned, selected domain TARs directly without extracting
+them. It indexes safe regular members and preserves archive/member locators,
+so no new restoration implementation or runtime pipeline dependency is needed.
 
 Inspected source tests for packaging, restoration/download, extraction collision
 handling, preprocessing layouts, split validation, and query formats. The upstream
@@ -191,3 +194,10 @@ pipeline test suite was not run and is not a dependency. This project's fixtures
 are synthetic representations of the verified query and source extraction/split
 contracts, not copied corpus records. See [verification.md](verification.md) for
 checks actually executed on this package.
+
+## Phase 2 publication check
+
+The Hub API was checked again during adapter implementation on 2026-10-11.
+The head revision and query-only 31-file inventory remain unchanged. Archive,
+PDF-index, and full split support therefore remain source-verified and
+synthetically tested; they are not live-corpus verification claims.

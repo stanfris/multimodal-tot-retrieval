@@ -19,7 +19,10 @@ jobs:
           HF_HUB_OFFLINE: '1'
       - run: uv build
       - run: |
+          project_dir="$PWD"
           uv venv /tmp/tot-clean
           uv pip install --python /tmp/tot-clean/bin/python dist/*.whl
           cd /tmp
-          /tmp/tot-clean/bin/python -c 'from scientific_tot import Dataset; print(Dataset)'
+          HF_HUB_OFFLINE=1 /tmp/tot-clean/bin/python "$project_dir/examples/convert_dataset.py" \
+            --local-dir "$project_dir/tests/fixtures/adapter" --domain ACL \
+            --output /tmp/tot-clean-example

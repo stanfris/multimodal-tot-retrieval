@@ -17,6 +17,8 @@ class Artifact:
     path: str
     file: str
     member: str | None = None
+    offset: int = 0
+    size: int = 0
 
 
 class Artifacts:
@@ -34,7 +36,8 @@ class Artifacts:
             if name.endswith(".tar"):
                 if not archives:
                     raise MissingComponentError(
-                        f"{name}: archive reads disabled. Use restored local files or archives=True."
+                        f"{name}: archive reads disabled. "
+                        "Use restored local files or archives=True."
                     )
                 self._index_archive(name, parts[1])
             elif not name.endswith(".manifest.json"):
@@ -57,12 +60,24 @@ class Artifacts:
             with tarfile.open(local, "r:") as archive:
                 seen = set()
                 for member in archive:
-                    relative = relative_path(member.name.rstrip("/") if member.isdir() else member.name)
+                    relative = relative_path(
+                        member.name.rstrip("/") if member.isdir() else member.name
+                    )
                     if relative in seen or not (member.isfile() or member.isdir()):
-                        raise DatasetFormatError(f"{name}: unsupported/duplicate member {member.name}")
+                        raise DatasetFormatError(
+                            f"{name}: unsupported/duplicate member {member.name}"
+                        )
                     seen.add(relative)
                     if member.isfile():
-                        self._add(Artifact(f"preprocessed/{domain}/{relative}", name, member.name))
+                        self._add(
+                            Artifact(
+                                f"preprocessed/{domain}/{relative}",
+                                name,
+                                member.name,
+                                member.offset_data,
+                                member.size,
+                            )
+                        )
         except tarfile.TarError as exc:
             raise DatasetFormatError(f"{name}: invalid uncompressed TAR: {exc}") from exc
 
@@ -73,13 +88,13 @@ class Artifacts:
         local = self._local(artifact.file)
         try:
             if artifact.member is None:
-                return local.read_text(encoding="utf-8")
-            with tarfile.open(local, "r:") as archive:
-                stream = archive.extractfile(artifact.member)
-                if stream is None:
-                    raise DatasetFormatError(f"{name}: unreadable TAR member")
-                with stream:
-                    return stream.read().decode("utf-8")
+                return local.read_bytes().decode("utf-8")
+            with local.open("rb") as stream:
+                stream.seek(artifact.offset)
+                data = stream.read(artifact.size)
+                if len(data) != artifact.size:
+                    raise DatasetFormatError(f"{name}: truncated TAR member")
+                return data.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise DatasetFormatError(f"{name}: invalid UTF-8") from exc
 
