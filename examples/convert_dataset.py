@@ -17,13 +17,8 @@ def main() -> None:
     parser.add_argument("--local-dir", type=Path)
     parser.add_argument("--revision", help="Immutable Hub commit SHA")
     parser.add_argument("--domain", nargs="+", required=True)
-    parser.add_argument(
-        "--split", choices=["train", "test", "train+test", "all"], default="train+test"
-    )
+    parser.add_argument("--split", choices=["train", "test", "train+test", "all"], default="all")
     parser.add_argument("--query-split", choices=["train", "test", "train+test"], default="test")
-    parser.add_argument(
-        "--representation", choices=["fulltext", "title_abstract"], default="fulltext"
-    )
     parser.add_argument("--missing", choices=["error", "skip"], default="error")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
@@ -31,7 +26,7 @@ def main() -> None:
     corpus = adapter.load_corpus(
         domain=args.domain,
         split=args.split,
-        representation=args.representation,
+        representation="fulltext",
         missing=args.missing,
     )
     queries = adapter.load_queries(domain=args.domain, split=args.query_split)

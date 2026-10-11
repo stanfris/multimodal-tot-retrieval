@@ -1,0 +1,184 @@
+{
+  "date": "2026-10-11",
+  "host": "dgx03",
+  "device": "cpu",
+  "experiments": [
+    {
+      "representation": "fulltext",
+      "model": {
+        "model_id": "intfloat/e5-small-v2",
+        "model_revision": null,
+        "device": "cpu",
+        "batch_size": 16,
+        "max_seq_length": null,
+        "profile": "auto",
+        "query_prompt": null,
+        "document_prompt": null,
+        "query_prompt_name": null,
+        "document_prompt_name": null,
+        "similarity": "cosine",
+        "faiss_threads": 1,
+        "resolved_revision": "ffb93f3bd4047442299a41ebb6fa998a38507c52"
+      },
+      "documents": 250,
+      "queries": 10,
+      "qrels": 10,
+      "metrics": {
+        "RR@10": 0.6333333333333333,
+        "R@10": 0.8,
+        "R@100": 1.0
+      },
+      "corpus_sha256": "061f245cf6f112fc6412d5c4ed775c1c77939a88140cb7ba844ee47fb50c751b",
+      "run_sha256": "b6f0c89db7cbeae64a68ccea277c71b960df01ff799477cb432f54d9ce60de9e",
+      "dataset_revision": null,
+      "dataset_revision_status": "local/unrecorded",
+      "index": {
+        "library": "faiss",
+        "class": "IndexFlatIP",
+        "metric": "inner_product",
+        "normalized_embeddings": true,
+        "dimension": 384,
+        "precision": "float32",
+        "device": "cpu",
+        "threads": 1,
+        "cutoff": 100
+      },
+      "encoding": {
+        "documents": {
+          "max_seq_length": 512,
+          "saved_prompts": {
+            "query": "",
+            "document": ""
+          },
+          "default_prompt_name": null,
+          "task": "document",
+          "explicit_prompt_arguments": {
+            "prompt": "passage: "
+          },
+          "dimension": 384,
+          "long_text_policy": "model_tokenizer_truncation_no_chunking"
+        },
+        "queries": {
+          "max_seq_length": 512,
+          "saved_prompts": {
+            "query": "",
+            "document": ""
+          },
+          "default_prompt_name": null,
+          "task": "query",
+          "explicit_prompt_arguments": {
+            "prompt": "query: "
+          },
+          "dimension": 384,
+          "long_text_policy": "model_tokenizer_truncation_no_chunking"
+        }
+      },
+      "versions": {
+        "sentence-transformers": "5.7.0",
+        "transformers": "5.19.0",
+        "torch": "2.14.1+cpu",
+        "faiss-cpu": "1.15.1",
+        "numpy": "2.4.6",
+        "pyterrier": "1.1.2",
+        "ir-measures": "0.4.3"
+      },
+      "baseline": {
+        "directory": "/home/sfris/Documents/multimodal_tot/multimodal-tot-retrieval/results/phase3-acl-small/fulltext",
+        "manifest_sha256": "9b2cc7f312385f5bb92104308473e5348fbda02d2718c12f1d1f02b350c7900c"
+      },
+      "cache_hits": {
+        "document_hit": false,
+        "query_hit": false
+      }
+    },
+    {
+      "representation": "title_abstract",
+      "model": {
+        "model_id": "intfloat/e5-small-v2",
+        "model_revision": null,
+        "device": "cpu",
+        "batch_size": 16,
+        "max_seq_length": null,
+        "profile": "auto",
+        "query_prompt": null,
+        "document_prompt": null,
+        "query_prompt_name": null,
+        "document_prompt_name": null,
+        "similarity": "cosine",
+        "faiss_threads": 1,
+        "resolved_revision": "ffb93f3bd4047442299a41ebb6fa998a38507c52"
+      },
+      "documents": 250,
+      "queries": 10,
+      "qrels": 10,
+      "metrics": {
+        "RR@10": 0.7533333333333334,
+        "R@10": 0.9,
+        "R@100": 1.0
+      },
+      "corpus_sha256": "08d696cf98ba587d6a8d52d047bfb3fe4a2c56befdd5cfbcb7915f5969ac65b1",
+      "run_sha256": "8e536c09f03700d2a7e264bc28a7a28e94bebde18a2c56b6f3a671ca535e4d69",
+      "dataset_revision": null,
+      "dataset_revision_status": "local/unrecorded",
+      "index": {
+        "library": "faiss",
+        "class": "IndexFlatIP",
+        "metric": "inner_product",
+        "normalized_embeddings": true,
+        "dimension": 384,
+        "precision": "float32",
+        "device": "cpu",
+        "threads": 1,
+        "cutoff": 100
+      },
+      "encoding": {
+        "documents": {
+          "max_seq_length": 512,
+          "saved_prompts": {
+            "query": "",
+            "document": ""
+          },
+          "default_prompt_name": null,
+          "task": "document",
+          "explicit_prompt_arguments": {
+            "prompt": "passage: "
+          },
+          "dimension": 384,
+          "long_text_policy": "model_tokenizer_truncation_no_chunking"
+        },
+        "queries": {
+          "max_seq_length": 512,
+          "saved_prompts": {
+            "query": "",
+            "document": ""
+          },
+          "default_prompt_name": null,
+          "task": "query",
+          "explicit_prompt_arguments": {
+            "prompt": "query: "
+          },
+          "dimension": 384,
+          "long_text_policy": "model_tokenizer_truncation_no_chunking"
+        }
+      },
+      "versions": {
+        "sentence-transformers": "5.7.0",
+        "transformers": "5.19.0",
+        "torch": "2.14.1+cpu",
+        "faiss-cpu": "1.15.1",
+        "numpy": "2.4.6",
+        "pyterrier": "1.1.2",
+        "ir-measures": "0.4.3"
+      },
+      "baseline": {
+        "directory": "/home/sfris/Documents/multimodal_tot/multimodal-tot-retrieval/results/phase3-acl-small/title_abstract",
+        "manifest_sha256": "b93a7d5639fefcf93fa0761ce480743ead1e9ef6078ffeedcc4a2714d4de8464"
+      },
+      "cache_hits": {
+        "document_hit": false,
+        "query_hit": true
+      }
+    }
+  ],
+  "offline_cache_run_identical": true
+}

@@ -9,7 +9,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 @pytest.fixture(autouse=True)
 def no_network(request, monkeypatch):
-    if request.node.get_closest_marker("live"):
+    if any(request.node.get_closest_marker(name) for name in ("live", "terrier", "dense_live")):
         return
 
     def blocked(*args, **kwargs):

@@ -82,3 +82,44 @@ a PDF index; `all` without an index describes discovered artifacts, not every
 source PDF. The current pinned Hub release has queries only. Source-verified
 archive/index contracts are covered by synthetic fixtures but remain unverified
 against a live full-corpus publication.
+
+## Optional PyTerrier boundary
+
+`integrations/pyterrier.py` is an optional conversion/example layer; the public
+core imports none of its dependencies. It provides ordinary document dictionaries
+and pandas tables, and calls existing Terrier indexing/BM25 and Experiment
+metrics directly. There is no additional retrieval orchestration abstraction.
+The optional TREC run export uses PyTerrier's writer. All canonical positive
+IDs are validated before indexing, and indexed IDs/counts are checked afterwards.
+
+`bibliography.py` provides a separately invoked literal Markdown projection for
+extractions with recognizable original title/Abstract headings. It records source
+character spans, keeps raw metadata intact, and never generates replacement
+content. It does not alter the core loader's bibliographic field policy.
+
+
+## Optional dense tutorial boundary
+
+`integrations/dense.py` calls Sentence Transformers' query/document encoding
+methods and FAISS's index/search/I/O APIs. It does not implement neural models,
+similarity search or fine-tuning. `integrations/evaluation.py` is now shared by
+BM25 and dense examples; canonical identity conversion and subset selection
+remain shared too. Model snapshots use the library cache, embeddings use NumPy
+persistence, and FAISS owns the binary index format. Cache manifests bind those
+files to inputs, model SHA and configuration and detect corruption before reads.
+The core adapter imports none of the optional neural dependencies.
+
+## Shared repository environment
+
+`uv sync --locked` installs the default `dev` and `examples` groups into `.venv`.
+All CLI examples and both notebooks use that environment and the `scientific-tot`
+kernel. Package extras remain available for library consumers, but repository
+workflows never switch extra sets. BM25 selects the pinned jdk4py runtime before
+Java initialization; it does not depend on a system JDK. Linux uses CPU Torch.
+
+`integrations/selection.py` is the common fulltext example-loading path.
+Retrieval never requests title/abstract representations or PDF metadata. All
+positives must resolve before indexing or encoding. The example defaults use
+`corpus_split="all"`, unlimited documents/test queries, and original fulltext.
+Notebook inputs default to restored data, with fresh output paths per execution;
+fixture demos require an explicit data-root override.
