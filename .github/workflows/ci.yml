@@ -1,0 +1,25 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked --extra parquet
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+        env:
+          HF_HUB_OFFLINE: '1'
+      - run: uv build
+      - run: |
+          uv venv /tmp/tot-clean
+          uv pip install --python /tmp/tot-clean/bin/python dist/*.whl
+          cd /tmp
+          /tmp/tot-clean/bin/python -c 'from scientific_tot import Dataset; print(Dataset)'

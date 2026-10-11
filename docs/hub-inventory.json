@@ -1,0 +1,193 @@
+{
+  "revision": "3b764a4c6855925ec802a2560712c4f5cc96f980",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "size": 3080
+    },
+    {
+      "path": "query_collections/ACL/query_generation_test/metadata.json",
+      "size": 11148
+    },
+    {
+      "path": "query_collections/ACL/query_generation_test/visual_and_text/metadata.json",
+      "size": 11117
+    },
+    {
+      "path": "query_collections/ACL/query_generation_test/visual_and_text/queries.jsonl",
+      "size": 6939521
+    },
+    {
+      "path": "query_collections/ACL/query_generation_train/metadata.json",
+      "size": 11152
+    },
+    {
+      "path": "query_collections/ACL/query_generation_train/visual_and_text/metadata.json",
+      "size": 11121
+    },
+    {
+      "path": "query_collections/ACL/query_generation_train/visual_and_text/queries.jsonl",
+      "size": 136925275
+    },
+    {
+      "path": "query_collections/Biology/query_generation_test/metadata.json",
+      "size": 11148
+    },
+    {
+      "path": "query_collections/Biology/query_generation_test/visual_and_text/metadata.json",
+      "size": 11117
+    },
+    {
+      "path": "query_collections/Biology/query_generation_test/visual_and_text/queries.jsonl",
+      "size": 6104407
+    },
+    {
+      "path": "query_collections/Biology/query_generation_train/metadata.json",
+      "size": 11152
+    },
+    {
+      "path": "query_collections/Biology/query_generation_train/visual_and_text/metadata.json",
+      "size": 11121
+    },
+    {
+      "path": "query_collections/Biology/query_generation_train/visual_and_text/queries.jsonl",
+      "size": 134141854
+    },
+    {
+      "path": "query_collections/Engineering/query_generation_test/metadata.json",
+      "size": 11148
+    },
+    {
+      "path": "query_collections/Engineering/query_generation_test/visual_and_text/metadata.json",
+      "size": 11117
+    },
+    {
+      "path": "query_collections/Engineering/query_generation_test/visual_and_text/queries.jsonl",
+      "size": 8267961
+    },
+    {
+      "path": "query_collections/Engineering/query_generation_train/metadata.json",
+      "size": 11152
+    },
+    {
+      "path": "query_collections/Engineering/query_generation_train/visual_and_text/metadata.json",
+      "size": 11121
+    },
+    {
+      "path": "query_collections/Engineering/query_generation_train/visual_and_text/queries.jsonl",
+      "size": 156401287
+    },
+    {
+      "path": "query_collections/Medicine/query_generation_test/metadata.json",
+      "size": 11148
+    },
+    {
+      "path": "query_collections/Medicine/query_generation_test/visual_and_text/metadata.json",
+      "size": 11117
+    },
+    {
+      "path": "query_collections/Medicine/query_generation_test/visual_and_text/queries.jsonl",
+      "size": 3602862
+    },
+    {
+      "path": "query_collections/Medicine/query_generation_train/metadata.json",
+      "size": 11152
+    },
+    {
+      "path": "query_collections/Medicine/query_generation_train/visual_and_text/metadata.json",
+      "size": 11121
+    },
+    {
+      "path": "query_collections/Medicine/query_generation_train/visual_and_text/queries.jsonl",
+      "size": 68600680
+    },
+    {
+      "path": "query_collections/Physics/query_generation_test/metadata.json",
+      "size": 11148
+    },
+    {
+      "path": "query_collections/Physics/query_generation_test/visual_and_text/metadata.json",
+      "size": 11117
+    },
+    {
+      "path": "query_collections/Physics/query_generation_test/visual_and_text/queries.jsonl",
+      "size": 10204334
+    },
+    {
+      "path": "query_collections/Physics/query_generation_train/metadata.json",
+      "size": 11152
+    },
+    {
+      "path": "query_collections/Physics/query_generation_train/visual_and_text/metadata.json",
+      "size": 11121
+    },
+    {
+      "path": "query_collections/Physics/query_generation_train/visual_and_text/queries.jsonl",
+      "size": 196987068
+    }
+  ],
+  "inspected_on": "2026-10-11",
+  "repo_id": "kasys/open-source-scientific-documents",
+  "collection_metadata": [
+    {
+      "path": "query_collections/ACL/query_generation_test/visual_and_text/metadata.json",
+      "example_count": 110,
+      "mode": "visual-and-text",
+      "split": "test"
+    },
+    {
+      "path": "query_collections/ACL/query_generation_train/visual_and_text/metadata.json",
+      "example_count": 2199,
+      "mode": "visual-and-text",
+      "split": "train"
+    },
+    {
+      "path": "query_collections/Biology/query_generation_test/visual_and_text/metadata.json",
+      "example_count": 110,
+      "mode": "visual-and-text",
+      "split": "test"
+    },
+    {
+      "path": "query_collections/Biology/query_generation_train/visual_and_text/metadata.json",
+      "example_count": 2193,
+      "mode": "visual-and-text",
+      "split": "train"
+    },
+    {
+      "path": "query_collections/Engineering/query_generation_test/visual_and_text/metadata.json",
+      "example_count": 110,
+      "mode": "visual-and-text",
+      "split": "test"
+    },
+    {
+      "path": "query_collections/Engineering/query_generation_train/visual_and_text/metadata.json",
+      "example_count": 2196,
+      "mode": "visual-and-text",
+      "split": "train"
+    },
+    {
+      "path": "query_collections/Medicine/query_generation_test/visual_and_text/metadata.json",
+      "example_count": 109,
+      "mode": "visual-and-text",
+      "split": "test"
+    },
+    {
+      "path": "query_collections/Medicine/query_generation_train/visual_and_text/metadata.json",
+      "example_count": 2181,
+      "mode": "visual-and-text",
+      "split": "train"
+    },
+    {
+      "path": "query_collections/Physics/query_generation_test/visual_and_text/metadata.json",
+      "example_count": 109,
+      "mode": "visual-and-text",
+      "split": "test"
+    },
+    {
+      "path": "query_collections/Physics/query_generation_train/visual_and_text/metadata.json",
+      "example_count": 2186,
+      "mode": "visual-and-text",
+      "split": "train"
+    }
+  ]
+}

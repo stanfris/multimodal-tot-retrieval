@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "scientific-tot-retrieval"
+version = "0.1.0"
+description = "Selective, provenance-preserving access to scientific tip-of-the-tongue data"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["huggingface-hub>=1.0,<2"]
+
+[project.optional-dependencies]
+parquet = ["pyarrow>=18,<24"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scientific_tot"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not live'"
+markers = ["live: opt-in network checks against the published dataset"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

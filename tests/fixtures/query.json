@@ -1,0 +1,15 @@
+{
+  "query_id": "test_visual_and_text_q00000",
+  "query": "I remember a scientific paper with a blue diagram.",
+  "relevant_ids": ["ACL_2022.example-1.1"],
+  "negative_ids": [],
+  "metadata": {
+    "paper_id": "ACL_2022.example-1.1",
+    "source_paper_dataset": "ACL",
+    "mode": "visual-and-text",
+    "split": "test",
+    "split_paper_index": 0,
+    "selected_components": [{"kind": "textual", "record_id": "ACL_2022.example-1.1", "text": "synthetic generated clue"}],
+    "prompt": "Synthetic query construction prompt; not corpus content."
+  }
+}
