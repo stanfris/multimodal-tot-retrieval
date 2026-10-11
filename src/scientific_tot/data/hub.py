@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -53,6 +54,7 @@ class Dataset:
         self.local_dir = Path(local_dir).expanduser() if local_dir is not None else None
         self.cache_dir = cache_dir
         self._inventory: Inventory | None = None
+        self._paths: frozenset[str] = frozenset()
 
     def discover(self) -> Inventory:
         """List filenames and sizes only; never download artifact contents."""
@@ -63,12 +65,19 @@ class Dataset:
                 raise MissingComponentError(
                     f"Local dataset directory does not exist: {self.local_dir}"
                 )
-            files = [
-                FileInfo(p.relative_to(self.local_dir).as_posix(), p.stat().st_size)
-                for p in self.local_dir.rglob("*")
-                if p.is_file()
-                and not any(part.startswith(".") for part in p.relative_to(self.local_dir).parts)
-            ]
+            files = []
+            # Prune hidden caches before traversal, rather than visiting every
+            # cached PDF/image and then discarding it from the local inventory.
+            for root, directories, filenames in os.walk(self.local_dir):
+                directories[:] = [name for name in directories if not name.startswith(".")]
+                for name in filenames:
+                    path = Path(root) / name
+                    if not name.startswith(".") and path.is_file():
+                        files.append(
+                            FileInfo(
+                                path.relative_to(self.local_dir).as_posix(), path.stat().st_size
+                            )
+                        )
         else:
             api = HfApi()
             try:
@@ -86,7 +95,7 @@ class Dataset:
                     "or pass local_dir for offline use"
                 ) from exc
         files.sort(key=lambda item: item.path)
-        paths = {item.path for item in files}
+        paths = self._paths = frozenset(item.path for item in files)
         collections = []
         for path in sorted(paths):
             parts = path.split("/")
@@ -118,7 +127,8 @@ class Dataset:
 
     def _file(self, name: str) -> Path:
         relative_path(name)
-        if name not in {item.path for item in self.discover().files}:
+        self.discover()
+        if name not in self._paths:
             raise MissingComponentError(
                 f"Missing {name!r} in {self.local_dir or self.repo_id} "
                 f"(revision {self.revision or 'local/unrecorded'}). "

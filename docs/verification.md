@@ -78,3 +78,33 @@ scientific-tot-retrieval/  # project in the provided multimodal-tot-retrieval wo
     ├── test_data.py
     └── test_live.py
 ```
+
+## Phase 3 verification (2026-10-11)
+
+PyTerrier integration checks: 73 offline tests passed locally and on dgx03;
+1 explicitly selected Java integration test passed on dgx03. Ruff check and
+format checks passed, wheel/source distribution builds succeeded, and a clean
+wheel installation with the PyTerrier extra converted the canonical fixture.
+The real-data CLI indexed/evaluated both a 250-document subset and all available
+ACL extractions. The notebook was executed on dgx03. See
+[actual data results and coverage](pyterrier-results.md) and
+[reproducible API/examples](pyterrier.md). Core imports do not initialize Java.
+
+Real-data loading revealed repeated full-inventory membership construction.
+Local discovery now caches the path set for the selected inventory and prunes
+hidden cache directories before traversal; it preserves offline inventory and
+exact-file selection semantics. Default tests still block network and exclude
+live/Java checks. CI adds a separate opt-in Java job with a configured JDK.
+
+
+## Phase 4 verification (2026-10-11)
+
+79 offline fixture tests passed locally and on dgx03. The opt-in pretrained-model
+integration and the existing Terrier integration each passed on dgx03. Dense
+fulltext and title/abstract runs used the exact saved BM25 subset, with verified
+corpus hashes, IDs, topics and qrels. An offline cached run reproduced its TREC
+file exactly; the dense notebook executed with actual data. The built core wheel
+was installed into a clean environment without any neural/retrieval packages and
+loaded canonical records. See [dense results](dense-results.md) and the
+[executable tutorial](dense-retrieval.md). No full-corpus dense or GPU benchmark
+was performed.

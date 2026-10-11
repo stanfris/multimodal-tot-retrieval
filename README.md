@@ -8,7 +8,8 @@ judgments, then export standard JSONL for existing retrieval frameworks.
 The published dataset is the source of truth. The
 [generation repository](https://github.com/stanfris/multimodal-tip-of-tongue-retrieval-for-scientific-papers)
 creates the artifacts; this package does not depend on that pipeline at runtime
-and implements no ranking, embedding generation, or evaluation metrics.
+and implements no ranking, embedding generation, or evaluation metrics. The optional
+PyTerrier integration delegates BM25 and evaluation to established libraries.
 
 **Publication status rechecked 2026-10-11:** revision
 `3b764a4c6855925ec802a2560712c4f5cc96f980` contains query collections only.
@@ -54,6 +55,37 @@ raise. Figure metadata and file/archive paths are exposed without loading images
 [API documentation](docs/api.md) covers component downloads, metadata-only reads,
 Hub revisions, archive granularity, lean extractions, missing-data policy, and
 record schemas. [Architecture](docs/architecture.md) records design decisions.
+
+## PyTerrier BM25
+
+```sh
+uv sync --locked --extra pyterrier --extra notebook
+# Requires a JDK configured through JAVA_HOME; choose a fresh output path:
+uv run python examples/pyterrier_bm25.py \
+  --local-dir tests/fixtures/adapter --domain ACL --representation both \
+  --output /tmp/tot-pyterrier-demo
+```
+
+[PyTerrier guide](docs/pyterrier.md) provides the Python conversion API, real-data
+subset/full-corpus commands, Java setup, and output conventions.
+[Notebook](examples/pyterrier_bm25.ipynb) demonstrates both representations.
+[Actual-data results](docs/pyterrier-results.md) record execution on dgx03.
+
+## Pretrained dense retrieval
+
+```sh
+uv sync --locked --extra dense
+uv run python examples/dense_retrieval.py \
+  --local-dir tests/fixtures/adapter --documents 2 --queries 1 \
+  --cache results/dense-cache --output results/dense-example
+```
+
+[Dense retrieval tutorial](docs/dense-retrieval.md) covers configurable model IDs,
+pinned revisions, model-specific prompts, CPU/GPU setup and persistent library
+caches. [Notebook](examples/dense_retrieval.ipynb) demonstrates encoding, FAISS
+search, shared metrics and cache reuse. [Measured subset results](docs/dense-results.md)
+verify the same canonical records as the BM25 baseline. Neural dependencies remain
+optional; no fine-tuning is performed.
 
 ## Discovery and Hub use
 
