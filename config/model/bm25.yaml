@@ -1,0 +1,11 @@
+name: bm25
+backend: pyterrier
+indexing:
+  type: classic
+  blocks: false
+  meta: {docno: 128}
+retrieval:
+  wmodel: BM25
+  controls:
+    bm25.b: 0.75
+    bm25.k_1: 1.2

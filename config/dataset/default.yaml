@@ -1,0 +1,18 @@
+name: scientific_tot
+source: local  # hub explicitly opts into network access in future stage implementations.
+repo_id: kasys/open-source-scientific-documents
+revision: null  # Optional full 40-character commit SHA; local revisions are assertions.
+root: ${launcher.dataset_root}
+cache_dir: ${launcher.cache_root}/datasets
+domains: [ACL]
+missing: error
+query_mode: visual-and-text
+artifacts:
+  preprocessed: ${dataset.root}/preprocessed
+  metadata: ${dataset.root}/metadata.parquet
+  queries: ${dataset.root}/query_collections
+  splits: ${dataset.root}/splits/pdf_dataset_split.json
+  pdfs: ${dataset.root}/pdf_datasets
+download:
+  enabled: false
+  components: [queries, splits, preprocessed]

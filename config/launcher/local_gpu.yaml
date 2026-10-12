@@ -1,0 +1,4 @@
+defaults:
+  - local_cpu
+  - _self_
+device: cuda

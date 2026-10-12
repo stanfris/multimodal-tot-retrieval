@@ -56,6 +56,21 @@ raise. Figure metadata and file/archive paths are exposed without loading images
 Hub revisions, archive granularity, lean extractions, missing-data policy, and
 record schemas. [Architecture](docs/architecture.md) records design decisions.
 
+## Hydra configuration CLI
+
+```sh
+uv run scientific-tot dry_run=true
+uv run scientific-tot dry_run=true experiment=dense_passages launcher=local_gpu
+TOT_DATA_ROOT=/your/existing/data uv run scientific-tot dry_run=true experiment=bm25_fulltext
+uv run scientific-tot --multirun dry_run=true experiment=bm25_fulltext,dense_passages split=train,test
+```
+
+[Configuration guide](docs/configuration.md) explains all YAML groups, overrides,
+local/DGX03 data paths, model parameter contracts, presets, validation, and
+reproducibility. The CLI currently implements configuration and dry runs;
+execution stages raise explicit `NotImplementedError`s until connected in later
+phases. Existing examples below remain executable.
+
 ## Full document collection (default)
 
 Both retrieval scripts default to **every available extraction in the selected

@@ -1,0 +1,10 @@
+name: colbert
+backend: colbert
+checkpoint: colbert-ir/colbertv2.0  # Can also be a local pinned checkpoint directory.
+indexing:
+  index_bsize: 64
+  nbits: 2
+  kmeans_niters: 4
+  doc_maxlen: 220
+retrieval:
+  query_maxlen: 32

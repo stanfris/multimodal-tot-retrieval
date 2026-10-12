@@ -1,0 +1,13 @@
+name: dense
+backend: sentence_transformers_faiss
+model_id: intfloat/e5-small-v2
+revision: ffb93f3bd4047442299a41ebb6fa998a38507c52
+batch_size: 16
+device: ${launcher.device}
+encoding:
+  normalize_embeddings: true
+  query_prompt: "query: "
+  document_prompt: "passage: "
+indexing:
+  factory: Flat
+  metric: inner_product

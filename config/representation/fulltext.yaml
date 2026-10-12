@@ -1,0 +1,6 @@
+name: fulltext
+modality: text
+source: original_extracted_text
+preprocessing:
+  library: null
+  strip_whitespace: true

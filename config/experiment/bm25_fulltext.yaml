@@ -1,0 +1,6 @@
+# @package _global_
+defaults:
+  - override /model: bm25
+  - override /representation: fulltext
+  - override /stage: index
+  - _self_

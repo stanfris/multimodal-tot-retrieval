@@ -1,0 +1,10 @@
+name: passages
+modality: text
+source: original_extracted_text
+preprocessing:
+  library: langchain_text_splitters.RecursiveCharacterTextSplitter
+  strip_whitespace: true
+chunking:
+  chunk_size: 1000  # Library default length function counts characters, not tokens.
+  chunk_overlap: 200
+  separators: ["\n\n", "\n", " ", ""]

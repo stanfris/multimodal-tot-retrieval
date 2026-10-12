@@ -1,0 +1,6 @@
+name: pages
+modality: image
+source: original_pdf_pages
+rendering:
+  library: pypdfium2
+  scale: 2.0

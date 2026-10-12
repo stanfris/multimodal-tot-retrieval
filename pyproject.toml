@@ -9,7 +9,14 @@ description = "Selective, provenance-preserving access to scientific tip-of-the-
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = ["huggingface-hub>=1.0,<2"]
+dependencies = [
+    "huggingface-hub>=1.0,<2",
+    "hydra-core>=1.3.2,<1.4",
+    "omegaconf>=2.3,<2.4",
+]
+
+[project.scripts]
+scientific-tot = "scientific_tot.hydra_entry:main"
 
 [project.optional-dependencies]
 dense = [
@@ -53,6 +60,12 @@ examples = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/scientific_tot"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"config" = "scientific_tot/config"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "config", "tests", "docs", "examples", "README.md", "LICENSE", "pyproject.toml", "uv.lock"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

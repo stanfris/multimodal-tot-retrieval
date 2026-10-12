@@ -1,0 +1,4 @@
+name: figures
+modality: image
+source: original_extracted_figures
+include_captions: false

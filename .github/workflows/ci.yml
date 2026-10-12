@@ -23,6 +23,11 @@ jobs:
           uv venv /tmp/tot-clean
           uv pip install --python /tmp/tot-clean/bin/python dist/*.whl
           cd /tmp
+          HF_HUB_OFFLINE=1 /tmp/tot-clean/bin/scientific-tot dry_run=true experiment=dense_passages \
+            hydra.run.dir=/tmp/tot-clean-config
+          HF_HUB_OFFLINE=1 /tmp/tot-clean/bin/python -m scientific_tot.hydra_entry \
+            --multirun dry_run=true experiment=bm25_fulltext,dense_passages,visual_pages \
+            hydra.sweep.dir=/tmp/tot-clean-sweep
           HF_HUB_OFFLINE=1 /tmp/tot-clean/bin/python "$project_dir/examples/convert_dataset.py" \
             --local-dir "$project_dir/tests/fixtures/adapter" --domain ACL \
             --output /tmp/tot-clean-example

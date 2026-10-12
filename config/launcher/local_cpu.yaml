@@ -1,0 +1,5 @@
+kind: local
+device: cpu
+dataset_root: ${oc.env:TOT_DATA_ROOT,./data}
+cache_root: ${oc.env:TOT_CACHE_ROOT,./cache}
+output_root: ${oc.env:TOT_OUTPUT_ROOT,./results/hydra}
