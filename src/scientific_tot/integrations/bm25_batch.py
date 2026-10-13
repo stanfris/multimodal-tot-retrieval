@@ -1,4 +1,4 @@
-"""Independent BM25 batch retrieval and evaluation of immutable saved artifacts."""
+"""BM25 retrieval and shared backend-independent saved batch serialization/evaluation."""
 
 import json
 import math
@@ -195,6 +195,7 @@ def save_batch(run, inputs, mapping, identities, cfg, target: Path) -> dict:
     _validate_batch(
         run, inputs.topics, inputs.qrels, mapping, identities, cutoff=cfg.retrieval.top_k
     )
+    run = run.sort_values(["qid", "rank"], kind="stable")
     pt.io.write_results(run, str(target / "run.trec"), format="trec", run_name=cfg.run.name)
     inputs.topics.to_json(target / "topics.jsonl", orient="records", lines=True, force_ascii=False)
     inputs.qrels.to_csv(target / "qrels.tsv", sep="\t", index=False)
@@ -213,7 +214,7 @@ def _read_jsonl(path: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def evaluate_bm25(cfg, target: Path) -> dict:
+def evaluate_saved_run(cfg, target: Path) -> dict:
     """Compute YAML metrics from a completed saved batch, without dataset/index reads."""
     source = Path(cfg.paths.run)
     manifest = verify_retrieval(source, cfg)

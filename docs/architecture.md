@@ -137,9 +137,12 @@ changing defaults for callers that omit them.
 `hydra_run.py` reserves fresh outputs, preflights every basic-sweeper job, stores
 read-only configuration/provenance and validates stage artifacts. `config_artifacts.py`
 provides index build-setting identity and retrieval snapshot verification.
-`stages.py` executes BM25 preparation and indexing through the existing adapter
-and PyTerrier integration. Preparation exports validated canonical records;
-indexing builds a persistent classic index, verifies stored paper IDs, and saves
-its completion manifest. Remaining stage/model combinations are unimplemented. Combined tutorial functions are never
-used as stage implementations. Reusable caches must be outside experiment results.
+`stages.py` executes BM25/dense preparation, indexing, retrieval and saved-run
+evaluation through the existing adapter and backend integrations. Preparation exports validated canonical records;
+indexing builds persistent Terrier/FAISS indexes and saves completion manifests.
+Dense task caches reuse existing encoders/cache I/O; LangChain splits passages and
+PyTerrier aggregates their FAISS scores to canonical papers. Retrieval saves
+checksummed batches; evaluation consumes them without dataset/index/model access.
+Remaining stage/model combinations are unimplemented. Combined tutorial functions
+are never used as stage implementations. Reusable caches must be outside experiment results.
 See the [configuration guide](configuration.md) and [complete profile audit](configuration-audit.md).

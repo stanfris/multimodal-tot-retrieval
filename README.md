@@ -69,12 +69,13 @@ uv run scientific-tot --multirun dry_run=true experiment=bm25_fulltext,dense_pas
 
 [Configuration guide](docs/configuration.md) explains all YAML groups, overrides,
 local/DGX03 data paths, model parameter contracts, presets, validation, and
-reproducibility. BM25 `prepare` and `index` execute for `fulltext` and
-`title_abstract`: preparation exports validated canonical records with coverage
-reports; indexing persists a fresh PyTerrier index and its configuration/provenance
-manifest. Both validate every positive target against the selected corpus. Other
-stages and models remain explicit `NotImplementedError`s. Existing examples below
-remain executable with unchanged defaults. The
+reproducibility. BM25 and dense `prepare`, `index`, `retrieve`, and `evaluate`
+execute for text corpora. Dense passages use the configured LangChain splitter
+and PyTerrier max/mean aggregation, producing canonical paper-level rankings.
+Indexes and batch artifacts carry configuration/provenance manifests; evaluation
+consumes saved runs without indexing or model inference. Standalone examples below
+retain their defaults. See the [implementation report](docs/implementation-report.md)
+for changed files, cache behavior, validation, and limitations. The
 [profile audit](docs/configuration-audit.md) records every YAML consumer, parameter
 binding, necessary configuration change, and unsupported operation.
 

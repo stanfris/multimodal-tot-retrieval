@@ -7,10 +7,11 @@ Validation needs only core dependencies and neither discovers data nor loads mod
 The [profile audit](configuration-audit.md) traces every YAML profile and records
 all differences from the existing implementations.
 
-BM25 `prepare` and `index` execute with `fulltext` or `title_abstract`. Remaining
-stages and other models still raise `NotImplementedError`. Existing BM25/dense
+BM25 and dense `prepare`, `index`, `retrieve`, and `evaluate` execute with
+`fulltext` or `title_abstract`; dense also supports `passages`. `search`, `export`,
+and other models remain unimplemented. Existing BM25/dense
 tutorial functions and scripts remain executable with their established defaults.
-ColBERT, Byaldi, passage construction, figure retrieval, and page rendering are
+ColBERT, Byaldi, figure retrieval, and page rendering are
 configuration-only profiles; no new retrieval model is implemented.
 
 ## Ownership and consumers
@@ -20,13 +21,13 @@ configuration-only profiles; no new retrieval model is implemented.
 | `dataset` | `default`, `hub` | `configured_adapter` → existing `Dataset` / `DatasetAdapter`; configured Hub downloads supported; artifact relocation unsupported |
 | `split` | `all`, `train`, `test`, `train+test` | `corpus_arguments` / `query_arguments` → adapter selection |
 | `representation` | `fulltext`, `title_abstract` | `corpus_arguments` → `DatasetAdapter.load_corpus`; original content is preserved |
-| `representation` | `passages`, `figures`, `pages` | Compatibility / parameter validation only; no executing representation builder |
+| `representation` | `passages`, `figures`, `pages` | Dense passages execute through LangChain and PyTerrier aggregation; figures/pages remain configuration-only |
 | `model` | `bm25`, `dense` | `bm25_arguments` / `dense_arguments` → existing optional integration functions when passed `settings=cfg` |
 | `model` | `colbert`, `visual` | External API contracts and compatibility validation only |
-| `retrieval` | `default` | PyTerrier `Retriever.num_results` / FAISS `Index.search` depth in the existing functions; future retrieve/search stages |
+| `retrieval` | `default` | PyTerrier `Retriever.num_results` / FAISS `Index.search` depth in the existing functions; BM25/dense retrieve; search remains unimplemented |
 | `evaluation` | `default` | `evaluate_run` → `ir_measures.parse_measure` and PyTerrier `Experiment.eval_metrics` |
 | `launcher` | `local_cpu`, `local_gpu` | Path normalization, output guards, model device, PyTorch/FAISS/Terrier threads and Terrier version |
-| `stage` | `prepare`, `index`, `retrieve`, `evaluate`, `search`, `export` | `run_stage` artifact preflight / provenance, then BM25 prepare/index dispatch; remaining bodies unimplemented |
+| `stage` | `prepare`, `index`, `retrieve`, `evaluate`, `search`, `export` | `run_stage` artifact preflight / provenance, then BM25/dense prepare/index/retrieve/evaluate dispatch |
 | `experiment` | `bm25_fulltext`, `dense_passages`, `visual_pages` | Hydra defaults-list composition; no duplicated model settings or runtime dispatcher |
 
 `model` owns algorithm/library parameters. `representation` owns source content
@@ -142,10 +143,10 @@ cache_root/                        # outside output_root
 
 | Stage | Inputs and intended output | Current boundary |
 | --- | --- | --- |
-| `prepare` | Selected corpus/queries → `corpus.jsonl`, `queries.jsonl`, `qrels.jsonl` with coverage/provenance sidecars | BM25 text representations supported; every positive validated |
-| `index` | Corpus → fresh `paths.index`, default `<run_dir>/index` | Persistent PyTerrier classic index; YAML parameters applied; existing destinations refused |
-| `retrieve` | Verified `paths.index` + batch queries → `run.trec`, `topics.jsonl`, `qrels.tsv`, `query-ids.jsonl` | Index verification wired; batch execution unimplemented |
-| `evaluate` | Completed retrieval `paths.run` → aggregate/per-query metrics | Retrieval snapshot/completeness/depth verification wired; metrics stage unimplemented |
+| `prepare` | Selected corpus/queries → `corpus.jsonl`, `queries.jsonl`, `qrels.jsonl` with coverage/provenance sidecars | BM25/dense text representations supported; every positive validated |
+| `index` | Corpus → fresh `paths.index`, default `<run_dir>/index` | Persistent Terrier or FAISS index; YAML parameters applied; existing destinations refused |
+| `retrieve` | Verified `paths.index` + batch queries → `run.trec`, `topics.jsonl`, `qrels.tsv`, `query-ids.jsonl`, `corpus-ids.jsonl` | BM25/dense batch retrieval; canonical paper IDs and artifact hashes |
+| `evaluate` | Completed retrieval `paths.run` → aggregate/per-query metrics | Saved artifact/configuration validation; ir_measures aggregate/per-query metrics |
 | `search` | Verified `paths.index` + required `stage.query` → ad hoc ranking | Index verification wired; interactive execution unimplemented |
 | `export` | Canonical records → record artifacts | Unimplemented |
 
@@ -159,21 +160,21 @@ uv run scientific-tot stage=index dataset.root=/your/restored/data
 uv run scientific-tot stage=index dataset.root=/your/restored/data paths.index=/fresh/index
 ```
 
-Both stages construct one configured `DatasetAdapter`, load the selected corpus
+Preparation and indexing construct one configured `DatasetAdapter`, load the selected corpus
 and queries, and validate every positive target. `dataset.missing=skip` cannot
 omit a positive target. Local restored data is read in place; Hub mode pins
 all reads to one resolved commit and downloads configured components through the
 existing adapter. Required absent components fail explicitly. No dataset restoration
 or document conversion algorithm is added. `prepare` writes canonical JSONL with
 existing `Records.write_jsonl` sidecars; it does not start Java. `index` validates
-queries but only builds an index, without retrieval or evaluation. Indexing uses
+queries but only builds an index, without retrieval or evaluation. BM25 indexing uses
 `model.indexing` and `launcher.threads.indexing`, checks metadata capacity against
 UTF-8 paper IDs, and verifies stored IDs and document count before completion.
 Failed builds retain their output but have no completed index manifest.
 The manifest records corpus content SHA256, dataset revision, local revision
 verification status, library/Python/Terrier versions, and absolute output location.
 
-The default offline tests exercise preparation and a mocked backend using
+The default offline tests exercise preparation, retrieval, evaluation and a mocked BM25 backend using
 `tests/fixtures/adapter`. A real offline test also builds and reopens a persistent
 index when Terrier 5.11 and helper jars are already cached in PyTerrier's home;
 otherwise that test skips explicitly. Maven downloads and network access are
@@ -212,11 +213,13 @@ mutable refs/null revisions must be pinned before consuming an index, preventing
 query encoding from resolving newer weights. Local dense checkpoint execution
 remains unsupported by the existing Hub model-revision resolver.
 
-These contracts verify recorded configuration identity; they do not independently
-hash a live index's binary contents or certify local dataset origins. Legacy tutorial
+These contracts verify configuration identity and saved batch integrity. Dense
+index files are checksummed; BM25 binaries are opened and validated by Terrier,
+without an independent full binary checksum inventory. Neither certifies local
+dataset origins. Legacy tutorial
 indexes/caches need a future explicit verified migration; they are never accepted
 by guessing their build settings. `verify_retrieval` requires a completed retrieve
-manifest, intact config checksum, and all four batch artifacts.
+manifest, intact config checksum, and all five batch artifacts with exact paths and checksums.
 
 ## Existing integration functions
 
@@ -243,3 +246,58 @@ read-only snapshots, index identity/integrity, retrieval artifact preflight, ada
 selection, and actual external-library argument propagation. Neural encoding and
 JVM construction are stubbed for offline parameter checks; real FAISS and metric
 computation are exercised. Network/model/JVM integration tests remain opt-in.
+
+
+## Independent retrieval and evaluation
+
+```sh
+uv run scientific-tot stage=retrieve dataset.root=/your/restored/data paths.index=/your/index retrieval.top_k=100
+uv run scientific-tot stage=evaluate dataset.root=/your/restored/data paths.run=/your/retrieve 'evaluation.metrics=[RR@10,R@100]'
+uv run scientific-tot model=dense representation=fulltext stage=index dataset.root=/your/restored/data
+uv run scientific-tot model=dense representation=fulltext stage=retrieve dataset.root=/your/restored/data paths.index=/your/dense/index
+uv run scientific-tot model=dense representation=passages stage=index dataset.root=/your/restored/data
+```
+
+Repeat the dataset/model/representation settings of the relevant build or batch
+when consuming its artifacts. Retrieval may change query selection, query prompts,
+ranking depth, BM25 controls, or passage aggregation without rebuilding the index.
+Evaluation checks corpus/model/representation/query selection and encoding settings
+against the saved retrieval configuration. Its metric expressions may change,
+provided their cutoffs fit the saved retrieval depth. The saved depth is authoritative;
+evaluation does not run retrieval to fill additional ranks.
+
+Batch rankings use one-based TREC ranks. Paper IDs remain canonical; unique query
+IDs stay unchanged, and colliding collection IDs use the existing reversible
+percent-encoded query-key mapping. `query-ids.jsonl` retains the originals.
+`corpus-ids.jsonl` permits positive/document validation without opening the index
+or dataset during evaluation. All five saved inputs have absolute references and
+SHA256 checksums. Invalid mappings, duplicate/unknown IDs, non-finite scores,
+ambiguous runs, inconsistent ranks, missing positives or changed files are rejected.
+`metrics.csv` and `per-query.csv` are separate evaluation outputs; per-query rows
+include canonical query IDs/keys and domains. Entirely empty rankings are evaluated
+by ir_measures directly, preserving zero results for every selected judged query.
+
+Dense `index` uses the existing `EncodingConfig`, `_encode_tasks`, `_read_cache`,
+and `_write_cache`. It encodes documents only and persists `index.faiss`, `ids.json`,
+and `vectors.jsonl` with a canonical vector-to-paper/domain mapping. Dense `retrieve`
+encodes only queries, independently of original document availability. Task caches
+are content-addressed and checked before reuse; document keys exclude query prompts
+and passage aggregation. Fresh index destinations may reuse unchanged cached
+embeddings and FAISS artifacts. Model revisions are resolved to commits for builds;
+consumers must pin the actual commit. Explicit prompts, including empty strings,
+are passed unchanged to Sentence Transformers.
+
+`representation=passages` loads canonical original fulltext, then uses
+`RecursiveCharacterTextSplitter` with YAML chunk size, overlap, separators, and
+whitespace policy. Passage IDs preserve paper IDs separately and escape the
+PyTerrier passage delimiter reversibly. `representation.aggregation.method=max`
+uses `pyterrier.text.max_passage`; `mean` uses `mean_passage`. FAISS scores every
+indexed passage per query before aggregation, then the paper cutoff is applied.
+The method, library, search depth, and paper ranking level are saved in manifests.
+This exact aggregation can be expensive for large passage collections.
+
+`launcher=local_cpu` encodes on CPU; `launcher=local_gpu` forwards CUDA to Sentence
+Transformers where supported. FAISS remains the existing CPU `IndexFlatIP`; no GPU
+FAISS implementation is introduced. Local model-path loading remains unsupported
+by the existing revision resolver. Standalone combined tutorial functions retain
+their established behavior; passage execution uses the separate Hydra stages.

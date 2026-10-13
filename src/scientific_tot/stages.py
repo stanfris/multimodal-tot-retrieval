@@ -26,9 +26,9 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
 
         return retrieve_bm25(cfg, run_dir)
     if cfg.stage.name == "evaluate":
-        from scientific_tot.integrations.bm25_batch import evaluate_bm25
+        from scientific_tot.integrations.bm25_batch import evaluate_saved_run
 
-        return evaluate_bm25(cfg, run_dir)
+        return evaluate_saved_run(cfg, run_dir)
     if cfg.stage.name == "index":
         if cfg.paths.index is None:
             raise ValueError("stage=index requires a resolved paths.index destination")
