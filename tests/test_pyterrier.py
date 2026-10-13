@@ -151,3 +151,100 @@ def test_independently_loaded_qrels_are_validated():
     assert to_pyterrier(docs, topics, qrels).qrels.iloc[0].docno == "ACL_one"
     with pytest.raises(ValueError, match="Supplied canonical qrels"):
         to_pyterrier(docs, topics, Records("qrels", [], Report(), {}))
+
+
+def test_hydra_settings_reach_external_terrier_arguments(tmp_path, monkeypatch):
+    import sys
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    import pandas as pd
+    from hydra import compose, initialize_config_dir
+
+    from scientific_tot.config_arguments import (
+        configured_adapter,
+        corpus_arguments,
+        query_arguments,
+    )
+    from scientific_tot.configuration import CONFIG_DIR, resolve_config
+    from scientific_tot.integrations.pyterrier import bm25_experiment
+
+    with initialize_config_dir(version_base="1.3", config_dir=str(CONFIG_DIR)):
+        cfg = compose(
+            config_name="config",
+            overrides=[
+                f"dataset.root={Path(__file__).parent / 'fixtures/adapter'}",
+                "model.indexing.blocks=true",
+                "model.indexing.meta.docno=256",
+                "model.retrieval.controls={bm25.b:0.5,bm25.k_1:2.0}",
+                "retrieval.top_k=7",
+                "launcher.threads.indexing=3",
+                "evaluation.metrics=[RR@5]",
+            ],
+        )
+    cfg = resolve_config(cfg, tmp_path)
+    adapter = configured_adapter(cfg)
+    docs, topics = (
+        adapter.load_corpus(**corpus_arguments(cfg)),
+        adapter.load_queries(**query_arguments(cfg)),
+    )
+    calls = []
+    ids = [r["doc_id"] for r in docs]
+    index = SimpleNamespace(
+        getCollectionStatistics=lambda: SimpleNamespace(getNumberOfDocuments=lambda: len(ids)),
+        getMetaIndex=lambda: SimpleNamespace(getItem=lambda key, number: ids[number]),
+        close=lambda: None,
+    )
+    classic = object()
+
+    class Indexer:
+        def __init__(self, path, **kwargs):
+            calls.append(("indexer", path, kwargs))
+
+        def index(self, rows):
+            assert len(list(rows)) == 2
+            return index
+
+    class Retriever:
+        def __init__(self, location, **kwargs):
+            assert location is index
+            calls.append(("retriever", kwargs))
+
+        def transform(self, topics):
+            return pd.DataFrame()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "pyterrier",
+        SimpleNamespace(
+            java=SimpleNamespace(started=lambda: True),
+            terrier=SimpleNamespace(
+                IterDictIndexer=Indexer,
+                Retriever=Retriever,
+                IndexingType=SimpleNamespace(CLASSIC=classic),
+                IndexFactory=SimpleNamespace(of=lambda ref: ref),
+                version=lambda: "5.11",
+            ),
+        ),
+    )
+
+    def evaluate(*args, **kwargs):
+        calls.append(("evaluation", list(kwargs["evaluation"].metrics)))
+        return pd.DataFrame()
+
+    monkeypatch.setattr("scientific_tot.integrations.evaluation.evaluate_run", evaluate)
+    bm25_experiment(docs, topics, tmp_path / "run", settings=cfg)
+    assert calls[0][2] == {
+        "type": classic,
+        "blocks": True,
+        "meta": {"docno": 256},
+        "text_attrs": ["text"],
+        "threads": 3,
+    }
+    assert calls[1][1] == {
+        "wmodel": "BM25",
+        "controls": {"bm25.b": 0.5, "bm25.k_1": 2.0},
+        "num_results": 7,
+        "threads": 3,
+    }
+    assert calls[2] == ("evaluation", ["RR@5"])

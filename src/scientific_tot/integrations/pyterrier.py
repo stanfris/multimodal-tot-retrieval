@@ -24,6 +24,77 @@ class TerrierInputs:
     query_ids: pd.DataFrame
 
 
+def _start_terrier(pt, terrier_version: str) -> None:
+    if not pt.java.started():
+        from jdk4py import JAVA_HOME
+
+        pt.java.set_java_home(str(JAVA_HOME))
+        pt.terrier.set_version(terrier_version)
+        pt.java.init()
+    elif pt.terrier.version() != terrier_version:
+        raise ValueError("JVM already uses a different Terrier version; start a fresh process")
+
+
+def _verify_document_ids(index, documents: tuple[dict[str, str], ...]) -> None:
+    if index.getCollectionStatistics().getNumberOfDocuments() != len(documents):
+        raise RuntimeError("Terrier document count differs from canonical corpus")
+    meta = index.getMetaIndex()
+    indexed_ids = {str(meta.getItem("docno", i)) for i in range(len(documents))}
+    if indexed_ids != {row["docno"] for row in documents}:
+        raise RuntimeError("Terrier indexed docnos differ from canonical corpus IDs")
+
+
+def build_bm25_index(corpus: Records, inputs: TerrierInputs, cfg) -> dict:
+    """Persist a fresh classic Terrier index without constructing a retrieval model."""
+    from scientific_tot.config_arguments import bm25_arguments, require_corpus_settings
+    from scientific_tot.config_artifacts import write_index_manifest
+
+    if cfg.stage.name != "index":
+        raise ValueError("BM25 index builds require stage=index")
+    require_corpus_settings(cfg, corpus)
+    indexing_args, _ = bm25_arguments(
+        cfg, docno_bytes=max(len(row["docno"].encode("utf-8")) for row in inputs.documents)
+    )
+    target = Path(cfg.paths.index)
+    # Exclusive reservation also protects concurrent builders of an external destination.
+    target.mkdir(parents=True, exist_ok=False)
+    import pyterrier as pt
+
+    _start_terrier(pt, cfg.launcher.terrier_version)
+    indexing_args["type"] = pt.terrier.IndexingType.CLASSIC
+    indexref = pt.terrier.IterDictIndexer(str(target), **indexing_args).index(
+        iter(inputs.documents)
+    )
+    index = pt.terrier.IndexFactory.of(indexref)
+    try:
+        _verify_document_ids(index, inputs.documents)
+    finally:
+        index.close()
+    if not (target / "data.properties").is_file():
+        raise FileNotFoundError(f"Terrier did not persist index properties: {target}")
+    checksum = hashlib.sha256()
+    for doc in inputs.documents:
+        checksum.update(json.dumps(doc, ensure_ascii=False, sort_keys=True).encode())
+        checksum.update(b"\n")
+    provenance = {
+        "dataset_revision": corpus.provenance["revision"],
+        "model_revision": None,
+        "local_revision_verified": corpus.provenance["local_revision_verified"],
+        "corpus_sha256": checksum.hexdigest(),
+        "corpus_provenance": corpus.provenance,
+        "documents": len(inputs.documents),
+        "document_domains": {row["doc_id"]: row["domain"] for row in corpus},
+        "doc_ids_verified_against_index": True,
+        "versions": {name: version(name) for name in ("pyterrier", "pandas")},
+        "terrier_version": pt.terrier.version(),
+        "python": platform.python_version(),
+        "output_dir": str(target),
+        "index_location": str(target / "data.properties"),
+    }
+    write_index_manifest(target, cfg, provenance=provenance)
+    return provenance
+
+
 def to_pyterrier(corpus: Records, queries: Records, qrels: Records | None = None) -> TerrierInputs:
     """Convert canonical data; docno is exactly the corpus/qrel paper ID.
 
@@ -49,6 +120,17 @@ def to_pyterrier(corpus: Records, queries: Records, qrels: Records | None = None
             raise ValueError(f"Empty corpus text: {doc['docno']}")
     if len({d["docno"] for d in documents}) != len(documents):
         raise ValueError("Duplicate canonical document IDs")
+    return _terrier_inputs(documents, queries, canonical_qrels)
+
+
+def to_pyterrier_queries(corpus: Records, queries: Records) -> TerrierInputs:
+    """Convert independent queries, validating positives against indexed identities."""
+    if not corpus or not queries:
+        raise ValueError("BM25 needs a nonempty corpus and query set")
+    return _terrier_inputs((), queries, validate_qrels(queries, corpus))
+
+
+def _terrier_inputs(documents, queries: Records, canonical_qrels: Records) -> TerrierInputs:
     unique = len({r["query_id"] for r in queries}) == len(queries)
     mapping = []
     topics = []
@@ -61,6 +143,8 @@ def to_pyterrier(corpus: Records, queries: Records, qrels: Records | None = None
     by_key = {row["query_key"]: row["qid"] for row in mapping}
     if len(by_key) != len(mapping):
         raise ValueError("Duplicate canonical query keys")
+    if len({row["qid"] for row in mapping}) != len(mapping):
+        raise ValueError("Ambiguous canonical query identifiers")
     qrels = [
         {"qid": by_key[r["query_key"]], "docno": r["doc_id"], "label": r["relevance"]}
         for r in canonical_qrels
@@ -80,9 +164,12 @@ def bm25_experiment(
     *,
     threads: int = 1,
     terrier_version: str = "5.11",
+    settings=None,
 ) -> pd.DataFrame:
-    """Build a fresh Terrier index, retrieve top 100, evaluate, and save TREC output.
+    """Build a fresh Terrier index, retrieve, evaluate, and save TREC output.
 
+    Resolved Hydra settings bind model/depth/metric arguments when supplied.
+    Otherwise the existing top-100 tutorial defaults remain unchanged.
     Uses IterDictIndexer, Retriever(wmodel='BM25'), Experiment, and ir_measures
     metric objects. Existing output directories are refused to prevent stale
     indexes/runs. Java starts only when this function is explicitly called.
@@ -91,42 +178,54 @@ def bm25_experiment(
 
     if threads < 1:
         raise ValueError("threads must be positive")
+    if settings is not None:
+        from scientific_tot.config_arguments import bm25_arguments, require_corpus_settings
+        from scientific_tot.configuration import resolve_config
+
+        settings = resolve_config(settings, Path.cwd(), Path(output).resolve())
+        require_corpus_settings(settings, corpus, queries)
+        terrier_version = settings.launcher.terrier_version
+        indexing_args, retrieval_args = bm25_arguments(
+            settings, docno_bytes=max(len(r["doc_id"].encode("utf-8")) for r in corpus)
+        )
+    else:
+        indexing_args = retrieval_args = None
     inputs = to_pyterrier(corpus, queries)
     target = Path(output).resolve()
     if target.exists():
         raise FileExistsError(f"Choose a fresh experiment directory: {target}")
-    if not pt.java.started():
-        # Use the locked JDK rather than a machine-dependent system Java.
-        from jdk4py import JAVA_HOME
-
-        pt.java.set_java_home(str(JAVA_HOME))
-        pt.terrier.set_version(terrier_version)
-        pt.java.init()
-    elif pt.terrier.version() != terrier_version:
-        raise ValueError("JVM already uses a different Terrier version; start a fresh process")
+    _start_terrier(pt, terrier_version)
     target.mkdir(parents=True)
     # Terrier's metadata storage truncates at its configured capacity; compute
     # enough space for the longest actual ID and then verify every indexed ID.
     meta_length = max(len(row["docno"].encode("utf-8")) for row in inputs.documents)
-    indexer = pt.terrier.IterDictIndexer(
-        str(target / "index"), meta={"docno": meta_length}, text_attrs=["text"], threads=threads
-    )
+    if indexing_args is None:
+        indexing_args = {"meta": {"docno": meta_length}, "text_attrs": ["text"], "threads": threads}
+    else:
+        indexing_args["type"] = pt.terrier.IndexingType.CLASSIC
+    indexer = pt.terrier.IterDictIndexer(str(target / "index"), **indexing_args)
     indexref = indexer.index(iter(inputs.documents))
     index = pt.terrier.IndexFactory.of(indexref)
     try:
-        if index.getCollectionStatistics().getNumberOfDocuments() != len(inputs.documents):
-            raise RuntimeError("Terrier document count differs from canonical corpus")
-        meta = index.getMetaIndex()
-        indexed_ids = {str(meta.getItem("docno", i)) for i in range(len(inputs.documents))}
-        if indexed_ids != {row["docno"] for row in inputs.documents}:
-            raise RuntimeError("Terrier indexed docnos differ from canonical corpus IDs")
+        _verify_document_ids(index, inputs.documents)
         # The standard Terrier tokeniser handles natural-language query syntax.
-        retriever = pt.terrier.Retriever(index, wmodel="BM25", num_results=100, threads=threads)
+        retrieval_args = retrieval_args or {
+            "wmodel": "BM25",
+            "num_results": 100,
+            "threads": threads,
+        }
+        retriever = pt.terrier.Retriever(index, **retrieval_args)
         run = retriever.transform(inputs.topics)
         from scientific_tot.integrations.evaluation import evaluate_run
 
         metrics = evaluate_run(
-            run, inputs.topics, inputs.qrels, inputs.query_ids, target, name="BM25"
+            run,
+            inputs.topics,
+            inputs.qrels,
+            inputs.query_ids,
+            target,
+            name="BM25",
+            evaluation=settings.evaluation if settings is not None else None,
         )
         digest = hashlib.sha256()
         for doc in inputs.documents:
@@ -138,12 +237,14 @@ def bm25_experiment(
             "qrels": len(inputs.qrels),
             "corpus_sha256": digest.hexdigest(),
             "doc_ids_verified_against_index": True,
-            "model": "Terrier BM25 defaults",
-            "cutoff": 100,
+            "model": "Terrier BM25 defaults" if settings is None else dict(retrieval_args),
+            "cutoff": retrieval_args["num_results"],
             "tokeniser": "Terrier English",
             "stemmer": "PorterStemmer",
             "stopwords": "Stopwords",
-            "metrics": ["RR@10 (MRR@10)", "R@10", "R@100"],
+            "metrics": ["RR@10 (MRR@10)", "R@10", "R@100"]
+            if settings is None
+            else list(settings.evaluation.metrics),
             "versions": {name: version(name) for name in ["pyterrier", "pandas", "ir-measures"]},
             "terrier_version": pt.terrier.version(),
             "python": platform.python_version(),

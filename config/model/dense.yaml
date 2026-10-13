@@ -10,4 +10,4 @@ encoding:
   document_prompt: "passage: "
 indexing:
   factory: Flat
-  metric: inner_product
+  metric: inner_product  # Existing implementation supports IndexFlatIP only.

@@ -216,6 +216,70 @@ def _encode_tasks(config: EncodingConfig, revision: str, model_cache: Path, task
     return encoded
 
 
+def cached_encoding(
+    config: EncodingConfig,
+    revision: str,
+    cache: Path,
+    *,
+    task: str,
+    rows: list[dict],
+    dataset_revision: str | None,
+    representation: dict | None = None,
+) -> tuple:
+    """Independent task caches using the existing encoder, atomic cache and FAISS I/O.
+
+    A document cache key excludes query prompts; query keys exclude document prompts.
+    Only a cache miss loads Sentence Transformers, and each call encodes one task.
+    """
+    import faiss
+
+    if task not in {"document", "query"} or not rows:
+        raise ValueError("Choose a nonempty document or query encoding task")
+    kwargs = encoding_kwargs(config, task)
+    model = asdict(config)
+    other = "query" if task == "document" else "document"
+    for field in (f"{other}_prompt", f"{other}_prompt_name", "faiss_threads"):
+        model.pop(field)
+    model.update(model_revision=revision, resolved_revision=revision)
+    configuration = {
+        "schema_version": 2,
+        "task": task,
+        "model": model,
+        "prompt_arguments": kwargs,
+        "content_sha256": record_digest(rows),
+        "dataset_revision": dataset_revision,
+        "precision": "float32",
+        "versions": {
+            name: version(name)
+            for name in ("sentence-transformers", "transformers", "torch", "numpy", "faiss-cpu")
+        },
+    }
+    if task == "document":
+        configuration.update(representation=representation, index="FAISS IndexFlatIP")
+    entry = cache / record_digest([configuration])
+    hit = entry.exists()
+    faiss.omp_set_num_threads(config.faiss_threads)
+    if not hit:
+        text_key = "text" if task == "document" else "query"
+        vectors, metadata = _encode_tasks(
+            config,
+            revision,
+            cache / "models",
+            {task: {"texts": [row[text_key] for row in rows], "kwargs": kwargs}},
+        )[task]
+        index = None
+        ids = None
+        if task == "document":
+            index = faiss.IndexFlatIP(vectors.shape[1])
+            index.add(vectors)
+            ids = [row["docno"] for row in rows]
+        _write_cache(entry, configuration, vectors, metadata, index=index, ids=ids)
+    vectors, manifest = _read_cache(entry, configuration)
+    if len(vectors) != len(rows):
+        raise ValueError("Cached embedding count differs from the configured input")
+    return vectors, manifest, entry, hit
+
+
 def dense_experiment(
     corpus: Records,
     queries: Records,
@@ -224,6 +288,7 @@ def dense_experiment(
     cache: str | Path,
     config: EncodingConfig | None = None,
     baseline: str | Path | None = None,
+    settings=None,
 ) -> pd.DataFrame:
     """Encode in library batches, search a persistent FAISS IndexFlatIP, evaluate.
 
@@ -232,7 +297,19 @@ def dense_experiment(
     """
     import faiss
 
+    if settings is not None:
+        from scientific_tot.config_arguments import dense_arguments, require_corpus_settings
+        from scientific_tot.configuration import resolve_config
+
+        if config is not None:
+            raise ValueError("Pass Hydra settings or EncodingConfig, not both")
+        settings = resolve_config(settings, Path.cwd(), Path(output).resolve())
+        require_corpus_settings(settings, corpus, queries)
+        if Path(cache).resolve() != Path(settings.launcher.cache_root) / "embeddings":
+            raise ValueError("Hydra settings require cache=launcher.cache_root/embeddings")
+        config = EncodingConfig(**dense_arguments(settings))
     config = config or EncodingConfig()
+    top_k = settings.retrieval.top_k if settings is not None else 100
     inputs = to_pyterrier(corpus, queries)
     baseline_info = verify_baseline(inputs, baseline) if baseline is not None else None
     representations = {r["representation"] for r in corpus}
@@ -323,7 +400,7 @@ def dense_experiment(
     if len(query_vectors) != len(inputs.topics) or query_vectors.shape[1] != index.d:
         raise ValueError("Cached query embeddings do not match topics/index")
     # Search and ranking are wholly supplied by FAISS; only row numbers are mapped to IDs.
-    scores, positions = index.search(np.asarray(query_vectors), min(100, len(ids)))
+    scores, positions = index.search(np.asarray(query_vectors), min(top_k, len(ids)))
     rows = [
         {"qid": qid, "docno": cached_ids[int(position)], "rank": rank, "score": float(score)}
         for qid, matches, values in zip(inputs.topics.qid, positions, scores, strict=True)
@@ -332,7 +409,15 @@ def dense_experiment(
     ]
     run = pd.DataFrame(rows, columns=["qid", "docno", "rank", "score"])
     target.mkdir(parents=True)
-    metrics = evaluate_run(run, inputs.topics, inputs.qrels, inputs.query_ids, target, name="Dense")
+    metrics = evaluate_run(
+        run,
+        inputs.topics,
+        inputs.qrels,
+        inputs.query_ids,
+        target,
+        name="Dense",
+        evaluation=settings.evaluation if settings is not None else None,
+    )
     manifest = {
         "model": common["model"],
         "dataset_revision": corpus.provenance.get("revision"),
@@ -353,7 +438,7 @@ def dense_experiment(
             "precision": "float32",
             "device": "cpu",
             "threads": config.faiss_threads,
-            "cutoff": 100,
+            "cutoff": top_k,
         },
         "encoding": {"documents": doc_manifest["encoding"], "queries": query_manifest["encoding"]},
         "cache": {

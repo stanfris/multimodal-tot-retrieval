@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 
@@ -13,7 +14,7 @@ CONFIG_DIR = Path(__file__).parent / "config"
 if not CONFIG_DIR.is_dir():
     CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 
-STAGES = {"prepare", "index", "evaluate", "search", "export"}
+STAGES = {"prepare", "index", "retrieve", "evaluate", "search", "export"}
 SPLITS = {"train", "test", "train+test", "all"}
 BACKENDS = {
     "bm25": "pyterrier",
@@ -69,10 +70,18 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
             resolved.launcher[key] = str(absolute(resolved.launcher[key], base_dir))
         for key in ("root", "cache_dir"):
             resolved.dataset[key] = str(absolute(resolved.dataset[key], base_dir))
+        # Explicit local checkpoint references share the original invocation base.
+        model_key = "checkpoint" if resolved.model.name == "colbert" else "model_id"
+        reference = resolved.model.get(model_key)
+        if isinstance(reference, str) and reference.startswith(("/", "./", "../", "~")):
+            resolved.model[model_key] = str(absolute(reference, base_dir))
         for key, value in resolved.dataset.artifacts.items():
             resolved.dataset.artifacts[key] = str(absolute(value, base_dir))
-        if resolved.paths.index is not None:
-            resolved.paths.index = str(absolute(resolved.paths.index, base_dir))
+        for key in ("index", "run"):
+            if resolved.paths[key] is not None:
+                resolved.paths[key] = str(absolute(resolved.paths[key], base_dir))
+        if run_dir is not None and resolved.stage.name == "index" and resolved.paths.index is None:
+            resolved.paths.index = str(run_dir.resolve() / "index")
         inputs = [
             Path(resolved.dataset.root),
             *(Path(p) for p in resolved.dataset.artifacts.values()),
@@ -91,6 +100,22 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
                     not output.is_relative_to(source) and not source.is_relative_to(output),
                     f"Writable path {output} overlaps dataset input {source}",
                 )
+        caches = [Path(resolved.launcher.cache_root), Path(resolved.dataset.cache_dir)]
+        outputs = [Path(resolved.launcher.output_root)]
+        if run_dir is not None:
+            outputs.append(run_dir.resolve())
+        if resolved.stage.name == "index" and resolved.paths.index is not None:
+            outputs.append(Path(resolved.paths.index))
+        for output in outputs:
+            for cache in caches:
+                _require(
+                    not overlaps(output, cache), "Experiment output and reusable cache overlap"
+                )
+        if resolved.paths.run is not None and run_dir is not None:
+            _require(
+                not overlaps(Path(resolved.paths.run), run_dir.resolve()),
+                "Existing paths.run must be separate from the new run directory",
+            )
         if run_dir is not None and resolved.paths.index is not None:
             index, output = Path(resolved.paths.index), run_dir.resolve()
             if resolved.stage.name != "index":
@@ -100,6 +125,11 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
                 )
         if resolved.stage.name == "index" and resolved.paths.index is not None:
             index = Path(resolved.paths.index)
+            if run_dir is not None:
+                _require(
+                    not run_dir.resolve().is_relative_to(index),
+                    "Index destination must not contain the run directory",
+                )
             for source in inputs:
                 _require(
                     not index.is_relative_to(source) and not source.is_relative_to(index),
@@ -113,7 +143,10 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
 
 def _validate(cfg: DictConfig) -> None:
     _require(type(cfg.dry_run) is bool, "dry_run must be a boolean")
-    _require(type(cfg.seed) is int and cfg.seed >= 0, "seed must be a nonnegative integer")
+    _require(
+        _text(cfg.run.name) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+-]*", cfg.run.name),
+        "run.name must be a plain filesystem-safe experiment name",
+    )
     _require(cfg.stage.name in STAGES, f"Unsupported stage: {cfg.stage.name}")
     for key in ("name", "corpus", "queries"):
         _require(cfg.split[key] in SPLITS, f"Unsupported split.{key}: {cfg.split[key]}")
@@ -159,6 +192,9 @@ def _validate(cfg: DictConfig) -> None:
         set(dataset.artifacts) == {"preprocessed", "metadata", "queries", "splits", "pdfs"},
         "dataset.artifacts requires preprocessed, metadata, queries, splits, and pdfs paths",
     )
+    for key in ("indexing", "encoding", "faiss"):
+        _require(_positive(cfg.launcher.threads[key]), f"launcher.threads.{key} must be positive")
+    _require(_text(cfg.launcher.terrier_version), "launcher.terrier_version must be text")
     _require(cfg.launcher.kind == "local", "Only local launcher profiles are implemented")
     _require(cfg.launcher.device in {"cpu", "cuda", "mps"}, "Unsupported launcher.device")
     rep, model = cfg.representation, cfg.model
@@ -174,7 +210,27 @@ def _validate(cfg: DictConfig) -> None:
         rep.modality == expected,
         f"model={model.name} is incompatible with representation={rep.name}; needs {expected}",
     )
+    _validate_keys(cfg)
+    if rep.name == "title_abstract":
+        _require(
+            list(rep.fields) == ["title", "abstract"],
+            "Existing adapter requires representation.fields=[title,abstract]",
+        )
+    if rep.name == "figures":
+        _require(type(rep.include_captions) is bool, "include_captions must be boolean")
     if rep.name == "passages":
+        _require(
+            rep.aggregation.method in {"max", "mean"}, "Unsupported passage aggregation method"
+        )
+        _require(
+            type(rep.preprocessing.strip_whitespace) is bool, "strip_whitespace must be boolean"
+        )
+        _require(
+            OmegaConf.is_list(rep.chunking.separators)
+            and len(rep.chunking.separators) > 0
+            and all(isinstance(x, str) for x in rep.chunking.separators),
+            "chunking.separators must be a nonempty list of strings",
+        )
         _require(
             rep.preprocessing.library == "langchain_text_splitters.RecursiveCharacterTextSplitter",
             "Unsupported passage splitter",
@@ -188,7 +244,9 @@ def _validate(cfg: DictConfig) -> None:
     if rep.name == "pages":
         _require(rep.rendering.library == "pypdfium2", "Unsupported page rendering library")
         _require(
-            type(rep.rendering.scale) in {int, float} and rep.rendering.scale > 0,
+            type(rep.rendering.scale) in {int, float}
+            and math.isfinite(rep.rendering.scale)
+            and rep.rendering.scale > 0,
             "rendering.scale must be positive",
         )
     if model.name in {"dense", "visual"}:
@@ -198,22 +256,43 @@ def _validate(cfg: DictConfig) -> None:
         _require(
             model.revision is None or _text(model.revision), "model.revision must be null or text"
         )
+        if cfg.stage.name in {"retrieve", "search"}:
+            _require(
+                isinstance(model.revision, str)
+                and re.fullmatch(r"[0-9a-f]{40}", model.revision) is not None,
+                "Dense index consumers require model.revision pinned to the build commit",
+            )
         _require(_positive(model.batch_size), "model.batch_size must be positive")
         _require(
             model.indexing.factory == "Flat", "Only the verified FAISS Flat index is supported"
         )
-        _require(model.indexing.metric in {"inner_product", "l2"}, "Unsupported FAISS metric")
+        _require(
+            model.indexing.metric == "inner_product",
+            "Existing FAISS implementation supports inner_product only",
+        )
         _require(
             type(model.encoding.normalize_embeddings) is bool,
             "model.encoding.normalize_embeddings must be boolean",
         )
+        for task in ("query", "document"):
+            _require(
+                isinstance(model.encoding[f"{task}_prompt"], str),
+                f"model.encoding.{task}_prompt must be a string (empty is allowed)",
+            )
     elif model.name == "colbert":
         _require(_text(model.checkpoint), "model.checkpoint is required for colbert")
         for key in ("index_bsize", "kmeans_niters", "doc_maxlen"):
             _require(_positive(model.indexing[key]), f"model.indexing.{key} must be positive")
-        _require(model.indexing.nbits in {1, 2, 4}, "ColBERT nbits must be 1, 2, or 4")
+        _require(
+            type(model.indexing.nbits) is int and model.indexing.nbits in {1, 2, 4},
+            "ColBERT nbits must be 1, 2, or 4",
+        )
         _require(_positive(model.retrieval.query_maxlen), "query_maxlen must be positive")
     elif model.name == "visual":
+        _require(
+            type(model.indexing.store_collection_with_index) is bool,
+            "store_collection_with_index must be boolean",
+        )
         _require(model.indexing.overwrite is False, "model.indexing.overwrite must remain false")
         for key in ("max_image_width", "max_image_height"):
             _require(
@@ -221,6 +300,11 @@ def _validate(cfg: DictConfig) -> None:
                 f"model.indexing.{key} must be null or positive",
             )
     elif model.name == "bm25":
+        _require(type(model.indexing.blocks) is bool, "model.indexing.blocks must be boolean")
+        _require(
+            set(model.indexing.meta) == {"docno"} and _positive(model.indexing.meta.docno),
+            "model.indexing.meta requires a positive docno capacity",
+        )
         _require(model.retrieval.wmodel == "BM25", "BM25 profile requires wmodel=BM25")
         _require(
             model.indexing.type == "classic", "BM25 profile requires a classic persistent index"
@@ -228,19 +312,94 @@ def _validate(cfg: DictConfig) -> None:
         for key in ("bm25.b", "bm25.k_1"):
             value = model.retrieval.controls[key]
             _require(
-                type(value) in {int, float} and value >= 0,
+                type(value) in {int, float} and math.isfinite(value) and value >= 0,
                 f"model.retrieval.controls.{key} must be nonnegative",
             )
         _require(model.retrieval.controls["bm25.b"] <= 1, "BM25 b must be at most 1")
     _require(cfg.evaluation.backend == "ir_measures", "Unsupported evaluation backend")
-    _require(_positive(cfg.evaluation.top_k), "evaluation.top_k must be positive")
+    _require(_positive(cfg.retrieval.top_k), "retrieval.top_k must be positive")
     _require(
         OmegaConf.is_list(cfg.evaluation.metrics)
         and bool(cfg.evaluation.metrics)
         and all(_text(m) for m in cfg.evaluation.metrics),
         "evaluation.metrics must be a nonempty list of ir_measures expressions",
     )
-    if cfg.stage.name in {"evaluate", "search"}:
+    metrics = list(cfg.evaluation.metrics)
+    _require(len(set(metrics)) == len(metrics), "evaluation.metrics must be distinct")
+    # A documented subset of ir_measures, validated without optional imports.
+    _require(
+        all(re.fullmatch(r"(nDCG|RR|R|P|AP)@[1-9][0-9]*", m) for m in metrics),
+        "Unsupported evaluation.metrics; use nDCG, RR, R, P, or AP with positive @cutoffs",
+    )
+    if cfg.stage.name in {"retrieve", "search"}:
+        if dataset.source == "hub":
+            _require(
+                dataset.revision is not None,
+                "Hub index consumers require dataset.revision pinned to the build commit",
+            )
         _require(_text(cfg.paths.index), f"stage={cfg.stage.name} requires an existing paths.index")
     if cfg.stage.name == "search":
         _require(_text(cfg.stage.query), "stage.query is required for search")
+
+    if cfg.stage.name == "evaluate":
+        _require(_text(cfg.paths.run), "stage=evaluate requires a completed retrieval paths.run")
+    else:
+        _require(cfg.paths.run is None, "paths.run is only consumed by stage=evaluate")
+    if cfg.stage.name not in {"index", "retrieve", "search"}:
+        _require(cfg.paths.index is None, "paths.index is only consumed by index/retrieve/search")
+
+
+def overlaps(first: Path, second: Path) -> bool:
+    return first.is_relative_to(second) or second.is_relative_to(first)
+
+
+def _validate_keys(cfg: DictConfig) -> None:
+    """Reject even +overrides that no consumer recognizes; YAML owns the key schema."""
+
+    def check(actual, template, prefix):
+        if isinstance(template, dict):
+            _require(isinstance(actual, dict), f"{prefix} must be a mapping")
+            _require(
+                set(actual) == set(template),
+                f"Unknown or missing settings in {prefix}: {set(actual) ^ set(template)}",
+            )
+            for key in template:
+                check(actual[key], template[key], f"{prefix}.{key}")
+        else:
+            _require(not isinstance(actual, dict), f"{prefix} must not be a mapping")
+
+    actual = OmegaConf.to_container(cfg, resolve=False)
+
+    root = OmegaConf.to_container(OmegaConf.load(CONFIG_DIR / "config.yaml"), resolve=False)
+    groups = {
+        "dataset",
+        "split",
+        "representation",
+        "model",
+        "stage",
+        "retrieval",
+        "evaluation",
+        "launcher",
+    }
+    keys = (set(root) - {"defaults", "hydra"}) | groups
+    _require(set(cfg) == keys, f"Unknown or missing configuration groups: {set(cfg) ^ keys}")
+    for key in set(root) - {"defaults", "hydra"}:
+        check(actual[key], root[key], key)
+    profiles = {
+        "dataset": "default",
+        "launcher": "local_cpu",
+        "evaluation": "default",
+        "retrieval": "default",
+        "split": cfg.split.name,
+        "stage": cfg.stage.name,
+        "model": cfg.model.name,
+        "representation": cfg.representation.name,
+    }
+    for group, profile in profiles.items():
+        check(
+            actual[group],
+            OmegaConf.to_container(
+                OmegaConf.load(CONFIG_DIR / group / f"{profile}.yaml"), resolve=False
+            ),
+            group,
+        )

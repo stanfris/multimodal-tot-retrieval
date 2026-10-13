@@ -60,6 +60,8 @@ record schemas. [Architecture](docs/architecture.md) records design decisions.
 
 ```sh
 uv run scientific-tot dry_run=true
+uv run scientific-tot stage=prepare dataset.root=/your/restored/data
+uv run scientific-tot stage=index dataset.root=/your/restored/data
 uv run scientific-tot dry_run=true experiment=dense_passages launcher=local_gpu
 TOT_DATA_ROOT=/your/existing/data uv run scientific-tot dry_run=true experiment=bm25_fulltext
 uv run scientific-tot --multirun dry_run=true experiment=bm25_fulltext,dense_passages split=train,test
@@ -67,9 +69,14 @@ uv run scientific-tot --multirun dry_run=true experiment=bm25_fulltext,dense_pas
 
 [Configuration guide](docs/configuration.md) explains all YAML groups, overrides,
 local/DGX03 data paths, model parameter contracts, presets, validation, and
-reproducibility. The CLI currently implements configuration and dry runs;
-execution stages raise explicit `NotImplementedError`s until connected in later
-phases. Existing examples below remain executable.
+reproducibility. BM25 `prepare` and `index` execute for `fulltext` and
+`title_abstract`: preparation exports validated canonical records with coverage
+reports; indexing persists a fresh PyTerrier index and its configuration/provenance
+manifest. Both validate every positive target against the selected corpus. Other
+stages and models remain explicit `NotImplementedError`s. Existing examples below
+remain executable with unchanged defaults. The
+[profile audit](docs/configuration-audit.md) records every YAML consumer, parameter
+binding, necessary configuration change, and unsupported operation.
 
 ## Full document collection (default)
 

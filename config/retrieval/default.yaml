@@ -1,0 +1,1 @@
+top_k: 100  # Retriever.num_results / FAISS Index.search k; also used by search.

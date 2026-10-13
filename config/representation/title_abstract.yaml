@@ -2,6 +2,3 @@ name: title_abstract
 modality: text
 source: original_metadata
 fields: [title, abstract]
-preprocessing:
-  library: null
-  strip_whitespace: true

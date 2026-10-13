@@ -123,3 +123,23 @@ positives must resolve before indexing or encoding. The example defaults use
 `corpus_split="all"`, unlimited documents/test queries, and original fulltext.
 Notebook inputs default to restored data, with fresh output paths per execution;
 fixture demos require an explicit data-root override.
+
+
+## Experiment configuration boundary
+
+Hydra's independent groups in `config/` are the experiment-facing authority.
+`configuration.py` validates YAML-owned keys, values, compatibility and managed
+paths without importing optional backends. Plain functions in `config_arguments.py`
+bind existing Dataset/adapter, Terrier, and EncodingConfig arguments; the adapter
+is unchanged. Existing tutorial functions accept resolved `settings` without
+changing defaults for callers that omit them.
+
+`hydra_run.py` reserves fresh outputs, preflights every basic-sweeper job, stores
+read-only configuration/provenance and validates stage artifacts. `config_artifacts.py`
+provides index build-setting identity and retrieval snapshot verification.
+`stages.py` executes BM25 preparation and indexing through the existing adapter
+and PyTerrier integration. Preparation exports validated canonical records;
+indexing builds a persistent classic index, verifies stored paper IDs, and saves
+its completion manifest. Remaining stage/model combinations are unimplemented. Combined tutorial functions are never
+used as stage implementations. Reusable caches must be outside experiment results.
+See the [configuration guide](configuration.md) and [complete profile audit](configuration-audit.md).

@@ -20,6 +20,7 @@ scientific-tot = "scientific_tot.hydra_entry:main"
 
 [project.optional-dependencies]
 dense = [
+    "langchain-text-splitters>=0.3,<2",
     "faiss-cpu>=1.10,<2",
     "numpy>=1.26,<3",
     "pandas>=2.2,<4",
@@ -43,6 +44,7 @@ dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 # All scripts and both notebooks share the default .venv. Extras above remain
 # available for library consumers; project users do not need extra flags.
 examples = [
+    "langchain-text-splitters>=0.3,<2",
     "faiss-cpu>=1.10,<2",
     "numpy>=1.26,<3",
     "pandas>=2.2,<4",

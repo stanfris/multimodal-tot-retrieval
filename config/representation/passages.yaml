@@ -8,3 +8,5 @@ chunking:
   chunk_size: 1000  # Library default length function counts characters, not tokens.
   chunk_overlap: 200
   separators: ["\n\n", "\n", " ", ""]
+aggregation:
+  method: max  # PyTerrier max_passage; mean is also supported over all indexed passages.

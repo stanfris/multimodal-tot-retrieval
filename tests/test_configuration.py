@@ -108,9 +108,13 @@ def test_dataset_launcher_split_overrides(tmp_path, source, launcher, split):
     assert list(cfg.dataset.domains) == ["ACL", "NeurIPS"]
 
 
-@pytest.mark.parametrize("stage", ["prepare", "index", "evaluate", "search", "export"])
-def test_all_stages_explicitly_unimplemented(tmp_path, stage):
-    overrides = [f"stage={stage}", "paths.index=existing/index"]
+@pytest.mark.parametrize("stage", ["search", "export"])
+def test_remaining_stages_explicitly_unimplemented(tmp_path, stage):
+    overrides = [f"stage={stage}"]
+    if stage in {"index", "retrieve", "search"}:
+        overrides.append("paths.index=existing/index")
+    if stage == "evaluate":
+        overrides.append("paths.run=existing/retrieval")
     if stage == "search":
         overrides.append("stage.query=scientific query")
     cfg = resolve_config(config(*overrides), tmp_path)
@@ -133,7 +137,7 @@ def test_all_stages_explicitly_unimplemented(tmp_path, stage):
         ("stage.name=generate", "Unsupported stage"),
         ("model.backend=unknown", "backend"),
         ("representation.source=query_clues", "original document"),
-        ("evaluation.top_k=0", "top_k"),
+        ("retrieval.top_k=0", "top_k"),
         ("evaluation.metrics=[]", "metrics"),
         ("dataset.artifacts.pdfs=''", "paths"),
         ("launcher.cache_root=data/cache", "overlaps"),
@@ -159,7 +163,7 @@ def test_invalid_settings(tmp_path, override, message):
         (["model=visual", "representation=pages", "model.model_id=null"], "model_id"),
         (["model=visual", "representation=pages", "model.indexing.overwrite=true"], "overwrite"),
         (["representation=passages", "representation.chunking.chunk_overlap=1000"], "overlap"),
-        (["stage=evaluate"], "paths.index"),
+        (["stage=evaluate"], "paths.run"),
         (["stage=search", "paths.index=/tmp/prior-index"], "stage.query"),
     ],
 )
@@ -188,7 +192,7 @@ def test_symlink_overlap_and_run_index_separation(tmp_path):
         resolve_config(config("launcher.output_root=alias/runs"), tmp_path)
     with pytest.raises(ValueError, match="separate"):
         resolve_config(
-            config("stage=evaluate", "paths.index=runs/index"), tmp_path, tmp_path / "runs"
+            config("stage=retrieve", "paths.index=runs/index"), tmp_path, tmp_path / "runs"
         )
 
 
@@ -223,7 +227,7 @@ def test_real_multirun(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     for i in range(6):
-        assert (tmp_path / "sweep" / str(i)).is_dir()
+        assert len(list((tmp_path / "sweep").glob(f"{i}-*"))) == 1
     assert result.stdout.count("dry_run: true") == 6
     assert (tmp_path / "sweep/multirun.yaml").is_file()
 
@@ -232,7 +236,7 @@ def test_failed_execution_provenance_and_no_overwrite(tmp_path):
     output = tmp_path / "attempt"
     result = cli(tmp_path, "stage=index", f"hydra.run.dir={output}", "dataset.revision=" + "a" * 40)
     assert result.returncode != 0
-    assert "NotImplementedError" in result.stderr
+    assert "MissingComponentError" in result.stderr
     manifest = json.loads((output / "manifest.json").read_text())
     assert manifest["status"] == "failed"
     assert manifest["dataset_revision"] == "a" * 40
@@ -269,7 +273,9 @@ def test_run_stage_guard_and_manifest_boundary(tmp_path, monkeypatch):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     calls = []
-    monkeypatch.setattr("scientific_tot.hydra_run.execute_stage", lambda value: calls.append(value))
+    monkeypatch.setattr(
+        "scientific_tot.hydra_run.execute_stage", lambda value, **kwargs: calls.append(value)
+    )
     run_stage(cfg, run_dir, hydra_cfg, ROOT)
     assert len(calls) == 1
     assert json.loads((run_dir / "manifest.json").read_text())["status"] == "completed"
@@ -329,3 +335,394 @@ def test_invalid_sweep_paths_cannot_bypass_output_guard(tmp_path, override, exis
         assert list(output.iterdir()) == [sentinel]
     else:
         assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "overrides,message",
+    [
+        (["+seed=42"], "Unknown"),
+        (["+model.magic=1"], "Unknown"),
+        (["+evaluation.top_k=100"], "Unknown"),
+        (["+model.retrieval.controls.typo=1"], "Unknown"),
+        (["model=dense", "model.encoding.query_prompt=null"], "prompt"),
+        (["model=dense", "model.indexing.metric=l2"], "inner_product"),
+        (["model=bm25", "model.indexing.blocks=yes"], "boolean"),
+        (["model=bm25", "model.indexing.meta.docno=0"], "docno"),
+        (["model=bm25", "model.retrieval.controls={bm25.b:nan,bm25.k_1:1.2}"], "nonnegative"),
+        (["model=colbert", "model.indexing.nbits=true"], "nbits"),
+        (["representation=title_abstract", "representation.fields=[title]"], "fields"),
+        (["representation=passages", "representation.chunking.separators=[]"], "separators"),
+        (["model=visual", "representation=pages", "representation.rendering.scale=.inf"], "scale"),
+        (["launcher.threads.encoding=true"], "positive"),
+        (["launcher.cache_root=results/hydra/cache"], "cache overlap"),
+        (["dataset.cache_dir=results/hydra"], "cache overlap"),
+        (["run.name=../unsafe"], "run.name"),
+        (["run.name='a/b'"], "run.name"),
+        (["evaluation.metrics=[UNKNOWN@10]"], "Unsupported"),
+        (["evaluation.metrics=[RR@0]"], "Unsupported"),
+        (["evaluation.metrics=[RR@10,RR@10]"], "distinct"),
+    ],
+)
+def test_new_invalid_settings(tmp_path, overrides, message):
+    with pytest.raises(ValueError, match=message):
+        resolve_config(config(*overrides), tmp_path)
+
+
+def test_names_follow_effective_groups_and_splits(tmp_path):
+    cfg = resolve_config(
+        config("experiment=dense_passages", "representation=fulltext", "split.queries=train+test"),
+        tmp_path,
+    )
+    assert cfg.run.name == "dense_fulltext_c-all_q-train+test"
+    assert resolve_config(config("run.name=my-study"), tmp_path).run.name == "my-study"
+
+
+@pytest.mark.parametrize(
+    "override",
+    ["launcher.cache_root=cache,results/hydra", "retrieval.top_k=100,0", "model=bm25,visual"],
+)
+def test_invalid_sweep_job_refused_before_metadata(tmp_path, override):
+    result = cli(
+        tmp_path, "--multirun", "dry_run=true", override, f"hydra.sweep.dir={tmp_path / 'sweep'}"
+    )
+    assert result.returncode != 0
+    assert not (tmp_path / "sweep").exists()
+
+
+@pytest.mark.parametrize("override", ["hydra.sweep.subdir=../escape", "hydra.sweep.subdir=same"])
+def test_unsafe_sweep_layout(tmp_path, override):
+    result = cli(
+        tmp_path,
+        "--multirun",
+        "dry_run=true",
+        "split=train,test",
+        override,
+        f"hydra.sweep.dir={tmp_path / 'sweep'}",
+    )
+    assert result.returncode != 0
+    assert not (tmp_path / "sweep").exists()
+
+
+def test_sweep_duplicate_external_indexes(tmp_path):
+    result = cli(
+        tmp_path,
+        "--multirun",
+        "dry_run=true",
+        "stage=index",
+        "split=train,test",
+        "paths.index=shared-index",
+        f"hydra.sweep.dir={tmp_path / 'sweep'}",
+    )
+    assert result.returncode != 0
+    assert "distinct" in result.stderr
+    assert not (tmp_path / "sweep").exists()
+
+
+def test_hydra_cannot_write_automatic_snapshots(tmp_path):
+    result = cli(
+        tmp_path, "dry_run=true", "hydra.output_subdir=.hydra", f"hydra.run.dir={tmp_path / 'run'}"
+    )
+    assert result.returncode != 0
+    assert not (tmp_path / "run").exists()
+
+
+def test_index_contract_and_integrity(tmp_path):
+    from scientific_tot.config_artifacts import verify_index, write_index_manifest
+
+    index = tmp_path / "index"
+    index.mkdir()
+    built = resolve_config(config("stage=index"), tmp_path)
+    provenance = {"dataset_revision": None, "model_revision": None, "corpus_sha256": "a" * 64}
+    write_index_manifest(index, built, provenance=provenance)
+    cfg = resolve_config(
+        config(
+            "stage=retrieve",
+            "paths.index=index",
+            "split=train",
+            "retrieval.top_k=20",
+            "model.retrieval.controls={bm25.b:0.5,bm25.k_1:1.2}",
+        ),
+        tmp_path,
+    )
+    assert verify_index(index, cfg)["provenance"] == provenance
+    with pytest.raises(FileExistsError):
+        write_index_manifest(index, built, provenance=provenance)
+    for override in (
+        "representation=title_abstract",
+        "split.corpus=train",
+        "model.indexing.blocks=true",
+    ):
+        bad = resolve_config(config("stage=retrieve", "paths.index=index", override), tmp_path)
+        with pytest.raises(ValueError, match="differs"):
+            verify_index(index, bad)
+    path = index / "index-manifest.json"
+    value = json.loads(path.read_text())
+    value["configuration"]["model"]["indexing"]["blocks"] = True
+    path.chmod(0o644)
+    path.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match="checksum"):
+        verify_index(index, cfg)
+
+
+def test_consumer_preflight_prevents_dispatch(tmp_path, monkeypatch):
+    cfg = resolve_config(config("stage=retrieve", "paths.index=legacy-index"), tmp_path)
+    calls = []
+    monkeypatch.setattr(
+        "scientific_tot.hydra_run.execute_stage", lambda cfg, **kwargs: calls.append(cfg)
+    )
+    run = tmp_path / "attempt"
+    run.mkdir()
+    with pytest.raises(FileNotFoundError):
+        run_stage(cfg, run, config(hydra=True).hydra, ROOT)
+    assert not calls
+    assert json.loads((run / "manifest.json").read_text())["status"] == "failed"
+    assert (run / ".hydra/config.yaml").stat().st_mode & 0o222 == 0
+
+
+def test_index_destination_and_cache_guard(tmp_path):
+    cfg = resolve_config(config("stage=index"), tmp_path, tmp_path / "attempt")
+    assert cfg.paths.index == str(tmp_path / "attempt/index")
+    for override in ("paths.index=cache/index", "paths.index=data/index"):
+        with pytest.raises(ValueError, match="overlap"):
+            resolve_config(config("stage=index", override), tmp_path, tmp_path / "attempt")
+
+
+def test_existing_index_refused_before_dispatch(tmp_path, monkeypatch):
+    (tmp_path / "index").mkdir()
+    sentinel = tmp_path / "index/keep"
+    sentinel.write_text("existing index")
+    cfg = resolve_config(config("stage=index", "paths.index=index"), tmp_path)
+    calls = []
+    monkeypatch.setattr(
+        "scientific_tot.hydra_run.execute_stage", lambda cfg, **kwargs: calls.append(cfg)
+    )
+    run = tmp_path / "attempt"
+    run.mkdir()
+    with pytest.raises(FileExistsError, match="existing index"):
+        run_stage(cfg, run, config(hydra=True).hydra, ROOT)
+    assert not calls
+    assert sentinel.read_text() == "existing index"
+
+
+def test_evaluation_consumes_only_completed_retrieval(tmp_path, monkeypatch):
+    from scientific_tot.config_artifacts import (
+        BATCH_FILES,
+        artifact_reference,
+        digest,
+        verify_retrieval,
+    )
+
+    retrieval = tmp_path / "batch"
+    (retrieval / ".hydra").mkdir(parents=True)
+    snapshot = resolve_config(
+        config("stage=retrieve", "paths.index=index", "retrieval.top_k=20"), tmp_path
+    )
+    OmegaConf.save(snapshot, retrieval / ".hydra/config.yaml")
+    value = {
+        "schema_version": 1,
+        "status": "completed",
+        "stage": "retrieve",
+        "configuration_sha256": digest(OmegaConf.to_container(snapshot)),
+    }
+    for name in BATCH_FILES:
+        (retrieval / name).touch()
+    value["artifacts"] = {
+        "outputs": {name: artifact_reference(retrieval / name) for name in BATCH_FILES}
+    }
+    (retrieval / "manifest.json").write_text(json.dumps(value))
+    assert verify_retrieval(retrieval)["stage"] == "retrieve"
+    cfg = resolve_config(config("stage=evaluate", "paths.run=batch"), tmp_path)
+    attempt = tmp_path / "evaluation"
+    attempt.mkdir()
+    calls = []
+    monkeypatch.setattr(
+        "scientific_tot.hydra_run.execute_stage", lambda cfg, **kwargs: calls.append(cfg)
+    )
+    with pytest.raises(ValueError, match="saved retrieval.top_k"):
+        run_stage(cfg, attempt, config(hydra=True).hydra, ROOT)
+    assert not calls
+    (retrieval / "topics.jsonl").unlink()
+    with pytest.raises(ValueError, match="Incomplete"):
+        verify_retrieval(retrieval)
+
+
+def test_configured_adapter_uses_existing_loader(tmp_path):
+    from scientific_tot.config_arguments import (
+        configured_adapter,
+        corpus_arguments,
+        query_arguments,
+    )
+
+    cfg = resolve_config(config(f"dataset.root={ROOT / 'tests/fixtures/adapter'}"), tmp_path)
+    adapter = configured_adapter(cfg)
+    corpus = adapter.load_corpus(**corpus_arguments(cfg))
+    queries = adapter.load_queries(**query_arguments(cfg))
+    assert len(corpus) == 2 and len(queries) == 1
+    assert corpus.provenance["selection"]["split"] == "all"
+    assert queries.provenance["selection"]["split"] == "test"
+    moved = resolve_config(
+        config("dataset.artifacts.metadata=elsewhere/metadata.parquet"), tmp_path
+    )
+    with pytest.raises(NotImplementedError, match="canonical"):
+        configured_adapter(moved)
+
+
+def test_argument_bindings(tmp_path):
+    from scientific_tot.config_arguments import bm25_arguments, dense_arguments
+
+    cfg = resolve_config(
+        config(
+            "model.indexing.blocks=true",
+            "model.indexing.meta.docno=256",
+            "model.retrieval.controls={bm25.b:0.75,bm25.k_1:2.5}",
+            "retrieval.top_k=17",
+            "launcher.threads.indexing=3",
+        ),
+        tmp_path,
+    )
+    indexing, retrieval = bm25_arguments(cfg, docno_bytes=140)
+    assert indexing == {
+        "type": "classic",
+        "blocks": True,
+        "meta": {"docno": 256},
+        "text_attrs": ["text"],
+        "threads": 3,
+    }
+    assert retrieval == {
+        "wmodel": "BM25",
+        "controls": {"bm25.b": 0.75, "bm25.k_1": 2.5},
+        "num_results": 17,
+        "threads": 3,
+    }
+    with pytest.raises(ValueError, match="truncate"):
+        bm25_arguments(cfg, docno_bytes=257)
+    dense = resolve_config(
+        config(
+            "model=dense",
+            "model.batch_size=7",
+            "launcher=local_gpu",
+            "model.encoding.normalize_embeddings=false",
+            "model.encoding.document_prompt=''",
+            "launcher.threads.faiss=2",
+        ),
+        tmp_path,
+    )
+    args = dense_arguments(dense)
+    assert args["similarity"] == "dot" and args["batch_size"] == 7
+    assert args["device"] == "cuda" and args["document_prompt"] == ""
+    assert args["faiss_threads"] == 2 and args["model_revision"] == dense.model.revision
+
+
+@pytest.mark.parametrize(
+    "profile", sorted(CONFIG_DIR.glob("*/*.yaml")), ids=lambda p: str(p.relative_to(CONFIG_DIR))
+)
+def test_every_yaml_profile_composes_and_validates(tmp_path, profile):
+    group, name = profile.parent.name, profile.stem
+    overrides = [f"{group}={name}"]
+    if (group == "model" and name == "visual") or (
+        group == "representation" and name in {"figures", "pages"}
+    ):
+        overrides += (
+            ["model=visual", "representation=pages"] if group == "model" else ["model=visual"]
+        )
+    if group == "stage" and name in {"retrieve", "search"}:
+        overrides.append("paths.index=prior-index")
+    if group == "stage" and name == "evaluate":
+        overrides.append("paths.run=prior-retrieval")
+    if group == "stage" and name == "search":
+        overrides.append("stage.query=test")
+    assert resolve_config(config(*overrides), tmp_path)
+
+
+def test_index_cannot_contain_run_directory(tmp_path):
+    with pytest.raises(ValueError, match="must not contain"):
+        resolve_config(config("stage=index", "paths.index=runs"), tmp_path, tmp_path / "runs/job")
+
+
+def test_dense_index_revision_and_query_prompt_contract(tmp_path):
+    from scientific_tot.config_artifacts import verify_index, write_index_manifest
+
+    index = tmp_path / "index"
+    index.mkdir()
+    cfg = resolve_config(config("model=dense", "stage=index"), tmp_path)
+    provenance = {
+        "dataset_revision": None,
+        "model_revision": cfg.model.revision,
+        "corpus_sha256": "a" * 64,
+    }
+    with pytest.raises(ValueError, match="differs"):
+        write_index_manifest(index, cfg, provenance={**provenance, "model_revision": "b" * 40})
+    assert not (index / "index-manifest.json").exists()
+    write_index_manifest(index, cfg, provenance=provenance)
+    query_change = resolve_config(
+        config(
+            "model=dense",
+            "stage=retrieve",
+            "paths.index=index",
+            "model.encoding.query_prompt='Find: '",
+        ),
+        tmp_path,
+    )
+    assert verify_index(index, query_change)
+    document_change = resolve_config(
+        config(
+            "model=dense",
+            "stage=retrieve",
+            "paths.index=index",
+            "model.encoding.document_prompt='Doc: '",
+        ),
+        tmp_path,
+    )
+    with pytest.raises(ValueError, match="differs"):
+        verify_index(index, document_change)
+
+
+@pytest.mark.parametrize("revision", ["main", "null"])
+def test_dense_index_consumers_need_immutable_model_revision(tmp_path, revision):
+    with pytest.raises(ValueError, match="build commit"):
+        resolve_config(
+            config(
+                "model=dense", "stage=retrieve", "paths.index=index", f"model.revision={revision}"
+            ),
+            tmp_path,
+        )
+
+
+def test_local_checkpoint_paths_share_original_base(tmp_path):
+    cfg = resolve_config(config("model=colbert", "model.checkpoint=../checkpoints/model"), tmp_path)
+    assert cfg.model.checkpoint == str((tmp_path / "../checkpoints/model").resolve())
+    visual = resolve_config(
+        config("model=visual", "representation=pages", "model.model_id=./checkpoints/visual"),
+        tmp_path,
+    )
+    assert visual.model.model_id == str(tmp_path / "checkpoints/visual")
+
+
+def test_index_contract_records_resolved_commits_not_mutable_refs(tmp_path):
+    from scientific_tot.config_artifacts import verify_index, write_index_manifest
+
+    index = tmp_path / "index"
+    index.mkdir()
+    cfg = resolve_config(
+        config("dataset=hub", "model=dense", "stage=index", "model.revision=main"), tmp_path
+    )
+    provenance = {
+        "dataset_revision": "a" * 40,
+        "model_revision": "b" * 40,
+        "corpus_sha256": "c" * 64,
+    }
+    write_index_manifest(index, cfg, provenance=provenance)
+    consumer = resolve_config(
+        config(
+            "dataset=hub",
+            "model=dense",
+            "stage=retrieve",
+            "paths.index=index",
+            "dataset.revision=" + "a" * 40,
+            "model.revision=" + "b" * 40,
+        ),
+        tmp_path,
+    )
+    manifest = verify_index(index, consumer)
+    assert manifest["configuration"]["model"]["revision"] == "main"
+    assert manifest["index_settings"]["model"]["revision"] == "b" * 40

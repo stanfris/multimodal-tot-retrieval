@@ -179,3 +179,97 @@ def test_pretrained_model_and_persistent_cache(data, tmp_path):
 def test_rejects_invalid_thread_and_batch_settings(field):
     with pytest.raises(ValueError, match="must be positive"):
         EncodingConfig(**{field: 0})
+
+
+def test_hydra_settings_propagate_into_existing_dense_calls(data, encoder, tmp_path):
+    from hydra import compose, initialize_config_dir
+
+    from scientific_tot.configuration import CONFIG_DIR, resolve_config
+
+    with initialize_config_dir(version_base="1.3", config_dir=str(CONFIG_DIR)):
+        cfg = compose(
+            config_name="config",
+            overrides=[
+                "model=dense",
+                f"dataset.root={Path(__file__).parent / 'fixtures/adapter'}",
+                "split.corpus=train+test",
+                "model.batch_size=3",
+                "model.encoding.normalize_embeddings=false",
+                "model.encoding.query_prompt=Find: ",
+                "model.encoding.document_prompt=''",
+                "retrieval.top_k=1",
+                "evaluation.metrics=[nDCG@1,RR@1]",
+                f"launcher.cache_root={tmp_path / 'cache'}",
+            ],
+        )
+    cfg = resolve_config(cfg, tmp_path)
+    metrics = dense_experiment(
+        *data, tmp_path / "run", cache=tmp_path / "cache/embeddings", settings=cfg
+    )
+    assert encoder[1][1] == {"prompt": "", "batch_size": 3, "normalize_embeddings": False}
+    assert encoder[2][1]["prompt"] == "Find: "
+    assert metrics.iloc[0]["nDCG@1"] == pytest.approx(1)
+    assert "R@100" not in metrics.columns
+    manifest = json.loads((tmp_path / "run/manifest.json").read_text())
+    assert manifest["index"]["cutoff"] == 1
+    assert manifest["model"]["model_revision"] == cfg.model.revision
+    assert len((tmp_path / "run/run.trec").read_text().splitlines()) == 1
+    with pytest.raises(ValueError, match="cache=launcher"):
+        dense_experiment(*data, tmp_path / "second", cache=tmp_path / "other", settings=cfg)
+
+
+def test_sentence_transformer_external_arguments(monkeypatch, tmp_path):
+    import sys
+
+    from scientific_tot.integrations.dense import _encode_tasks
+
+    calls = []
+
+    class Model:
+        max_seq_length = 512
+        prompts = {}
+        default_prompt_name = None
+
+        def __init__(self, identifier, **kwargs):
+            calls.append((identifier, kwargs))
+
+        def encode_document(self, texts, **kwargs):
+            calls.append((texts, kwargs))
+            return np.array([[1, 0]], dtype=np.float32)
+
+    monkeypatch.setitem(
+        sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=Model)
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(
+            set_num_threads=lambda n: calls.append(("threads", n)),
+            get_num_threads=lambda: 2,
+        ),
+    )
+    cfg = EncodingConfig(batch_size=7, encoding_threads=2, similarity="dot", device="cuda")
+    _encode_tasks(
+        cfg, "a" * 40, tmp_path, {"document": {"texts": ["paper"], "kwargs": {"prompt": "Doc: "}}}
+    )
+    assert calls[0] == ("threads", 2)
+    assert calls[1] == (
+        cfg.model_id,
+        {
+            "revision": "a" * 40,
+            "device": "cuda",
+            "cache_folder": str(tmp_path),
+            "trust_remote_code": False,
+        },
+    )
+    assert calls[2] == (
+        ["paper"],
+        {
+            "batch_size": 7,
+            "normalize_embeddings": False,
+            "precision": "float32",
+            "convert_to_numpy": True,
+            "show_progress_bar": True,
+            "prompt": "Doc: ",
+        },
+    )

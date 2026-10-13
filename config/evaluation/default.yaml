@@ -1,3 +1,2 @@
 backend: ir_measures
 metrics: [nDCG@10, RR@10, R@100]
-top_k: 100

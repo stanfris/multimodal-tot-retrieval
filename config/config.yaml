@@ -5,25 +5,28 @@ defaults:
   - representation: fulltext
   - model: bm25
   - stage: prepare
+  - retrieval: default
   - evaluation: default
   - _self_
   - experiment: null
   - override hydra/job_logging: disabled
 
 dry_run: false
-seed: 42
+run:
+  name: ${model.name}_${representation.name}_c-${split.corpus}_q-${split.queries}
 paths:
-  index: null  # Set an existing index for evaluate/search; index creates one in its run.
+  index: null  # Input for retrieve/search; optional fresh destination for index.
+  run: null  # Completed retrieve directory consumed by evaluate.
 
 hydra:
   job:
     chdir: false
   output_subdir: null  # Saved exclusively by the entry point to prevent overwrites.
   run:
-    dir: ${launcher.output_root}/${stage.name}/${now:%Y%m%dT%H%M%S%f}
+    dir: ${launcher.output_root}/${run.name}/${stage.name}/${now:%Y%m%dT%H%M%S%f}
   sweep:
     dir: ${launcher.output_root}/multirun/${now:%Y%m%dT%H%M%S%f}
-    subdir: ${hydra.job.num}
+    subdir: ${hydra.job.num}-${run.name}-${stage.name}
   callbacks:
     fresh_output:
       _target_: scientific_tot.hydra_run.FreshOutput
