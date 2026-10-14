@@ -154,6 +154,7 @@ def test_index_stage_passes_yaml_and_saves_completion_contract(
         sys.modules,
         "pyterrier",
         SimpleNamespace(
+            tqdm=lambda rows, **kwargs: rows,
             java=SimpleNamespace(started=lambda: True),
             terrier=SimpleNamespace(
                 version=lambda: "5.11",
@@ -164,7 +165,7 @@ def test_index_stage_passes_yaml_and_saves_completion_contract(
         ),
     )
     if corrupt_docnos:
-        with pytest.raises(RuntimeError, match="docnos differ"):
+        with pytest.raises(AssertionError, match="docnos differ"):
             execute(cfg, hydra, output)
         assert calls[-1] == "closed"
         assert not (Path(cfg.paths.index) / "index-manifest.json").exists()

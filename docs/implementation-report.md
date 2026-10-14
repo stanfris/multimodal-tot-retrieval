@@ -35,8 +35,7 @@ loading remain unsupported. Unsupported operations fail explicitly.
 - Retrieval verifies the existing index contract, opens the saved index, loads
   queries independently, validates positives against stored corpus identities and
   uses the configured `Retriever` controls/cutoff. Original document text is not
-  loaded. Earlier single-domain manifests remain usable; multi-domain manifests
-  without document-domain identities fail as ambiguous and require rebuilding.
+  loaded. Manifests without explicit document-domain identities require rebuilding.
 
 ## Batch outputs and independent evaluation
 

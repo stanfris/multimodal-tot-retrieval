@@ -15,8 +15,11 @@ from scientific_tot.config_arguments import (
 
 def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
     """Dispatch independent operations; settings are already resolved by Hydra."""
-    if cfg.stage.name != "index" and run_dir is None:
-        raise ValueError(f"stage={cfg.stage.name} requires a fresh run directory")
+    assert cfg.model.name in {"bm25", "dense"}
+    assert cfg.stage.name in {"prepare", "index", "retrieve", "evaluate"}
+    assert cfg.stage.name == "index" or run_dir is not None, (
+        f"stage={cfg.stage.name} requires a fresh run directory"
+    )
     if cfg.stage.name == "retrieve":
         if cfg.model.name == "dense":
             from scientific_tot.integrations.dense_batch import retrieve_dense
@@ -30,8 +33,7 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
 
         return evaluate_saved_run(cfg, run_dir)
     if cfg.stage.name == "index":
-        if cfg.paths.index is None:
-            raise ValueError("stage=index requires a resolved paths.index destination")
+        assert cfg.paths.index is not None, "stage=index requires a resolved index destination"
         if Path(cfg.paths.index).exists() and Path(cfg.paths.index) != run_dir:
             raise FileExistsError(f"Refusing to overwrite existing index: {cfg.paths.index}")
     adapter = configured_adapter(cfg)
@@ -48,11 +50,23 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
                 split=cfg.split.corpus if cfg.stage.name == "index" else cfg.split.queries,
                 mode=cfg.dataset.query_mode,
             )
+    print(
+        f"Loading corpus: domains={','.join(cfg.dataset.domains)}, split={cfg.split.corpus}, "
+        f"representation={cfg.representation.name}",
+        flush=True,
+    )
     corpus = adapter.load_corpus(**corpus_arguments(cfg))
+    print(f"Selected corpus: {len(corpus):,} documents", flush=True)
     if cfg.stage.name == "index":
         from types import SimpleNamespace
 
         require_corpus_settings(cfg, corpus)
+        print(
+            f"Index build: model={cfg.model.get('model_id', cfg.model.name)}, "
+            f"backend={cfg.model.backend}, dataset_revision={corpus.provenance['revision']}, "
+            f"output={cfg.paths.index}",
+            flush=True,
+        )
         documents = tuple({"docno": row["doc_id"], "text": row["text"]} for row in corpus)
         if not documents or any(
             not row["text"].strip() or any(c.isspace() for c in row["docno"]) for row in documents
@@ -72,13 +86,12 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
                 corpus, inputs, cfg, reserved=Path(cfg.paths.index) == run_dir
             )
         return {"documents": len(corpus), "index_provenance": provenance}
+    print(f"Loading queries: split={cfg.split.queries}, mode={cfg.dataset.query_mode}", flush=True)
     queries = adapter.load_queries(**query_arguments(cfg))
+    print(f"Selected queries: {len(queries):,}", flush=True)
     require_corpus_settings(cfg, corpus, queries)
     qrels = validate_qrels(queries, corpus)
 
-    from scientific_tot.integrations.pyterrier import to_pyterrier
-
-    inputs = to_pyterrier(corpus, queries, qrels)
     result = {
         "documents": len(corpus),
         "queries": len(queries),
@@ -87,14 +100,14 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
         "corpus_report": corpus.report.to_dict(),
         "query_provenance": queries.provenance,
     }
-    if cfg.stage.name == "prepare":
-        for records in (corpus, queries, qrels):
-            records.write_jsonl(run_dir / f"{records.kind}.jsonl")
-        result["output_dir"] = str(run_dir)
-        if cfg.representation.name == "passages":
-            from scientific_tot.integrations.dense_batch import project_passages
+    assert cfg.stage.name == "prepare"
+    for records in (corpus, queries, qrels):
+        records.write_jsonl(run_dir / f"{records.kind}.jsonl")
+    result["output_dir"] = str(run_dir)
+    if cfg.representation.name == "passages":
+        from scientific_tot.integrations.dense_batch import project_passages
 
-            passages = project_passages(corpus, cfg)
-            passages.write_jsonl(run_dir / "passages.jsonl")
-            result["passages"] = len(passages)
+        passages = project_passages(corpus, cfg)
+        passages.write_jsonl(run_dir / "passages.jsonl")
+        result["passages"] = len(passages)
     return result

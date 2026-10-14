@@ -143,8 +143,7 @@ class FreshOutput(Callback):
 def execute_stage(cfg: DictConfig, *, run_dir: Path | None = None) -> dict | None:
     """Dispatch one operation using the already resolved application settings."""
     name = cfg.stage.name
-    if name not in STAGES:
-        raise ValueError(f"Unsupported stage: {name}")
+    assert name in STAGES, f"Unsupported resolved stage: {name}"
     if cfg.model.name in {"bm25", "dense"} and name in {"prepare", "index", "retrieve", "evaluate"}:
         from scientific_tot.stages import execute_text_stage
 
@@ -160,21 +159,19 @@ def git_commit(root: Path) -> str | None:
     """Installed wheels outside a source checkout have no live Git provenance."""
     if not (root / ".git").exists():
         return None
-    try:
-        return subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
+    return subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
 
 
 def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: Path) -> None:
     """Preserve resolved settings and failed attempts without claiming a successful stage."""
     # Hydra creates directories but automatic snapshots/logging are disabled.
     cfg = resolve_config(cfg, Path.cwd(), run_dir)
+    print(f"Starting {cfg.stage.name}: {cfg.run.name}; output={run_dir}", flush=True)
     if any(run_dir.iterdir()):
         from scientific_tot.artifact_identity import resolve_identity
 
@@ -183,7 +180,7 @@ def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: 
         if not saved.is_file() or json.loads(saved.read_text()).get("status") != "completed":
             raise FileExistsError(f"Refusing to overwrite incomplete artifact: {run_dir}")
         verify_completed(run_dir, cfg, resolve_identity(cfg))
-        print(f"Reusing verified {cfg.stage.name} artifact: {run_dir}")
+        print(f"Reusing verified {cfg.stage.name} artifact: {run_dir}", flush=True)
         return
     # Exclusive lock also protects direct callers racing on the same empty directory.
     with (run_dir / ".run.lock").open("x"):
@@ -224,6 +221,7 @@ def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: 
             and Path(cfg.paths.index) != run_dir
         ):
             raise FileExistsError(f"Refusing to overwrite existing index: {cfg.paths.index}")
+        print("Resolving and verifying input identity...", flush=True)
         identity = resolve_identity(cfg)
         if run_dir in PLANNED_IDENTITIES and PLANNED_IDENTITIES[run_dir] != identity:
             raise ValueError("Source inputs differ from the reserved artifact identity")
@@ -244,6 +242,7 @@ def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: 
         result = execute_stage(cfg, run_dir=run_dir)
         if result is not None:
             manifest["artifacts"] = result
+        print("Verifying and sealing outputs...", flush=True)
         if resolve_identity(cfg) != identity:
             raise ValueError("Source inputs changed during artifact construction")
         if cfg.stage.name == "index":
@@ -261,7 +260,7 @@ def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: 
         raise
     else:
         manifest["status"] = "completed"
-        print(f"Completed {cfg.stage.name} artifact: {run_dir}")
+        print(f"Completed {cfg.stage.name} artifact: {run_dir}", flush=True)
     finally:
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         manifest_path.chmod(0o444)
@@ -311,16 +310,13 @@ def verify_completed(directory: Path, cfg: DictConfig, identity: dict) -> dict:
 
 
 def git_dirty(root: Path) -> bool | None:
-    if git_commit(root) is None:
+    if not (root / ".git").exists():
         return None
-    try:
-        return bool(
-            subprocess.run(
-                ["git", "-C", str(root), "status", "--porcelain"],
-                check=True,
-                capture_output=True,
-                text=True,
-            ).stdout.strip()
-        )
-    except (OSError, subprocess.CalledProcessError):
-        return None
+    return bool(
+        subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )

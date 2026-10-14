@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import platform
 from dataclasses import dataclass
@@ -13,7 +12,7 @@ from urllib.parse import quote
 import pandas as pd
 
 from scientific_tot.adapter import validate_qrels
-from scientific_tot.records import Records, Report
+from scientific_tot.records import Records, Report, records_digest
 
 
 @dataclass(frozen=True)
@@ -36,12 +35,14 @@ def _start_terrier(pt, terrier_version: str) -> None:
 
 
 def _verify_document_ids(index, documents: tuple[dict[str, str], ...]) -> None:
-    if index.getCollectionStatistics().getNumberOfDocuments() != len(documents):
-        raise RuntimeError("Terrier document count differs from canonical corpus")
+    assert index.getCollectionStatistics().getNumberOfDocuments() == len(documents), (
+        "Terrier document count differs from canonical corpus"
+    )
     meta = index.getMetaIndex()
     indexed_ids = {str(meta.getItem("docno", i)) for i in range(len(documents))}
-    if indexed_ids != {row["docno"] for row in documents}:
-        raise RuntimeError("Terrier indexed docnos differ from canonical corpus IDs")
+    assert indexed_ids == {row["docno"] for row in documents}, (
+        "Terrier indexed docnos differ from canonical corpus IDs"
+    )
 
 
 def build_bm25_index(corpus: Records, inputs: TerrierInputs, cfg, *, reserved=False) -> dict:
@@ -49,8 +50,7 @@ def build_bm25_index(corpus: Records, inputs: TerrierInputs, cfg, *, reserved=Fa
     from scientific_tot.config_arguments import bm25_arguments, require_corpus_settings
     from scientific_tot.config_artifacts import write_index_manifest
 
-    if cfg.stage.name != "index":
-        raise ValueError("BM25 index builds require stage=index")
+    assert cfg.stage.name == "index", "BM25 index builds require stage=index"
     require_corpus_settings(cfg, corpus)
     indexing_args, _ = bm25_arguments(
         cfg, docno_bytes=max(len(row["docno"].encode("utf-8")) for row in inputs.documents)
@@ -66,9 +66,10 @@ def build_bm25_index(corpus: Records, inputs: TerrierInputs, cfg, *, reserved=Fa
     import pyterrier as pt
 
     _start_terrier(pt, cfg.launcher.terrier_version)
+    print(f"Building Terrier inverted index: {len(inputs.documents):,} documents", flush=True)
     indexing_args["type"] = pt.terrier.IndexingType.CLASSIC
     indexref = pt.terrier.IterDictIndexer(str(target), **indexing_args).index(
-        iter(inputs.documents)
+        pt.tqdm(inputs.documents, desc="Indexing documents", unit="doc")
     )
     index = pt.terrier.IndexFactory.of(indexref)
     try:
@@ -77,15 +78,11 @@ def build_bm25_index(corpus: Records, inputs: TerrierInputs, cfg, *, reserved=Fa
         index.close()
     if not (target / "data.properties").is_file():
         raise FileNotFoundError(f"Terrier did not persist index properties: {target}")
-    checksum = hashlib.sha256()
-    for doc in inputs.documents:
-        checksum.update(json.dumps(doc, ensure_ascii=False, sort_keys=True).encode())
-        checksum.update(b"\n")
     provenance = {
         "dataset_revision": corpus.provenance["revision"],
         "model_revision": None,
         "local_revision_verified": corpus.provenance["local_revision_verified"],
-        "corpus_sha256": checksum.hexdigest(),
+        "corpus_sha256": records_digest(inputs.documents),
         "corpus_provenance": corpus.provenance,
         "documents": len(inputs.documents),
         "document_domains": {row["doc_id"]: row["domain"] for row in corpus},
@@ -97,6 +94,10 @@ def build_bm25_index(corpus: Records, inputs: TerrierInputs, cfg, *, reserved=Fa
         "index_location": str(target / "data.properties"),
     }
     write_index_manifest(target, cfg, provenance=provenance)
+    print(
+        f"Index ready: Terrier {pt.terrier.version()}; {len(inputs.documents):,} documents",
+        flush=True,
+    )
     return provenance
 
 
@@ -209,7 +210,15 @@ def bm25_experiment(
     else:
         indexing_args["type"] = pt.terrier.IndexingType.CLASSIC
     indexer = pt.terrier.IterDictIndexer(str(target / "index"), **indexing_args)
-    indexref = indexer.index(iter(inputs.documents))
+    print(
+        f"BM25 / Terrier inverted index: {len(inputs.documents):,} documents, "
+        f"{len(inputs.topics):,} queries; "
+        f"domains={sorted({row['domain'] for row in corpus})}, "
+        f"corpus_split={corpus.provenance.get('selection', {}).get('split')}, "
+        f"representation={corpus[0]['representation']}; output={target}",
+        flush=True,
+    )
+    indexref = indexer.index(pt.tqdm(inputs.documents, desc="Indexing documents", unit="doc"))
     index = pt.terrier.IndexFactory.of(indexref)
     try:
         _verify_document_ids(index, inputs.documents)
@@ -219,7 +228,7 @@ def bm25_experiment(
             "num_results": 100,
             "threads": threads,
         }
-        retriever = pt.terrier.Retriever(index, **retrieval_args)
+        retriever = pt.terrier.Retriever(index, verbose=True, **retrieval_args)
         run = retriever.transform(inputs.topics)
         from scientific_tot.integrations.evaluation import evaluate_run
 
@@ -232,24 +241,18 @@ def bm25_experiment(
             name="BM25",
             evaluation=settings.evaluation if settings is not None else None,
         )
-        digest = hashlib.sha256()
-        for doc in inputs.documents:
-            digest.update(json.dumps(doc, ensure_ascii=False, sort_keys=True).encode())
-            digest.update(b"\n")
         manifest = {
             "documents": len(inputs.documents),
             "queries": len(inputs.topics),
             "qrels": len(inputs.qrels),
-            "corpus_sha256": digest.hexdigest(),
+            "corpus_sha256": records_digest(inputs.documents),
             "doc_ids_verified_against_index": True,
             "model": "Terrier BM25 defaults" if settings is None else dict(retrieval_args),
             "cutoff": retrieval_args["num_results"],
             "tokeniser": "Terrier English",
             "stemmer": "PorterStemmer",
             "stopwords": "Stopwords",
-            "metrics": ["RR@10 (MRR@10)", "R@10", "R@100"]
-            if settings is None
-            else list(settings.evaluation.metrics),
+            "metrics": [column for column in metrics.columns if column != "name"],
             "versions": {name: version(name) for name in ["pyterrier", "pandas", "ir-measures"]},
             "terrier_version": pt.terrier.version(),
             "python": platform.python_version(),

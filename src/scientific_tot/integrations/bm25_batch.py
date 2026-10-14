@@ -32,13 +32,6 @@ def _indexed_corpus(index, manifest, cfg) -> Records:
     if len(set(ids)) != count:
         raise ValueError("Index contains ambiguous duplicate document IDs")
     domains = provenance.get("document_domains")
-    if domains is None:
-        # Earlier builders recorded the selected domains but not per-document domains.
-        if len(cfg.dataset.domains) != 1:
-            raise ValueError(
-                "Multi-domain index lacks document domains; rebuild this ambiguous index"
-            )
-        domains = dict.fromkeys(ids, cfg.dataset.domains[0])
     if (
         not isinstance(domains, dict)
         or set(domains) != set(ids)
@@ -136,6 +129,7 @@ def _seal_outputs(target: Path, names) -> dict:
 def retrieve_bm25(cfg, target: Path) -> dict:
     """Open a verified persistent index and retrieve independently selected queries."""
     location = Path(cfg.paths.index)
+    print(f"Verifying Terrier index: {location}", flush=True)
     manifest = verify_index(location, cfg)
     properties = location / "data.properties"
     if not properties.is_file():
@@ -157,10 +151,15 @@ def retrieve_bm25(cfg, target: Path) -> dict:
     try:
         corpus = _indexed_corpus(index, manifest, cfg)
         inputs = to_pyterrier_queries(corpus, queries)
+        print(
+            f"BM25 retrieval: {len(corpus):,} indexed documents, {len(inputs.topics):,} queries; "
+            f"query_split={cfg.split.queries}, top_k={cfg.retrieval.top_k}",
+            flush=True,
+        )
         _, arguments = bm25_arguments(
             cfg, docno_bytes=max(len(row["doc_id"].encode("utf-8")) for row in corpus)
         )
-        run = pt.terrier.Retriever(index, **arguments).transform(inputs.topics)
+        run = pt.terrier.Retriever(index, verbose=True, **arguments).transform(inputs.topics)
     finally:
         index.close()
     # PyTerrier uses zero-based ranks internally; the exported TREC ranks start at one.
@@ -192,6 +191,7 @@ def save_batch(run, inputs, mapping, identities, cfg, target: Path) -> dict:
     """Shared paper-level batch contract; standard serialization belongs to PyTerrier/pandas."""
     import pyterrier as pt
 
+    print(f"Saving {len(run):,} rankings: {target}", flush=True)
     _validate_batch(
         run, inputs.topics, inputs.qrels, mapping, identities, cutoff=cfg.retrieval.top_k
     )
@@ -217,6 +217,7 @@ def _read_jsonl(path: Path) -> pd.DataFrame:
 def evaluate_saved_run(cfg, target: Path) -> dict:
     """Compute YAML metrics from a completed saved batch, without dataset/index reads."""
     source = Path(cfg.paths.run)
+    print(f"Loading and verifying saved retrieval run: {source}", flush=True)
     manifest = verify_retrieval(source, cfg)
     built = OmegaConf.load(source / ".hydra/config.yaml")
     topics = _read_jsonl(source / "topics.jsonl")

@@ -23,20 +23,23 @@ def evaluate_run(
 
 def evaluate_metrics(run, topics, qrels, *, name: str, evaluation=None) -> tuple:
     """Evaluate saved DataFrames only; never construct an index or a retriever."""
+    import ir_measures
     import pyterrier as pt
-    from pyterrier.measures import RR, R
+    from omegaconf import OmegaConf
+
+    from scientific_tot.configuration import CONFIG_DIR
 
     if evaluation is None:
-        measures = [RR @ 10, R @ 10, R @ 100]  # Preserve published tutorial defaults.
-    else:
-        import ir_measures
-
-        measures = [ir_measures.parse_measure(m) for m in evaluation.metrics]
+        evaluation = OmegaConf.load(CONFIG_DIR / "evaluation/default.yaml")
+    measures = [ir_measures.parse_measure(m) for m in evaluation.metrics]
+    print(
+        f"Evaluating {len(topics):,} queries, {len(run):,} rankings; "
+        f"metrics={','.join(str(m) for m in measures)}",
+        flush=True,
+    )
     if run.empty:
         # Experiment rejects an entirely empty DataFrame. ir_measures still
         # evaluates every judged query correctly without inventing dummy hits.
-        import ir_measures
-
         judgments = pt.model.to_ir_measures(qrels)
         aggregate = ir_measures.calc_aggregate(measures, judgments, [])
         metrics = pd.DataFrame(

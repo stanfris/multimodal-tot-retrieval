@@ -130,7 +130,8 @@ def test_standard_terrier_index_run_and_metrics(tmp_path):
     metrics = bm25_experiment(docs, qs, tmp_path / "experiment")
     assert metrics.iloc[0]["RR@10"] == pytest.approx(0.5)
     assert metrics.iloc[0]["R@10"] == pytest.approx(0.5)
-    assert metrics.iloc[0]["R@100"] == pytest.approx(0.5)
+    assert metrics.iloc[0]["R@1"] == pytest.approx(0.5)
+    assert metrics.iloc[0]["nDCG@10"] == pytest.approx(0.5)
     import pyterrier as pt
 
     run = pt.io.read_results(str(tmp_path / "experiment/run.trec"))
@@ -217,6 +218,7 @@ def test_hydra_settings_reach_external_terrier_arguments(tmp_path, monkeypatch):
         sys.modules,
         "pyterrier",
         SimpleNamespace(
+            tqdm=lambda rows, **kwargs: rows,
             java=SimpleNamespace(started=lambda: True),
             terrier=SimpleNamespace(
                 IterDictIndexer=Indexer,
@@ -246,5 +248,6 @@ def test_hydra_settings_reach_external_terrier_arguments(tmp_path, monkeypatch):
         "controls": {"bm25.b": 0.5, "bm25.k_1": 2.0},
         "num_results": 7,
         "threads": 3,
+        "verbose": True,
     }
     assert calls[2] == ("evaluation", ["RR@5"])

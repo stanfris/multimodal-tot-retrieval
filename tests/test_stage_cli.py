@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from omegaconf import OmegaConf
 
-from scientific_tot.artifact_identity import artifact_directory, records_digest, resolve_identity
+from scientific_tot.artifact_identity import artifact_directory, resolve_identity
 from scientific_tot.config_artifacts import (
     BATCH_FILES,
     artifact_reference,
@@ -16,6 +16,7 @@ from scientific_tot.config_artifacts import (
 )
 from scientific_tot.configuration import resolve_config
 from scientific_tot.hydra_run import run_stage
+from scientific_tot.records import records_digest
 from scientific_tot.stage_cli import plan
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,7 +60,6 @@ def completed_index(monkeypatch):
 def test_index_always_dispatches_for_verified_reuse(monkeypatch):
     index = completed_index(monkeypatch)
     assert plan("index", [])[1] == ["stage=index"]
-    assert plan("index", [], rebuild=True)[1] == ["stage=index"]
     assert plan("index", ["dry_run=true"])[1] == ["dry_run=true", "stage=index"]
     _, command = plan("retrieve", ["retrieval.top_k=200", "split.queries=train"])
     assert command[-1] == f"paths.index={json.dumps(str(index))}"
@@ -115,3 +115,19 @@ def test_evaluation_selects_intact_matching_batch(monkeypatch):
     (attempt / "run.trec").write_text("changed")
     with pytest.raises(ValueError, match="No compatible completed artifact"):
         plan("evaluate", [])
+
+
+@pytest.mark.parametrize("stage,key", [("retrieve", "index"), ("evaluate", "run")])
+def test_dry_run_does_not_discover_artifacts(stage, key, monkeypatch):
+    def unexpected(*args):
+        pytest.fail("Dry runs must not discover artifacts or read data")
+
+    monkeypatch.setattr("scientific_tot.stage_cli.find_artifact", unexpected)
+    cfg, command = plan(stage, ["dry_run=true", "dataset.root=absent"])
+    assert cfg.dry_run
+    assert command[-1] == f"paths.{key}={json.dumps(cfg.paths[key])}"
+
+
+def test_rebuild_flag_is_rejected():
+    with pytest.raises(ValueError, match="key=value"):
+        plan("index", ["--rebuild"])

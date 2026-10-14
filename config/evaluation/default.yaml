@@ -1,2 +1,2 @@
 backend: ir_measures
-metrics: [nDCG@10, RR@10, R@100]
+metrics: [RR@10, R@1, R@10, nDCG@10]

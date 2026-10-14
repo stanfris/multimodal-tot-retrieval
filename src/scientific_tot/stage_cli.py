@@ -49,7 +49,7 @@ def find_artifact(cfg, stage: str) -> Path | None:
     return candidates[0] if candidates else None
 
 
-def plan(stage: str, overrides: list[str], *, rebuild: bool = False):
+def plan(stage: str, overrides: list[str]):
     """Compose ordinary Hydra overrides and supply only omitted artifact inputs."""
     if stage not in {"prepare", "index", "retrieve", "evaluate"}:
         raise ValueError(f"Unsupported script stage: {stage}")
@@ -65,7 +65,13 @@ def plan(stage: str, overrides: list[str], *, rebuild: bool = False):
     resolved = resolve_config(cfg, Path.cwd())
     command = [*overrides, f"stage={stage}"]
     if automatic:
-        artifact = find_artifact(resolved, "index" if stage == "retrieve" else "retrieve")
+        if not resolved.dry_run:
+            print(f"Selecting compatible {key} artifact...", flush=True)
+        artifact = (
+            Path(resolved.paths[key])
+            if resolved.dry_run
+            else find_artifact(resolved, "index" if stage == "retrieve" else "retrieve")
+        )
         if artifact is None:
             preceding = "02_index.sh" if stage == "retrieve" else "03_retrieve.sh"
             raise ValueError(
@@ -75,7 +81,8 @@ def plan(stage: str, overrides: list[str], *, rebuild: bool = False):
             )
         # JSON quoting is accepted by Hydra and preserves spaces in filesystem paths.
         command.append(f"paths.{key}={json.dumps(str(artifact))}")
-        print(f"Using {key}: {artifact}", flush=True)
+        if not resolved.dry_run:
+            print(f"Using {key}: {artifact}", flush=True)
     return resolved, command
 
 
@@ -91,30 +98,15 @@ def main() -> None:
         )
         return
     stage, *overrides = args
-    rebuild = "--rebuild" in overrides
-    overrides = [arg for arg in overrides if arg != "--rebuild"]
-    try:
-        if rebuild and stage != "index":
-            raise ValueError("--rebuild is only supported by the index script")
-        if rebuild:
-            print(
-                "--rebuild is deprecated: changed inputs create a new identity; "
-                "identical inputs are verified and reused.",
-                flush=True,
+    cfg, command = plan(stage, overrides)
+    if not cfg.dry_run and stage in {"prepare", "index"} and cfg.dataset.source == "local":
+        if not Path(cfg.dataset.root).is_dir():
+            raise ValueError(
+                f"Dataset root does not exist: {cfg.dataset.root}. "
+                "Put restored data in ./data or set TOT_DATA_ROOT once in scripts/defaults.sh."
             )
-        cfg, command = plan(stage, overrides, rebuild=rebuild)
-        if command is None:
-            return
-        if not cfg.dry_run and stage in {"prepare", "index"} and cfg.dataset.source == "local":
-            if not Path(cfg.dataset.root).is_dir():
-                raise ValueError(
-                    f"Dataset root does not exist: {cfg.dataset.root}. "
-                    "Put restored data in ./data or set TOT_DATA_ROOT once in scripts/defaults.sh."
-                )
-        result = subprocess.run([sys.executable, "-m", "scientific_tot.hydra_entry", *command])
-        raise SystemExit(result.returncode)
-    except (OSError, ValueError) as exc:
-        raise SystemExit(str(exc)) from exc
+    result = subprocess.run([sys.executable, "-m", "scientific_tot.hydra_entry", *command])
+    raise SystemExit(result.returncode)
 
 
 if __name__ == "__main__":

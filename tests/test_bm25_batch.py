@@ -146,6 +146,7 @@ def test_retrieve_forwards_yaml_and_records_exact_artifacts(saved_batch):
             "controls": {"bm25.b": 0.5, "bm25.k_1": 2.0},
             "num_results": 1,
             "threads": 1,
+            "verbose": True,
         },
         "retrieve",
         "close",
@@ -313,7 +314,7 @@ def test_retrieve_requires_persisted_index(tmp_path, batch_setup):
     assert batch_setup.calls == []
 
 
-def test_older_single_domain_index_remains_readable(tmp_path, batch_setup):
+def test_index_requires_document_domains(tmp_path, batch_setup):
     path = batch_setup.index_dir / "index-manifest.json"
     manifest = json.loads(path.read_text())
     del manifest["provenance"]["document_domains"]
@@ -323,7 +324,8 @@ def test_older_single_domain_index_remains_readable(tmp_path, batch_setup):
     cfg, hydra = settings(
         tmp_path, target, batch_setup.dataset, "retrieve", f"paths.index={batch_setup.index_dir}"
     )
-    assert execute(cfg, hydra, target)["status"] == "completed"
+    with pytest.raises(ValueError, match="identities/domains"):
+        execute(cfg, hydra, target)
 
 
 def test_older_multidomain_index_is_ambiguous(tmp_path, batch_setup):
@@ -339,7 +341,7 @@ def test_older_multidomain_index_is_ambiguous(tmp_path, batch_setup):
     )
     manifest = json.loads((batch_setup.index_dir / "index-manifest.json").read_text())
     del manifest["provenance"]["document_domains"]
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(ValueError, match="identities/domains"):
         _indexed_corpus(batch_setup.index, manifest, cfg)
 
 

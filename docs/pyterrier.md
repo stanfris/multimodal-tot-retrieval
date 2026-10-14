@@ -121,8 +121,8 @@ The fulltext experiment writes `run.trec`, `metrics.csv`, `per-query.csv`,
 `pt.io.write_results(..., format="trec")`. `qrels.tsv` is the named-column
 PyTerrier table, not the four-column TREC qrels format.
 
-`RR@10` in PyTerrier's aggregate output is MRR@10; `R@10` and `R@100` are
-Recall@10 and Recall@100. Every selected query is evaluated, including queries
+`RR@10` in PyTerrier's aggregate output is MRR@10; `R@1` and `R@10` are
+Recall@1 and Recall@10, and `nDCG@10` is NDCG@10. Every selected query is evaluated, including queries
 with no retrieved results. No manual ranking or metric calculations are used.
 Manifests include library versions, text hashes, corpus selection, content
 reports, and index ID verification. See [measured results](pyterrier-results.md).

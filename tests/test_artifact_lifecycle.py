@@ -12,9 +12,10 @@ import pytest
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
-from scientific_tot.artifact_identity import artifact_directory, records_digest, resolve_identity
+from scientific_tot.artifact_identity import artifact_directory, resolve_identity
 from scientific_tot.configuration import CONFIG_DIR, resolve_config
 from scientific_tot.hydra_run import run_stage
+from scientific_tot.records import records_digest
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests/fixtures/adapter"
@@ -104,8 +105,8 @@ def test_dense_identity_pins_encoder_and_excludes_query_settings(tmp_path, datas
 
 def test_index_identity_and_stage_do_not_read_queries(tmp_path, dataset, monkeypatch):
     from scientific_tot import stages
-    from scientific_tot.artifact_identity import records_digest
     from scientific_tot.config_artifacts import write_index_manifest
+    from scientific_tot.records import records_digest
 
     shutil.rmtree(dataset / "query_collections")
 

@@ -4,7 +4,7 @@ This tutorial substitutes pretrained embeddings for Terrier BM25 while retaining
 the canonical documents, queries, qrels and identifiers. Sentence Transformers
 supplies encoding; FAISS `IndexFlatIP` supplies indexing and exact top-k search.
 The same Phase 3 `evaluate_run` function calls PyTerrier Experiment and
-ir_measures for MRR@10, Recall@10 and Recall@100. No neural model, vector search,
+ir_measures for RR@10, Recall@1, Recall@10 and NDCG@10. No neural model, vector search,
 ranking algorithm or metric is implemented here, and no fine-tuning is performed.
 
 ## Install

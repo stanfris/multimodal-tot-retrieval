@@ -27,7 +27,7 @@ existing low-level integration functions via `settings`.
 | `model/colbert.yaml` | Future checkpoint → Indexer/Searcher; index_bsize, nbits, kmeans_niters, doc_maxlen, query_maxlen → ColBERTConfig. No ColBERT integration, device binding, or runtime consumer implemented |
 | `model/visual.yaml` | Future model_id/device → Byaldi from_pretrained; storage/overwrite/image dimensions → index. No executing visual integration or generic revision/batch-size argument |
 | `retrieval/default.yaml` | top_k → Retriever.num_results / FAISS.search k in existing integration functions; future Byaldi.search k / ColBERT.search k contracts; distinct from metrics |
-| `evaluation/default.yaml` | backend identifies ir_measures; metrics → parse_measure → Experiment eval_metrics. Default remains nDCG@10, RR@10, R@100 |
+| `evaluation/default.yaml` | backend identifies ir_measures; metrics → parse_measure → Experiment eval_metrics. Defaults are RR@10, R@1, R@10, nDCG@10 |
 | `launcher/local_cpu.yaml` | kind/device → local validation and supported model device argument; dataset/cache/output roots → original-cwd normalization and guards; indexing threads → Terrier indexer/retriever; encoding threads → torch.set_num_threads; faiss threads → faiss.omp_set_num_threads; terrier_version → pt.terrier.set_version/JVM-version check |
 | `launcher/local_gpu.yaml` | Inherits infrastructure settings and overrides device=cuda; FAISS stays CPU and Terrier stays JVM; no GPU promise for unimplemented ColBERT |
 | `stage/prepare.yaml` | BM25/dense → configured adapter, positive validation, canonical JSONL exports and coverage sidecars; dense passages also export splitter output |
@@ -52,7 +52,7 @@ values without optional backends; `config_artifacts.py` defines artifact identit
 | Every stage was a stub, but parameter tables described eventual execution as if present | Explicitly distinguish binding support, prospective contracts, and CLI stage execution throughout profiles/docs |
 | Top-100 retrieval was hardcoded in dense/BM25; evaluation.top_k had no consumer | Move the unchanged value 100 to independently composable retrieval/default; settings propagate to actual search calls |
 | evaluate was specified as index-consuming and therefore conflated retrieval/metrics | Add retrieve; evaluate requires a completed paths.run, search/retrieve require paths.index |
-| YAML metrics nDCG@10/RR@10/R@100 differed from tutorial RR@10/R@10/R@100 | Preserve both existing defaults. Hydra settings explicitly propagate YAML metrics; tutorial calls without settings retain their published metrics |
+| YAML metrics nDCG@10/RR@10/R@100 differed from tutorial RR@10/R@10/R@100 | Use the shared YAML defaults RR@10/R@1/R@10/nDCG@10 for Hydra and tutorial calls |
 | Dense YAML accepted L2, but execution always constructed IndexFlatIP | Reject L2 and non-Flat factories; no new index implementation introduced |
 | Dense had an independent dataclass/defaults/prompts interface | Bind settings explicitly to the existing EncodingConfig and external calls; reject settings+config conflicts. Keep the dataclass as a backward-compatible tutorial/library API |
 | BM25 YAML index options and controls were ignored by existing tutorial code | Bind them when settings is passed; translate classic to the library enum. Reject insufficient docno capacity instead of silently increasing a configured capacity or truncating IDs |

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import tempfile
 import uuid
@@ -26,16 +25,9 @@ from scientific_tot.config_artifacts import (
     verify_retrieval,
 )
 from scientific_tot.configuration import resolve_config
+from scientific_tot.records import records_digest
 
 PLANNED_IDENTITIES: dict[Path, dict] = {}
-
-
-def records_digest(rows) -> str:
-    checksum = hashlib.sha256()
-    for row in rows:
-        checksum.update(json.dumps(row, ensure_ascii=False, sort_keys=True).encode())
-        checksum.update(b"\n")
-    return checksum.hexdigest()
 
 
 def index_identity(cfg, provenance: dict) -> dict:
@@ -153,6 +145,7 @@ def hydra_directory(*, _root_) -> str:
         # Dry runs validate without touching dataset/model sources or pretending to resolve content.
         identity = {"dry_run": OmegaConf.to_container(cfg, resolve=True)}
         return str(Path(cfg.launcher.output_root) / "dry-runs" / artifact_name(cfg, identity))
+    print(f"Planning {cfg.stage.name}: resolving selected inputs...", flush=True)
     identity = resolve_identity(cfg)
     directory = artifact_directory(cfg, identity)
     if directory in PLANNED_IDENTITIES and PLANNED_IDENTITIES[directory] != identity:

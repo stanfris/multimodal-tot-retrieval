@@ -43,6 +43,7 @@ def test_default_composition(tmp_path):
     assert cfg.split.corpus == "all"
     assert cfg.split.queries == "test"
     assert cfg.stage.name == "prepare"
+    assert list(cfg.evaluation.metrics) == ["RR@10", "R@1", "R@10", "nDCG@10"]
     assert cfg.dataset.root == str(tmp_path / "data")
     assert OmegaConf.is_readonly(cfg)
 
@@ -443,6 +444,13 @@ def test_index_contract_and_integrity(tmp_path):
         tmp_path,
     )
     assert verify_index(index, cfg)["provenance"] == provenance
+    manifest_path = index / "index-manifest.json"
+    current = json.loads(manifest_path.read_text())
+    manifest_path.chmod(0o644)
+    manifest_path.write_text(json.dumps({**current, "schema_version": 1}))
+    with pytest.raises(ValueError, match="supported artifact"):
+        verify_index(index, cfg)
+    manifest_path.write_text(json.dumps(current))
     with pytest.raises(FileExistsError):
         write_index_manifest(index, built, provenance=provenance)
     for override in (
@@ -517,7 +525,9 @@ def test_evaluation_consumes_only_completed_retrieval(tmp_path, monkeypatch):
     )
     OmegaConf.save(snapshot, retrieval / ".hydra/config.yaml")
     value = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "artifact_identity": {"source": "test"},
+        "artifact_sha256": digest({"source": "test"}),
         "status": "completed",
         "stage": "retrieve",
         "configuration_sha256": digest(OmegaConf.to_container(snapshot)),
@@ -529,7 +539,13 @@ def test_evaluation_consumes_only_completed_retrieval(tmp_path, monkeypatch):
     }
     (retrieval / "manifest.json").write_text(json.dumps(value))
     assert verify_retrieval(retrieval)["stage"] == "retrieve"
-    cfg = resolve_config(config("stage=evaluate", "paths.run=batch"), tmp_path)
+    (retrieval / "manifest.json").write_text(json.dumps({**value, "schema_version": 1}))
+    with pytest.raises(ValueError, match="completed retrieve stage"):
+        verify_retrieval(retrieval)
+    (retrieval / "manifest.json").write_text(json.dumps(value))
+    cfg = resolve_config(
+        config("stage=evaluate", "paths.run=batch", "evaluation.metrics=[R@100]"), tmp_path
+    )
     attempt = tmp_path / "evaluation"
     attempt.mkdir()
     calls = []

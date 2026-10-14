@@ -12,6 +12,16 @@ from pathlib import Path
 from typing import Any, overload
 
 
+def records_digest(rows) -> str:
+    checksum = hashlib.sha256()
+    for row in rows:
+        checksum.update(
+            json.dumps(row, ensure_ascii=False, sort_keys=True, allow_nan=False).encode()
+        )
+        checksum.update(b"\n")
+    return checksum.hexdigest()
+
+
 @dataclass(frozen=True)
 class Issue:
     code: str

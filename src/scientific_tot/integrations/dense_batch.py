@@ -22,16 +22,16 @@ from scientific_tot.integrations.bm25_batch import _read_jsonl, save_batch
 from scientific_tot.integrations.dense import (
     EncodingConfig,
     cached_encoding,
-    record_digest,
     resolve_model_revision,
 )
 from scientific_tot.integrations.pyterrier import to_pyterrier_queries
-from scientific_tot.records import Records, Report
+from scientific_tot.records import Records, Report, records_digest
 
 
 def project_passages(corpus: Records, cfg) -> Records:
     """Use the YAML-selected LangChain splitter; canonical paper IDs remain separate."""
     from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from pyterrier import tqdm
 
     splitter = RecursiveCharacterTextSplitter(
         **OmegaConf.to_container(cfg.representation.chunking, resolve=True),
@@ -39,7 +39,7 @@ def project_passages(corpus: Records, cfg) -> Records:
         add_start_index=True,
     )
     rows = []
-    for paper in corpus:
+    for paper in tqdm(corpus, desc="Splitting papers", unit="doc"):
         chunks = splitter.create_documents([paper["text"]])
         if not chunks:
             raise ValueError(f"Splitter emitted no passages for selected paper: {paper['doc_id']}")
@@ -86,6 +86,12 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         ]
     config = EncodingConfig(**dense_arguments(cfg))
     revision = resolve_model_revision(config)
+    print(
+        f"Building FAISS IndexFlatIP: {len(corpus):,} papers, {len(documents):,} vectors; "
+        f"model={config.model_id}@{revision}, normalized={config.similarity == 'cosine'}, "
+        f"encoding_device={config.device}, index_device=cpu",
+        flush=True,
+    )
     target = Path(cfg.paths.index)
     if reserved:
         from scientific_tot.config_artifacts import require_index_reservation
@@ -128,8 +134,8 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         "dataset_revision": corpus.provenance["revision"],
         "model_revision": revision,
         "local_revision_verified": corpus.provenance["local_revision_verified"],
-        "corpus_sha256": record_digest(inputs.documents),
-        "vector_input_sha256": record_digest(documents),
+        "corpus_sha256": records_digest(inputs.documents),
+        "vector_input_sha256": records_digest(documents),
         "corpus_provenance": corpus.provenance,
         "documents": len(corpus),
         "vectors": len(mapping),
@@ -150,14 +156,21 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
     if cfg.representation.name == "passages":
         provenance["versions"]["langchain-text-splitters"] = version("langchain-text-splitters")
     write_index_manifest(target, cfg, provenance=provenance)
+    print(
+        f"Index ready: {index.ntotal:,} vectors, dimension={index.d}, "
+        f"precision=float32; document_cache_hit={hit}",
+        flush=True,
+    )
     return provenance
 
 
 def retrieve_dense(cfg, target: Path) -> dict:
     """Encode queries independently and search the saved FAISS index at paper level."""
     import faiss
+    from pyterrier import tqdm
 
     location = Path(cfg.paths.index)
+    print(f"Verifying FAISS index: {location}", flush=True)
     manifest = verify_index(location, cfg)
     provenance = manifest["provenance"]
     names = ("index.faiss", "ids.json", "vectors.jsonl", "vectors.jsonl.manifest.json")
@@ -192,6 +205,12 @@ def retrieve_dense(cfg, target: Path) -> dict:
     adapter = configured_adapter(cfg)
     queries = adapter.load_queries(**query_arguments(cfg))
     inputs = to_pyterrier_queries(corpus, queries)
+    print(
+        f"Dense retrieval: {len(corpus):,} papers, {index.ntotal:,} indexed vectors, "
+        f"dimension={index.d}, {len(inputs.topics):,} queries; "
+        f"query_split={cfg.split.queries}, top_k={cfg.retrieval.top_k}",
+        flush=True,
+    )
     config = EncodingConfig(**dense_arguments(cfg))
     vectors, cached, entry, hit = cached_encoding(
         config,
@@ -206,7 +225,12 @@ def retrieve_dense(cfg, target: Path) -> dict:
     passage_mode = cfg.representation.name == "passages"
     depth = len(ids) if passage_mode else min(cfg.retrieval.top_k, len(ids))
     batches = []
-    for qid, vector in zip(inputs.topics.qid, vectors, strict=True):
+    for qid, vector in tqdm(
+        zip(inputs.topics.qid, vectors, strict=True),
+        total=len(inputs.topics),
+        desc="Retrieving queries",
+        unit="q",
+    ):
         # Scoring/ranking belong to FAISS. All passages are considered before aggregation,
         # so top_k always counts papers and mean/max have their full-corpus semantics.
         scores, positions = index.search(np.asarray([vector]), depth)

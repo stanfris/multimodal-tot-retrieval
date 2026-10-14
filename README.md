@@ -96,11 +96,16 @@ The scripts run from the repository root and share `./data`, `./cache`, and
 `./results`; edit `scripts/defaults.sh` or use `TOT_DATA_ROOT`, `TOT_CACHE_ROOT`,
 and `TOT_OUTPUT_ROOT`. Their uv cache defaults to `${TOT_CACHE_ROOT}/uv`.
 BM25/fulltext defaults to ACL, all corpus documents, test queries, CPU, top-100,
-and nDCG@10/RR@10/R@100. The scripts do not restore datasets or launch prerequisites.
+and RR@10/Recall@1/Recall@10/NDCG@10. The scripts do not restore datasets or launch prerequisites.
 Automatic index selection rereads the selected corpus to match its exact identity;
 multiple compatible saved retrieval runs require an explicit `paths.run` choice.
-`--rebuild` is deprecated: changing content/settings creates a new identity;
+Changing content/settings creates a new identity;
 identical completed artifacts are always verified and reused.
+
+Runs print corpus selection and counts, index/model metadata, cache hits, and stage
+status as work proceeds. Progress bars track BM25 indexing/retrieval, dense encoding,
+passage splitting, and staged FAISS query retrieval. Index stages select documents
+only; query counts and test/train selection are printed during retrieval.
 
 The bare Hydra CLI supports explicit artifact inputs and multiruns. Copy the
 completed paths printed by each command into `INDEX` and `RUN` below:
@@ -132,9 +137,8 @@ Identical completed outputs are reused only after manifest, snapshot and output
 checksum verification, without rewriting files. Incomplete, corrupted, legacy or
 conflicting destinations fail explicitly. Concurrent writers reserve exclusively;
 identical multirun jobs reuse completed outputs, while different identities get
-separate destinations. Old schema-1 artifacts remain explicit input candidates
-under their original verification contracts; they are never promoted or silently
-reused as new schema-2 artifacts. Rebuild from inputs to obtain the new layout.
+separate destinations. Index and retrieval consumers require schema-2 artifacts
+and explicit document-domain identities. Rebuild older artifacts from original inputs.
 
 [Configuration guide](docs/configuration.md) covers profiles, naming, provenance,
 reuse and limitations. BM25 and dense `prepare`, `index`, `retrieve`, and `evaluate`

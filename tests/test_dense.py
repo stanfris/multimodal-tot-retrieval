@@ -98,11 +98,13 @@ def test_faiss_search_standard_metrics_and_cache_reuse(data, encoder, tmp_path):
     docs, queries = data
     metrics = dense_experiment(docs, queries, tmp_path / "first", cache=tmp_path / "cache")
     assert metrics.iloc[0]["RR@10"] == pytest.approx(1)
-    assert metrics.iloc[0]["R@100"] == pytest.approx(1)
-    assert [c[0] for c in encoder] == ["load", "document", "query"]
+    assert set(metrics.columns) == {"name", "RR@10", "R@1", "R@10", "nDCG@10"}
+    for measure in ["R@1", "R@10", "nDCG@10"]:
+        assert metrics.iloc[0][measure] == pytest.approx(1)
+    assert [c[0] for c in encoder] == ["load", "document", "load", "query"]
     assert encoder[0][1]["revision"] == DEFAULT_MODEL_REVISION
     assert encoder[1][1]["prompt"] == "passage: "
-    assert encoder[2][1]["prompt"] == "query: "
+    assert encoder[3][1]["prompt"] == "query: "
     assert encoder[1][1]["batch_size"] == 16
     assert encoder[1][1]["normalize_embeddings"] is True
     encoder.clear()
@@ -207,7 +209,7 @@ def test_hydra_settings_propagate_into_existing_dense_calls(data, encoder, tmp_p
         *data, tmp_path / "run", cache=tmp_path / "cache/embeddings", settings=cfg
     )
     assert encoder[1][1] == {"prompt": "", "batch_size": 3, "normalize_embeddings": False}
-    assert encoder[2][1]["prompt"] == "Find: "
+    assert encoder[3][1]["prompt"] == "Find: "
     assert metrics.iloc[0]["nDCG@1"] == pytest.approx(1)
     assert "R@100" not in metrics.columns
     manifest = json.loads((tmp_path / "run/manifest.json").read_text())
@@ -273,3 +275,41 @@ def test_sentence_transformer_external_arguments(monkeypatch, tmp_path):
             "prompt": "Doc: ",
         },
     )
+
+
+def test_changed_query_prompt_reuses_document_cache(data, encoder, tmp_path):
+    config = EncodingConfig()
+    dense_experiment(*data, tmp_path / "first", cache=tmp_path / "cache", config=config)
+    encoder.clear()
+    dense_experiment(
+        *data,
+        tmp_path / "second",
+        cache=tmp_path / "cache",
+        config=replace(config, query_prompt="Find: "),
+    )
+    assert [call[0] for call in encoder] == ["load", "query"]
+    manifest = json.loads((tmp_path / "second/manifest.json").read_text())
+    assert manifest["cache"]["document_hit"]
+    assert not manifest["cache"]["query_hit"]
+
+
+def test_baseline_preserves_na_identifiers(tmp_path):
+    import pandas as pd
+
+    from scientific_tot.integrations.dense import verify_baseline
+    from scientific_tot.records import records_digest
+
+    inputs = SimpleNamespace(
+        documents=({"docno": "NA", "text": "paper"},),
+        topics=pd.DataFrame([{"qid": "NA", "query": "query"}]),
+        qrels=pd.DataFrame([{"qid": "NA", "docno": "NA", "label": 1}]),
+        query_ids=pd.DataFrame([{"qid": "NA", "query_id": "NA", "query_key": "key"}]),
+    )
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"corpus_sha256": records_digest(inputs.documents)})
+    )
+    (tmp_path / "selected-documents.json").write_text(json.dumps(["NA"]))
+    inputs.topics.to_json(tmp_path / "topics.jsonl", orient="records", lines=True)
+    inputs.query_ids.to_json(tmp_path / "query-ids.jsonl", orient="records", lines=True)
+    inputs.qrels.to_csv(tmp_path / "qrels.tsv", sep="\t", index=False)
+    assert verify_baseline(inputs, tmp_path)["directory"] == str(tmp_path.resolve())
