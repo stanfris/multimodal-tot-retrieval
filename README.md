@@ -58,6 +58,47 @@ record schemas. [Architecture](docs/architecture.md) records design decisions.
 
 ## Hydra configuration CLI
 
+### Stage scripts with automatic reuse
+
+```sh
+./scripts/01_prepare.sh     # Optional validation/export; not an index prerequisite.
+./scripts/02_index.sh       # Reuses a compatible completed index if one exists.
+./scripts/03_retrieve.sh    # Finds the newest compatible completed index.
+./scripts/04_evaluate.sh    # Finds the newest compatible completed retrieval run.
+```
+
+All scripts run from the repository root regardless of your current directory.
+Defaults are BM25/fulltext, ACL, all corpus documents, test queries, CPU, top-100,
+and nDCG@10/RR@10/R@100. Shared paths are `./data`, `./cache`, and `./results/hydra`.
+Put the restored canonical dataset in `./data`, or edit `scripts/defaults.sh` once
+to set its location; environment variables `TOT_DATA_ROOT`, `TOT_CACHE_ROOT`, and
+`TOT_OUTPUT_ROOT` take precedence. The scripts do not generate or restore data.
+The uv package cache defaults to `${TOT_CACHE_ROOT}/uv`; `UV_CACHE_DIR` can override it.
+
+Hydra overrides still work; use the same experiment choices at each stage:
+
+```sh
+./scripts/02_index.sh experiment=dense_passages
+./scripts/03_retrieve.sh experiment=dense_passages
+./scripts/04_evaluate.sh experiment=dense_passages
+./scripts/02_index.sh --rebuild    # Fresh index; retains earlier outputs.
+./scripts/02_index.sh dry_run=true # Inspect defaults without building an index.
+```
+
+Automatic selection scans completed attempts under the configured output root,
+restricted to the current `run.name`, then checks their existing compatibility
+and integrity contracts. Evaluation also matches the requested retrieval depth.
+Failed, incompatible, and corrupt candidates are excluded. Explicit `paths.index`
+or `paths.run` overrides bypass automatic selection and retain normal validation.
+No prerequisite stage is launched automatically. Index reuse checks recorded
+identity; if local dataset files change in place, use `--rebuild` because reuse
+does not reread the corpus to detect changes. For an explicit index destination,
+existing destinations still fail rather than being overwritten.
+
+Each executed stage retains Hydra's fresh timestamped output and provenance.
+The stage scripts support single runs; use the CLI below for Hydra sweeps.
+The bare CLI retains its explicit artifact-path contracts.
+
 ```sh
 uv run scientific-tot dry_run=true
 uv run scientific-tot stage=prepare dataset.root=/your/restored/data

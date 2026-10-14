@@ -6,6 +6,7 @@ __pycache__/
 dist/
 *.egg-info/
 /data/
+/cache/
 .DS_Store
 
 .venv-pyterrier/
