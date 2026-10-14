@@ -47,9 +47,13 @@ class IncompleteCorpusError(ValueError):
     def __init__(self, report: Report) -> None:
         self.report = report
         codes = sorted({issue.code for issue in report.issues})
+        examples = "\n".join(
+            f"  {issue.code}: {issue.path}: {issue.detail}" for issue in report.issues[-3:]
+        )
         super().__init__(
             f"Corpus has {report.skipped} missing/incomplete records ({', '.join(codes)}). "
-            "Inspect exception.report; use missing='skip' only to explicitly exclude them."
+            "Inspect exception.report; use missing='skip' only to explicitly exclude them.\n"
+            f"Last issues:\n{examples}"
         )
 
 

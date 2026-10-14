@@ -332,9 +332,10 @@ def test_query_ids_scoped_across_domains(complete):
     row["relevant_ids"] = ["Physics_one"]
     target = complete / QPATH.replace("/ACL/", "/Physics/")
     write_json(target, row)
-    queries = load_queries(local_dir=complete, domain=["ACL", "Physics"])
-    assert queries[0]["query_id"] == queries[1]["query_id"]
-    assert queries[0]["query_key"] != queries[1]["query_key"]
+    queries = load_queries(local_dir=complete, domain="Physics")
+    acl_queries = load_queries(local_dir=complete, domain="ACL")
+    assert acl_queries[0]["query_id"] == queries[0]["query_id"]
+    assert acl_queries[0]["query_key"] != queries[0]["query_key"]
     corpus = load_corpus(local_dir=complete, domain="ACL")
     with pytest.raises(UnresolvedRelevanceError):
         validate_qrels(queries, corpus)
@@ -372,6 +373,8 @@ def test_query_only_publication_no_fabricated_corpus(tmp_path):
     "kwargs",
     [
         {"domain": []},
+        {"domain": ["ACL", "Physics"]},
+        {"domain": ""},
         {"domain": "../ACL"},
         {"domain": "ACL", "split": "validation"},
         {"domain": "ACL", "representation": "invented"},
@@ -384,9 +387,8 @@ def test_invalid_selections(complete, kwargs):
 
 
 def test_absent_selected_domain_is_reported(complete):
-    with pytest.raises(IncompleteCorpusError) as error:
-        load_corpus(local_dir=complete, domain=["ACL", "Physics"], split="all")
-    assert "missing_domain" in {i.code for i in error.value.report.issues}
+    with pytest.raises(MissingComponentError, match="No preprocessed artifacts"):
+        load_corpus(local_dir=complete, domain="Physics", split="all")
 
 
 def test_split_and_query_domain_mismatch(complete):

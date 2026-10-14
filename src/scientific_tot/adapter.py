@@ -11,7 +11,7 @@ from typing import Any, Literal
 from scientific_tot.data.artifacts import Artifacts
 from scientific_tot.data.hub import Dataset, MissingComponentError
 from scientific_tot.data.identifiers import extraction_path_candidates
-from scientific_tot.data.schemas import QueryCollection
+from scientific_tot.data.schemas import DOMAINS, QueryCollection
 from scientific_tot.data.validation import DatasetFormatError, identifier, relative_path
 from scientific_tot.records import (
     IncompleteCorpusError,
@@ -21,7 +21,7 @@ from scientific_tot.records import (
     UnresolvedRelevanceError,
 )
 
-Domain = str | Sequence[str]
+Domain = str
 Split = Literal["train", "test", "train+test", "all"]
 Representation = Literal["fulltext", "title_abstract", "pages"]
 MissingPolicy = Literal["error", "skip"]
@@ -29,13 +29,9 @@ MODES = {"visual-and-text": "visual_and_text", "visual-only": "visual_only"}
 
 
 def _domains(domain: Domain) -> tuple[str, ...]:
-    values = (domain,) if isinstance(domain, str) else tuple(domain)
-    if not values or len(values) != len(set(values)):
-        raise ValueError("domain must select one or more distinct domains")
-    for value in values:
-        if not isinstance(value, str) or "/" in relative_path(value):
-            raise ValueError("domain must contain plain domain names")
-    return tuple(sorted(values))
+    if not isinstance(domain, str) or domain not in DOMAINS:
+        raise ValueError(f"domain must be one of {DOMAINS}")
+    return (domain,)
 
 
 def _splits(split: Split) -> tuple[str, ...]:

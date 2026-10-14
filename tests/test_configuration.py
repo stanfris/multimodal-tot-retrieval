@@ -102,7 +102,7 @@ def test_dataset_launcher_split_overrides(tmp_path, source, launcher, split):
             f"dataset={source}",
             f"launcher={launcher}",
             f"split={split}",
-            "dataset.domains=[ACL,NeurIPS]",
+            "dataset.domains=[Physics]",
         ),
         tmp_path,
     )
@@ -110,7 +110,7 @@ def test_dataset_launcher_split_overrides(tmp_path, source, launcher, split):
     assert cfg.launcher.device == ("cuda" if launcher == "local_gpu" else "cpu")
     assert cfg.split.queries == split
     assert cfg.split.corpus == "all"
-    assert list(cfg.dataset.domains) == ["ACL", "NeurIPS"]
+    assert list(cfg.dataset.domains) == ["Physics"]
 
 
 @pytest.mark.parametrize("stage", ["search", "export"])
@@ -134,7 +134,8 @@ def test_remaining_stages_explicitly_unimplemented(tmp_path, stage):
         ("dataset.root=null", "Filesystem paths"),
         ("dataset.domains=[]", "domains"),
         ("dataset.domains=[../ACL]", "domain"),
-        ("dataset.domains=[ACL,ACL]", "distinct"),
+        ("dataset.domains=[ACL,ACL]", "exactly one"),
+        ("dataset.domains=[ACL,Physics]", "exactly one"),
         ("dataset.revision=main", "immutable"),
         ("dataset.download.enabled=true", "source=hub"),
         ("dataset.download.components=[clues]", "components"),

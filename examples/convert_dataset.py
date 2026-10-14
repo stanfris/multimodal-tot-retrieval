@@ -10,13 +10,14 @@ import json
 from pathlib import Path
 
 from scientific_tot import Dataset, DatasetAdapter, validate_qrels
+from scientific_tot.data.schemas import DOMAINS
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--local-dir", type=Path)
     parser.add_argument("--revision", help="Immutable Hub commit SHA")
-    parser.add_argument("--domain", nargs="+", required=True)
+    parser.add_argument("--domain", choices=DOMAINS, required=True)
     parser.add_argument("--split", choices=["train", "test", "train+test", "all"], default="all")
     parser.add_argument("--query-split", choices=["train", "test", "train+test"], default="test")
     parser.add_argument("--missing", choices=["error", "skip"], default="error")

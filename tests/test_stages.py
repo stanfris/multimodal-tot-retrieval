@@ -200,30 +200,6 @@ def test_docno_capacity_fails_before_build(tmp_path):
     assert not (output / "index").exists()
 
 
-def test_multiple_domains_preserve_ids_and_accept_configured_order(tmp_path):
-    dataset = tmp_path / "data"
-    shutil.copytree(FIXTURE, dataset)
-    for source in FIXTURE.rglob("*"):
-        if not source.is_file() or "splits" in source.parts:
-            continue
-        destination = dataset / str(source.relative_to(FIXTURE)).replace("ACL", "NeurIPS")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(source.read_text().replace("ACL", "NeurIPS"))
-    split_path = dataset / "splits/pdf_dataset_split.json"
-    split = json.loads(split_path.read_text())
-    for name in ("train", "test"):
-        split[name].extend(path.replace("ACL", "NeurIPS") for path in list(split[name]))
-    split_path.write_text(json.dumps(split))
-    cfg, hydra, output = settings(
-        tmp_path, "prepare", "dataset.domains=[NeurIPS,ACL]", dataset=dataset
-    )
-    manifest = execute(cfg, hydra, output)
-    assert manifest["artifacts"]["documents"] == 4
-    assert manifest["artifacts"]["qrels"] == 2
-    qrels = [json.loads(line) for line in (output / "qrels.jsonl").read_text().splitlines()]
-    assert {row["doc_id"] for row in qrels} == {"ACL_2022.example-1.1", "NeurIPS_2022.example-1.1"}
-
-
 def test_offline_persistent_terrier_index(tmp_path):
     """Real JVM integration; cached jars are required, and downloads are prohibited."""
     pt = pytest.importorskip("pyterrier")

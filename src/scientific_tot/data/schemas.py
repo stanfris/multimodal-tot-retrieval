@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Any
 
+DOMAINS = ("ACL", "Biology", "Engineering", "Medicine", "Physics")
+
 
 @dataclass(frozen=True)
 class FileInfo:

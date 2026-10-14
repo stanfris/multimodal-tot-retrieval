@@ -8,6 +8,8 @@ from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
 
+from scientific_tot.data.schemas import DOMAINS
+
 # The wheel contains the same YAML tree as the checkout, with no duplicated source.
 CONFIG_DIR = Path(__file__).parent / "config"
 if not CONFIG_DIR.is_dir():
@@ -155,13 +157,10 @@ def _validate(cfg: DictConfig) -> None:
     )
     domains = dataset.domains
     _require(
-        OmegaConf.is_list(domains) and len(domains) > 0, "dataset.domains must be a nonempty list"
+        OmegaConf.is_list(domains) and len(domains) == 1,
+        "dataset.domains must select exactly one domain",
     )
-    _require(
-        all(_text(d) and re.fullmatch(r"[A-Za-z0-9_-]+", d) for d in domains),
-        "dataset.domains must contain plain domain names",
-    )
-    _require(len(set(domains)) == len(domains), "dataset.domains must be distinct")
+    _require(domains[0] in DOMAINS, f"dataset.domains must select one of {DOMAINS}")
     _require(dataset.missing in {"error", "skip"}, "dataset.missing must be error or skip")
     _require(
         dataset.query_mode in {"visual-and-text", "visual-only"}, "Unsupported dataset.query_mode"

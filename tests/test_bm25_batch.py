@@ -328,23 +328,6 @@ def test_index_requires_document_domains(tmp_path, batch_setup):
         execute(cfg, hydra, target)
 
 
-def test_older_multidomain_index_is_ambiguous(tmp_path, batch_setup):
-    from scientific_tot.integrations.bm25_batch import _indexed_corpus
-
-    cfg, _ = settings(
-        tmp_path,
-        tmp_path / "retrieve",
-        batch_setup.dataset,
-        "retrieve",
-        f"paths.index={batch_setup.index_dir}",
-        "dataset.domains=[ACL,NeurIPS]",
-    )
-    manifest = json.loads((batch_setup.index_dir / "index-manifest.json").read_text())
-    del manifest["provenance"]["document_domains"]
-    with pytest.raises(ValueError, match="identities/domains"):
-        _indexed_corpus(batch_setup.index, manifest, cfg)
-
-
 def test_empty_rankings_evaluate_all_queries_as_zero(tmp_path, monkeypatch, batch_setup):
     batch = batch_setup
     monkeypatch.setattr(

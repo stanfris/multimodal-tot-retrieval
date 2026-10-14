@@ -73,18 +73,10 @@ def test_index_name_has_no_checksum(tmp_path, dataset):
 
 
 @pytest.mark.parametrize("model", ["bm25", "dense", "colbert"])
-@pytest.mark.parametrize(
-    ("domains", "label"),
-    [
-        ("[ACL]", "ACL"),
-        ("[NeurIPS]", "NeurIPS"),
-        ("[ACL,NeurIPS]", "ACL+NeurIPS"),
-        ("[NeurIPS,ACL]", "ACL+NeurIPS"),
-    ],
-)
-def test_index_name_includes_domains(tmp_path, model, domains, label):
-    cfg, _ = configuration(tmp_path, "stage=index", f"model={model}", f"dataset.domains={domains}")
-    assert artifact_name(cfg, {}) == f"{model}_fulltext_d-{label}_c-all"
+@pytest.mark.parametrize("domain", ["ACL", "Biology", "Engineering", "Medicine", "Physics"])
+def test_index_name_includes_domain(tmp_path, model, domain):
+    cfg, _ = configuration(tmp_path, "stage=index", f"model={model}", f"dataset.domains=[{domain}]")
+    assert artifact_name(cfg, {}) == f"{model}_fulltext_d-{domain}_c-all"
 
 
 def test_dense_identity_pins_encoder_and_excludes_query_settings(tmp_path, dataset):

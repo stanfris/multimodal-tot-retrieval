@@ -165,10 +165,8 @@ TOT_OUTPUT_ROOT=./results/Biology ./scripts/04_evaluate.sh \
   model=dense representation=fulltext split=test 'dataset.domains=[Biology]'
 ```
 
-Selecting multiple domains in one override, such as
-`'dataset.domains=[ACL,Biology]'`, instead retrieves against their combined corpus
-and reports aggregate scores across their test queries. Use the separate runs
-above for per-domain baseline results.
+Each run selects exactly one domain. Use the separate runs above for per-domain
+baseline results.
 
 The scripts run from the repository root and share `./data`, `./cache`, and
 `./results`; edit `scripts/defaults.sh` or use `TOT_DATA_ROOT`, `TOT_CACHE_ROOT`,
@@ -261,8 +259,9 @@ uv run python examples/dense_retrieval.py \
   --domain ACL --cache results/dense-cache --output results/acl-full-dense
 ```
 
-Select another domain with `--domain NeurIPS`, or multiple domains with
-`--domain ACL NeurIPS`. Small demos are explicit: add `--documents 250 --queries 10`.
+Select one domain with `--domain ACL`, `--domain Biology`, `--domain Engineering`,
+`--domain Medicine`, or `--domain Physics`. Small demos are explicit: add
+`--documents 250 --queries 10`.
 Omitting these limits, or setting either to `0`, uses all selected records.
 `--query-split test` is the default; use `train+test` to evaluate both query splits.
 Missing content still raises unless `--missing skip` is explicitly selected.
@@ -343,7 +342,7 @@ all test queries, and fulltext, with fresh output directories. Set `TOT_DATA_ROO
 if your restored data lives elsewhere. Set `DOCUMENTS, QUERIES = 250, 10` for an
 explicit demo; `None, None` (the default) leaves both unlimited. For a fixture
 smoke test, launch with `TOT_DATA_ROOT=tests/fixtures/adapter uv run jupyter lab`.
-Configure domains and optional subset limits in the configuration cell.
+Configure the domain and optional subset limits in the configuration cell.
 BM25 selects the locked `jdk4py` runtime automatically, including on machines
 whose system Java is too old. Its first run downloads Terrier's JAR.
 

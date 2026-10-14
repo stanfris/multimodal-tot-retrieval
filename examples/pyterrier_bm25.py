@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from scientific_tot import Dataset, DatasetAdapter
+from scientific_tot.data.schemas import DOMAINS
 from scientific_tot.integrations.pyterrier import bm25_experiment
 from scientific_tot.integrations.selection import load_experiment_data
 
@@ -13,7 +14,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--local-dir", type=Path)
     parser.add_argument("--revision")
-    parser.add_argument("--domain", nargs="+", default=["ACL"])
+    parser.add_argument("--domain", choices=DOMAINS, default="ACL")
     parser.add_argument(
         "--corpus-split", choices=["all", "train+test", "train", "test"], default="all"
     )

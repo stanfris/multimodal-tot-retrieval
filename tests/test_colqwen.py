@@ -122,6 +122,9 @@ def test_missing_policy_never_hides_positive(tmp_path, dataset, failure):
     with pytest.raises(IncompleteCorpusError) as error:
         colqwen.load_pdf_corpus(configured_adapter(cfg), cfg)
     assert error.value.report.skipped == 1
+    issue = error.value.report.issues[-1]
+    assert issue.path in str(error.value)
+    assert issue.detail in str(error.value)
     cfg, _ = settings(tmp_path, dataset, "prepare", None, "dataset.missing=skip")
     corpus = colqwen.load_pdf_corpus(configured_adapter(cfg), cfg)
     assert len(corpus) == 1

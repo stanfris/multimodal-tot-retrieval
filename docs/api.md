@@ -72,8 +72,8 @@ source that might fall back to the network.
 
 ## Selection and transfer granularity
 
-`domain` accepts one exact published name or a sequence, such as
-`domain=["ACL", "Physics"]`. Every requested query collection must exist;
+`domain` accepts one exact published name: `ACL`, `Biology`, `Engineering`,
+`Medicine`, or `Physics`. Every requested query collection must exist;
 unavailable selections are not silently ignored.
 
 | Parameter | Semantics |

@@ -149,7 +149,7 @@ def resolve_identity(cfg) -> dict:
 def artifact_name(cfg, identity: dict) -> str:
     stem = f"{cfg.model.name}_{cfg.representation.name}"
     if cfg.stage.name == "index":
-        stem += f"_d-{'+'.join(sorted(cfg.dataset.domains))}"
+        stem += f"_d-{cfg.dataset.domains[0]}"
     stem += f"_c-{cfg.split.corpus}"
     if cfg.stage.name == "index" and not cfg.dry_run and cfg.model.name != "colqwen":
         return stem

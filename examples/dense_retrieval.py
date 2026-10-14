@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from scientific_tot import Dataset, DatasetAdapter
+from scientific_tot.data.schemas import DOMAINS
 from scientific_tot.integrations.dense import DEFAULT_MODEL, EncodingConfig, dense_experiment
 from scientific_tot.integrations.selection import load_experiment_data
 
@@ -14,7 +15,7 @@ def main():
     parser.add_argument(
         "--revision", help="Dataset commit SHA (local provenance assertion if offline)"
     )
-    parser.add_argument("--domain", nargs="+", default=["ACL"])
+    parser.add_argument("--domain", choices=DOMAINS, default="ACL")
     parser.add_argument(
         "--corpus-split", choices=["all", "train+test", "train", "test"], default="all"
     )

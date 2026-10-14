@@ -108,7 +108,7 @@ def corpus_arguments(cfg: DictConfig) -> dict:
     if representation not in {"fulltext", "title_abstract", "pages"}:
         raise NotImplementedError(f"representation={cfg.representation.name} is not implemented")
     return {
-        "domain": list(cfg.dataset.domains),
+        "domain": cfg.dataset.domains[0],
         "split": cfg.split.corpus,
         "representation": representation,
         "missing": cfg.dataset.missing,
@@ -119,7 +119,7 @@ def corpus_arguments(cfg: DictConfig) -> dict:
 
 def query_arguments(cfg: DictConfig) -> dict:
     return {
-        "domain": list(cfg.dataset.domains),
+        "domain": cfg.dataset.domains[0],
         "split": cfg.split.queries,
         "mode": cfg.dataset.query_mode,
     }

@@ -8,7 +8,7 @@ from scientific_tot.integrations.pyterrier import select_demo_subset
 def load_experiment_data(
     adapter: DatasetAdapter,
     *,
-    domain: str | list[str] = "ACL",
+    domain: str = "ACL",
     corpus_split: str = "all",
     query_split: str = "test",
     mode: str = "visual-and-text",

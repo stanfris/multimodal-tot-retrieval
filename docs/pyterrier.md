@@ -87,7 +87,8 @@ uv run python examples/pyterrier_bm25.py \
 
 `train+test` restricts documents to published split assignments; `all` includes
 available papers outside those assignments. Query split and corpus split are
-independent. Choose additional domains with `--domain ACL NeurIPS` as available.
+independent. Select one domain with `--domain ACL`, `--domain Biology`,
+`--domain Engineering`, `--domain Medicine`, or `--domain Physics`.
 For Hub data, omit `--local-dir` and supply `--revision` with a full commit SHA.
 The current documented Hub snapshot contains queries only, so a full experiment
 requires restored local corpus/split artifacts until those components are published.

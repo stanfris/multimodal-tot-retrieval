@@ -51,7 +51,7 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
         ]
         if components:
             adapter.download_components(
-                domain=list(cfg.dataset.domains),
+                domain=cfg.dataset.domains[0],
                 components=components,
                 split=cfg.split.corpus if cfg.stage.name == "index" else cfg.split.queries,
                 mode=cfg.dataset.query_mode,
