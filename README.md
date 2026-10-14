@@ -81,16 +81,91 @@ and FAISS/vector files. `models/` contains retrieval outputs; pretrained weights
 and embeddings stay in the existing `cache/` hierarchy. There are no timestamped
 artifact wrappers.
 
-A complete BM25 lifecycle using the convenience scripts:
+### Run BM25 and dense baselines on the test set
+
+After `uv sync --locked`, point `TOT_DATA_ROOT` at your restored dataset. These
+commands index every available ACL document and evaluate all test queries from
+the `visual-and-text` query collection, using original fulltext for both baselines:
 
 ```sh
 export TOT_DATA_ROOT=/your/restored/data
-./scripts/01_prepare.sh       # Optional validation/export.
-./scripts/02_index.sh         # Creates or verifies/reuses the exact corpus index.
-./scripts/03_retrieve.sh      # Selects that exact index; retrieves test queries.
-./scripts/04_evaluate.sh      # Selects a compatible saved run; computes metrics.
-./scripts/04_evaluate.sh 'evaluation.metrics=[RR@10,R@100]'
+
+# BM25 baseline: index, retrieve test queries, then compute scores.
+./scripts/02_index.sh experiment=bm25_fulltext split=test
+./scripts/03_retrieve.sh experiment=bm25_fulltext split=test
+./scripts/04_evaluate.sh experiment=bm25_fulltext split=test
+
+# Pretrained dense baseline (intfloat/e5-small-v2, CPU; no fine-tuning).
+./scripts/02_index.sh model=dense representation=fulltext split=test
+./scripts/03_retrieve.sh model=dense representation=fulltext split=test
+./scripts/04_evaluate.sh model=dense representation=fulltext split=test
 ```
+
+`split=test` selects test queries while keeping `split.corpus=all`, so distractor
+documents remain in the retrieval collection. There are no document or query
+limits. The first BM25 run downloads Terrier's JAR; the first dense run downloads
+the pretrained weights. Preparation/export with `./scripts/01_prepare.sh` is
+optional. The dataset must include corpus, query, and split artifacts as described
+in [the data contract](docs/dataset-schema.md).
+
+Each stage prints its completed output directory. Aggregate test-set scores are
+in `results/evaluations/bm25_fulltext_c-all_q-test_<evaluation-hash>/metrics.csv`
+and `results/evaluations/dense_fulltext_c-all_q-test_<evaluation-hash>/metrics.csv`;
+`per-query.csv` contains individual query scores. Rankings are saved as `run.trec`
+under the corresponding `results/models/` directory. Both baselines retrieve
+top-100 and report RR@10, Recall@1, Recall@10, and NDCG@10 by default. To also
+report Recall@100, pass `'evaluation.metrics=[RR@10,R@1,R@10,R@100,nDCG@10]'`
+to each evaluation command.
+
+For passage-based dense retrieval, replace `model=dense representation=fulltext`
+with `experiment=dense_passages` in all three dense commands. This splits original
+fulltext into overlapping passages and aggregates their scores by maximum per
+paper.
+
+### Evaluate each domain separately
+
+The published domains are `ACL`, `Biology`, `Engineering`, `Medicine`, and
+`Physics`. Pass the same `dataset.domains` override to indexing, retrieval, and
+evaluation. For example, run both baselines separately for every domain:
+
+```sh
+export TOT_DATA_ROOT=/your/restored/data
+
+for domain in ACL Biology Engineering Medicine Physics; do
+  export TOT_OUTPUT_ROOT="./results/$domain"
+
+  ./scripts/02_index.sh experiment=bm25_fulltext split=test "dataset.domains=[$domain]"
+  ./scripts/03_retrieve.sh experiment=bm25_fulltext split=test "dataset.domains=[$domain]"
+  ./scripts/04_evaluate.sh experiment=bm25_fulltext split=test "dataset.domains=[$domain]"
+
+  ./scripts/02_index.sh model=dense representation=fulltext split=test "dataset.domains=[$domain]"
+  ./scripts/03_retrieve.sh model=dense representation=fulltext split=test "dataset.domains=[$domain]"
+  ./scripts/04_evaluate.sh model=dense representation=fulltext split=test "dataset.domains=[$domain]"
+done
+unset TOT_OUTPUT_ROOT
+```
+
+To run only selected domains, shorten the loop list, for example
+`for domain in Biology Physics; do`. Each domain needs its restored corpus,
+test queries, and split artifacts. Scores are saved separately under
+`results/<DOMAIN>/evaluations/`; each baseline's `metrics.csv` reports that
+domain's test-set scores, and `per-query.csv` reports its individual query scores.
+The cache remains shared at `./cache`.
+
+If indexing and retrieval have already completed, rerun only the corresponding
+`04_evaluate.sh` command with the same domain and output root. For example:
+
+```sh
+TOT_OUTPUT_ROOT=./results/Biology ./scripts/04_evaluate.sh \
+  experiment=bm25_fulltext split=test 'dataset.domains=[Biology]'
+TOT_OUTPUT_ROOT=./results/Biology ./scripts/04_evaluate.sh \
+  model=dense representation=fulltext split=test 'dataset.domains=[Biology]'
+```
+
+Selecting multiple domains in one override, such as
+`'dataset.domains=[ACL,Biology]'`, instead retrieves against their combined corpus
+and reports aggregate scores across their test queries. Use the separate runs
+above for per-domain baseline results.
 
 The scripts run from the repository root and share `./data`, `./cache`, and
 `./results`; edit `scripts/defaults.sh` or use `TOT_DATA_ROOT`, `TOT_CACHE_ROOT`,
