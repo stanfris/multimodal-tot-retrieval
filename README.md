@@ -58,67 +58,90 @@ record schemas. [Architecture](docs/architecture.md) records design decisions.
 
 ## Hydra configuration CLI
 
-### Stage scripts with automatic reuse
+The four independent stages write directly into deterministic artifact directories:
 
-```sh
-./scripts/01_prepare.sh     # Optional validation/export; not an index prerequisite.
-./scripts/02_index.sh       # Reuses a compatible completed index if one exists.
-./scripts/03_retrieve.sh    # Finds the newest compatible completed index.
-./scripts/04_evaluate.sh    # Finds the newest compatible completed retrieval run.
+```text
+results/
+  indexes/bm25_fulltext_c-all_<index-hash>/
+    .hydra/{config,hydra,overrides}.yaml
+    manifest.json
+    index-manifest.json
+    data.properties                 # plus Terrier files
+  models/bm25_fulltext_c-all_q-test_<retrieval-hash>/
+    .hydra/  manifest.json  run.trec  topics.jsonl  qrels.tsv
+    query-ids.jsonl  corpus-ids.jsonl
+  evaluations/bm25_fulltext_c-all_q-test_<evaluation-hash>/
+    .hydra/  manifest.json  metrics.csv  per-query.csv
+  prepared/bm25_fulltext_c-all_q-test_<prepare-hash>/
+    .hydra/  manifest.json  corpus.jsonl  queries.jsonl  qrels.jsonl
 ```
 
-All scripts run from the repository root regardless of your current directory.
-Defaults are BM25/fulltext, ACL, all corpus documents, test queries, CPU, top-100,
-and nDCG@10/RR@10/R@100. Shared paths are `./data`, `./cache`, and `./results/hydra`.
-Put the restored canonical dataset in `./data`, or edit `scripts/defaults.sh` once
-to set its location; environment variables `TOT_DATA_ROOT`, `TOT_CACHE_ROOT`, and
-`TOT_OUTPUT_ROOT` take precedence. The scripts do not generate or restore data.
-The uv package cache defaults to `${TOT_CACHE_ROOT}/uv`; `UV_CACHE_DIR` can override it.
+Dense indexes use the same layout with `dense_fulltext` or `dense_passages`
+and FAISS/vector files. `models/` contains retrieval outputs; pretrained weights
+and embeddings stay in the existing `cache/` hierarchy. There are no timestamped
+artifact wrappers.
 
-Hydra overrides still work; use the same experiment choices at each stage:
+A complete BM25 lifecycle using the convenience scripts:
 
 ```sh
-./scripts/02_index.sh experiment=dense_passages
-./scripts/03_retrieve.sh experiment=dense_passages
-./scripts/04_evaluate.sh experiment=dense_passages
-./scripts/02_index.sh --rebuild    # Fresh index; retains earlier outputs.
-./scripts/02_index.sh dry_run=true # Inspect defaults without building an index.
+export TOT_DATA_ROOT=/your/restored/data
+./scripts/01_prepare.sh       # Optional validation/export.
+./scripts/02_index.sh         # Creates or verifies/reuses the exact corpus index.
+./scripts/03_retrieve.sh      # Selects that exact index; retrieves test queries.
+./scripts/04_evaluate.sh      # Selects a compatible saved run; computes metrics.
+./scripts/04_evaluate.sh 'evaluation.metrics=[RR@10,R@100]'
 ```
 
-Automatic selection scans completed attempts under the configured output root,
-restricted to the current `run.name`, then checks their existing compatibility
-and integrity contracts. Evaluation also matches the requested retrieval depth.
-Failed, incompatible, and corrupt candidates are excluded. Explicit `paths.index`
-or `paths.run` overrides bypass automatic selection and retain normal validation.
-No prerequisite stage is launched automatically. Index reuse checks recorded
-identity; if local dataset files change in place, use `--rebuild` because reuse
-does not reread the corpus to detect changes. For an explicit index destination,
-existing destinations still fail rather than being overwritten.
+The scripts run from the repository root and share `./data`, `./cache`, and
+`./results`; edit `scripts/defaults.sh` or use `TOT_DATA_ROOT`, `TOT_CACHE_ROOT`,
+and `TOT_OUTPUT_ROOT`. Their uv cache defaults to `${TOT_CACHE_ROOT}/uv`.
+BM25/fulltext defaults to ACL, all corpus documents, test queries, CPU, top-100,
+and nDCG@10/RR@10/R@100. The scripts do not restore datasets or launch prerequisites.
+Automatic index selection rereads the selected corpus to match its exact identity;
+multiple compatible saved retrieval runs require an explicit `paths.run` choice.
+`--rebuild` is deprecated: changing content/settings creates a new identity;
+identical completed artifacts are always verified and reused.
 
-Each executed stage retains Hydra's fresh timestamped output and provenance.
-The stage scripts support single runs; use the CLI below for Hydra sweeps.
-The bare CLI retains its explicit artifact-path contracts.
+The bare Hydra CLI supports explicit artifact inputs and multiruns. Copy the
+completed paths printed by each command into `INDEX` and `RUN` below:
 
 ```sh
-uv run scientific-tot dry_run=true
-uv run scientific-tot stage=prepare dataset.root=/your/restored/data
 uv run scientific-tot stage=index dataset.root=/your/restored/data
+# Set INDEX to the completed results/indexes/... directory.
+uv run scientific-tot stage=retrieve dataset.root=/your/restored/data "paths.index=$INDEX"
+# Set RUN to the completed results/models/... directory.
+uv run scientific-tot stage=evaluate dataset.root=/your/restored/data "paths.run=$RUN"
+uv run scientific-tot stage=evaluate dataset.root=/your/restored/data "paths.run=$RUN" 'evaluation.metrics=[RR@10,R@100]'
+# An explicit persistent destination is also supported:
+uv run scientific-tot stage=index dataset.root=/your/restored/data paths.index=results/indexes/my-bm25-index
 uv run scientific-tot dry_run=true experiment=dense_passages launcher=local_gpu
-TOT_DATA_ROOT=/your/existing/data uv run scientific-tot dry_run=true experiment=bm25_fulltext
-uv run scientific-tot --multirun dry_run=true experiment=bm25_fulltext,dense_passages split=train,test
+uv run scientific-tot --multirun stage=index split.queries=train,test
 ```
 
-[Configuration guide](docs/configuration.md) explains all YAML groups, overrides,
-local/DGX03 data paths, model parameter contracts, presets, validation, and
-reproducibility. BM25 and dense `prepare`, `index`, `retrieve`, and `evaluate`
-execute for text corpora. Dense passages use the configured LangChain splitter
-and PyTerrier max/mean aggregation, producing canonical paper-level rankings.
-Indexes and batch artifacts carry configuration/provenance manifests; evaluation
-consumes saved runs without indexing or model inference. Standalone examples below
-retain their defaults. See the [implementation report](docs/implementation-report.md)
-for changed files, cache behavior, validation, and limitations. The
-[profile audit](docs/configuration-audit.md) records every YAML consumer, parameter
-binding, necessary configuration change, and unsupported operation.
+Names combine readable model/representation/split labels with the first 16 hex
+characters of a SHA256 of the resolved content identity. Full identities and
+hashes remain in manifests alongside full configuration hashes. Index identities
+include corpus bytes, dataset commit, representation, construction settings and
+resolved document encoder settings/commit. Query split, scoring controls, retrieval
+depth and metrics do not affect indexes. Retrieval identities include the exact
+index manifest, query content/selection and ranking parameters. Evaluation identities
+include the exact saved retrieval manifest and metric settings; evaluation needs
+neither the original dataset nor the index.
+
+Identical completed outputs are reused only after manifest, snapshot and output
+checksum verification, without rewriting files. Incomplete, corrupted, legacy or
+conflicting destinations fail explicitly. Concurrent writers reserve exclusively;
+identical multirun jobs reuse completed outputs, while different identities get
+separate destinations. Old schema-1 artifacts remain explicit input candidates
+under their original verification contracts; they are never promoted or silently
+reused as new schema-2 artifacts. Rebuild from inputs to obtain the new layout.
+
+[Configuration guide](docs/configuration.md) covers profiles, naming, provenance,
+reuse and limitations. BM25 and dense `prepare`, `index`, `retrieve`, and `evaluate`
+execute for text corpora. Dense passages preserve the configured LangChain splitter
+and PyTerrier max/mean aggregation. `search`, `export`, ColBERT, visual/page/figure
+profiles remain configuration-only. Standalone tutorial examples below retain
+their established output layouts and APIs.
 
 ## Full document collection (default)
 

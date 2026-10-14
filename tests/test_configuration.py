@@ -226,8 +226,7 @@ def test_real_multirun(tmp_path):
         f"hydra.sweep.dir={tmp_path / 'sweep'}",
     )
     assert result.returncode == 0, result.stderr
-    for i in range(6):
-        assert len(list((tmp_path / "sweep").glob(f"{i}-*"))) == 1
+    assert len(list((tmp_path / "results/dry-runs").iterdir())) == 6
     assert result.stdout.count("dry_run: true") == 6
     assert (tmp_path / "sweep/multirun.yaml").is_file()
 
@@ -242,7 +241,7 @@ def test_failed_execution_provenance_and_no_overwrite(tmp_path):
     assert manifest["dataset_revision"] == "a" * 40
     assert manifest["local_revision_verified"] is False
     assert manifest["git_commit"]
-    assert manifest["index_location"] == str(output / "index")
+    assert manifest["index_location"] == str(output)
     assert (output / ".hydra/hydra.yaml").is_file()
     cfg = OmegaConf.load(output / ".hydra/config.yaml")
     assert cfg.dataset.root == str(tmp_path / "data")
@@ -268,7 +267,7 @@ def test_existing_sweep_refused_before_hydra_writes(tmp_path):
 
 
 def test_run_stage_guard_and_manifest_boundary(tmp_path, monkeypatch):
-    cfg = resolve_config(config(), tmp_path)
+    cfg = resolve_config(config(f"dataset.root={ROOT / 'tests/fixtures/adapter'}"), tmp_path)
     hydra_cfg = config(hydra=True).hydra
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -279,8 +278,7 @@ def test_run_stage_guard_and_manifest_boundary(tmp_path, monkeypatch):
     run_stage(cfg, run_dir, hydra_cfg, ROOT)
     assert len(calls) == 1
     assert json.loads((run_dir / "manifest.json").read_text())["status"] == "completed"
-    with pytest.raises(FileExistsError):
-        run_stage(cfg, run_dir, hydra_cfg, ROOT)
+    run_stage(cfg, run_dir, hydra_cfg, ROOT)
     assert len(calls) == 1
 
 
@@ -403,7 +401,7 @@ def test_unsafe_sweep_layout(tmp_path, override):
     assert not (tmp_path / "sweep").exists()
 
 
-def test_sweep_duplicate_external_indexes(tmp_path):
+def test_dry_sweep_shared_index_is_validated_without_writes(tmp_path):
     result = cli(
         tmp_path,
         "--multirun",
@@ -413,9 +411,8 @@ def test_sweep_duplicate_external_indexes(tmp_path):
         "paths.index=shared-index",
         f"hydra.sweep.dir={tmp_path / 'sweep'}",
     )
-    assert result.returncode != 0
-    assert "distinct" in result.stderr
-    assert not (tmp_path / "sweep").exists()
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "shared-index").exists()
 
 
 def test_hydra_cannot_write_automatic_snapshots(tmp_path):
@@ -431,6 +428,7 @@ def test_index_contract_and_integrity(tmp_path):
 
     index = tmp_path / "index"
     index.mkdir()
+    (index / "data.properties").write_text("offline index")
     built = resolve_config(config("stage=index"), tmp_path)
     provenance = {"dataset_revision": None, "model_revision": None, "corpus_sha256": "a" * 64}
     write_index_manifest(index, built, provenance=provenance)
@@ -481,7 +479,7 @@ def test_consumer_preflight_prevents_dispatch(tmp_path, monkeypatch):
 
 def test_index_destination_and_cache_guard(tmp_path):
     cfg = resolve_config(config("stage=index"), tmp_path, tmp_path / "attempt")
-    assert cfg.paths.index == str(tmp_path / "attempt/index")
+    assert cfg.paths.index == str(tmp_path / "attempt")
     for override in ("paths.index=cache/index", "paths.index=data/index"):
         with pytest.raises(ValueError, match="overlap"):
             resolve_config(config("stage=index", override), tmp_path, tmp_path / "attempt")
@@ -644,6 +642,7 @@ def test_dense_index_revision_and_query_prompt_contract(tmp_path):
 
     index = tmp_path / "index"
     index.mkdir()
+    (index / "index.faiss").write_text("offline index")
     cfg = resolve_config(config("model=dense", "stage=index"), tmp_path)
     provenance = {
         "dataset_revision": None,
@@ -703,6 +702,7 @@ def test_index_contract_records_resolved_commits_not_mutable_refs(tmp_path):
 
     index = tmp_path / "index"
     index.mkdir()
+    (index / "index.faiss").write_text("offline index")
     cfg = resolve_config(
         config("dataset=hub", "model=dense", "stage=index", "model.revision=main"), tmp_path
     )

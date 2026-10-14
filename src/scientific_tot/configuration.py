@@ -81,7 +81,7 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
             if resolved.paths[key] is not None:
                 resolved.paths[key] = str(absolute(resolved.paths[key], base_dir))
         if run_dir is not None and resolved.stage.name == "index" and resolved.paths.index is None:
-            resolved.paths.index = str(run_dir.resolve() / "index")
+            resolved.paths.index = str(run_dir.resolve())
         inputs = [
             Path(resolved.dataset.root),
             *(Path(p) for p in resolved.dataset.artifacts.values()),
@@ -127,7 +127,7 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
             index = Path(resolved.paths.index)
             if run_dir is not None:
                 _require(
-                    not run_dir.resolve().is_relative_to(index),
+                    run_dir.resolve() == index or not run_dir.resolve().is_relative_to(index),
                     "Index destination must not contain the run directory",
                 )
             for source in inputs:

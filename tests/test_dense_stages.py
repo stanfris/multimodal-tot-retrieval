@@ -126,7 +126,7 @@ def test_fulltext_document_and_query_encoding_are_independent_and_cached(
         "retrieve",
         "ranked",
         "launcher=local_gpu",
-        f"paths.index={index / 'index'}",
+        f"paths.index={index}",
     )
     assert [list(call[2]) for call in encoder] == [["query"]]
     assert encoder[0][2]["query"]["kwargs"] == {"prompt": "Find: "}
@@ -139,7 +139,7 @@ def test_fulltext_document_and_query_encoding_are_independent_and_cached(
         "retrieve",
         "ranked-again",
         "launcher=local_gpu",
-        f"paths.index={index / 'index'}",
+        f"paths.index={index}",
     )
     assert encoder == []
     assert repeated["artifacts"]["cache"]["query_hit"] is True
@@ -149,7 +149,7 @@ def test_fulltext_document_and_query_encoding_are_independent_and_cached(
         "retrieve",
         "changed-query",
         "launcher=local_gpu",
-        f"paths.index={index / 'index'}",
+        f"paths.index={index}",
         "model.encoding.query_prompt='New: '",
     )
     assert [list(call[2]) for call in encoder] == [["query"]]
@@ -195,7 +195,7 @@ def test_passage_aggregation_ranks_and_evaluates_canonical_papers(
         "ranked",
         *PASSAGES,
         f"representation.aggregation.method={method}",
-        f"paths.index={index / 'index'}",
+        f"paths.index={index}",
     )
     rows = [line.split() for line in (output / "run.trec").read_text().splitlines()]
     assert len(rows) == 2
@@ -235,12 +235,12 @@ def test_corrupt_dense_index_and_changed_document_prompt_fail_before_inference(
             dataset,
             "retrieve",
             "wrong-prompt",
-            f"paths.index={index / 'index'}",
+            f"paths.index={index}",
             "model.encoding.document_prompt='Changed: '",
         )
-    artifact = index / "index/index.faiss"
+    artifact = index / "index.faiss"
     artifact.chmod(0o644)
     artifact.write_bytes(b"corrupt")
     with pytest.raises(ValueError, match="corrupt"):
-        execute(tmp_path, dataset, "retrieve", "corrupt", f"paths.index={index / 'index'}")
+        execute(tmp_path, dataset, "retrieve", "corrupt", f"paths.index={index}")
     assert encoder == []

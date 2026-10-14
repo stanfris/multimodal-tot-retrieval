@@ -15,7 +15,7 @@ dry_run: false
 run:
   name: ${model.name}_${representation.name}_c-${split.corpus}_q-${split.queries}
 paths:
-  index: null  # Input for retrieve/search; optional fresh destination for index.
+  index: null  # Input for retrieve/search; optional persistent destination for index.
   run: null  # Completed retrieve directory consumed by evaluate.
 
 hydra:
@@ -23,10 +23,10 @@ hydra:
     chdir: false
   output_subdir: null  # Saved exclusively by the entry point to prevent overwrites.
   run:
-    dir: ${launcher.output_root}/${run.name}/${stage.name}/${now:%Y%m%dT%H%M%S%f}
+    dir: ${artifact_dir:}
   sweep:
-    dir: ${launcher.output_root}/multirun/${now:%Y%m%dT%H%M%S%f}
-    subdir: ${hydra.job.num}-${run.name}-${stage.name}
+    dir: ${sweep_dir:}
+    subdir: ${artifact_dir:}
   callbacks:
     fresh_output:
       _target_: scientific_tot.hydra_run.FreshOutput

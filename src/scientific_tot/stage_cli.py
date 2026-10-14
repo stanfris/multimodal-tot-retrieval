@@ -10,42 +10,43 @@ from pathlib import Path
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
-from scientific_tot.config_artifacts import verify_index, verify_retrieval
+from scientific_tot.config_artifacts import verify_retrieval
 from scientific_tot.configuration import CONFIG_DIR, resolve_config
 
 
 def find_artifact(cfg, stage: str) -> Path | None:
-    """Choose the newest compatible completed attempt, including custom index locations."""
+    """Select exact indexes by current corpus identity; saved runs by verified settings."""
+    if stage == "index":
+        from scientific_tot.artifact_identity import artifact_directory, resolve_identity
+        from scientific_tot.hydra_run import verify_completed
+
+        build = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
+        build.stage.name = "index"
+        build.paths.index = None
+        build.paths.run = None
+        build = resolve_config(build, Path.cwd())
+        identity = resolve_identity(build)
+        location = artifact_directory(build, identity)
+        if location.exists():
+            build = resolve_config(build, Path.cwd(), location)
+            verify_completed(location, build, identity)
+            return location
+        return None
     candidates = []
-    for path in Path(cfg.launcher.output_root).glob("**/manifest.json"):
+    for path in sorted(Path(cfg.launcher.output_root).glob("models/*/manifest.json")):
         try:
             manifest = json.loads(path.read_text())
-            if (
-                manifest.get("stage") == stage
-                and manifest.get("status") == "completed"
-                and manifest.get("experiment_name") == cfg.run.name
-            ):
-                candidates.append(path)
-        except (OSError, ValueError):
-            continue
-    for path in sorted(candidates, key=lambda p: (p.stat().st_mtime_ns, str(p)), reverse=True):
-        try:
-            if stage == "index":
-                location = json.loads(path.read_text())["index_location"]
-                artifact = Path(location)
-                verify_index(artifact, cfg)
-            else:
-                artifact = path.parent
-                verify_retrieval(artifact, cfg)
-                saved = OmegaConf.load(artifact / ".hydra/config.yaml")
-                # Auto-selection follows requested depth; explicit paths retain the
-                # evaluator's ability to use any saved depth covering its metrics.
-                if saved.retrieval.top_k != cfg.retrieval.top_k:
-                    continue
-            return artifact
+            if manifest.get("schema_version") != 2 or not manifest.get("artifact_identity"):
+                continue
+            verify_retrieval(path.parent, cfg)
+            saved = OmegaConf.load(path.parent / ".hydra/config.yaml")
+            if saved.retrieval.top_k == cfg.retrieval.top_k:
+                candidates.append(path.parent)
         except (OSError, ValueError, KeyError, TypeError):
             continue
-    return None
+    if len(candidates) > 1:
+        raise ValueError("Multiple compatible saved runs; supply paths.run explicitly")
+    return candidates[0] if candidates else None
 
 
 def plan(stage: str, overrides: list[str], *, rebuild: bool = False):
@@ -75,11 +76,6 @@ def plan(stage: str, overrides: list[str], *, rebuild: bool = False):
         # JSON quoting is accepted by Hydra and preserves spaces in filesystem paths.
         command.append(f"paths.{key}={json.dumps(str(artifact))}")
         print(f"Using {key}: {artifact}", flush=True)
-    if stage == "index" and not rebuild and not resolved.dry_run and resolved.paths.index is None:
-        artifact = find_artifact(resolved, "index")
-        if artifact is not None:
-            print(f"Reusing index: {artifact}\nPass --rebuild to build a fresh index.", flush=True)
-            return resolved, None
     return resolved, command
 
 
@@ -87,7 +83,7 @@ def main() -> None:
     args = sys.argv[1:]
     if not args or "--help" in args or "-h" in args:
         print(
-            "Usage: scripts/0N_STAGE.sh [--rebuild (index only)] [Hydra key=value ...]\n"
+            "Usage: scripts/0N_STAGE.sh [Hydra key=value ...]\n"
             "Defaults: BM25/fulltext, ACL, all corpus documents, test queries, CPU, top-100.\n"
             "Examples: scripts/02_index.sh experiment=dense_passages\n"
             "          scripts/03_retrieve.sh retrieval.top_k=200\n"
@@ -100,6 +96,12 @@ def main() -> None:
     try:
         if rebuild and stage != "index":
             raise ValueError("--rebuild is only supported by the index script")
+        if rebuild:
+            print(
+                "--rebuild is deprecated: changed inputs create a new identity; "
+                "identical inputs are verified and reused.",
+                flush=True,
+            )
         cfg, command = plan(stage, overrides, rebuild=rebuild)
         if command is None:
             return

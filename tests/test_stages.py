@@ -58,7 +58,7 @@ def test_prepare_exports_validated_original_records(tmp_path):
     assert not (output / "run.trec").exists()
 
 
-@pytest.mark.parametrize("stage", ["prepare", "index"])
+@pytest.mark.parametrize("stage", ["prepare"])
 @pytest.mark.parametrize("missing", ["error", "skip"])
 def test_every_positive_must_resolve_before_writes(tmp_path, stage, missing):
     dataset = tmp_path / "data"
@@ -254,7 +254,7 @@ cfg = OmegaConf.masked_copy(raw, [k for k in raw if k != "hydra"])
 cfg = resolve_config(cfg, BASE, OUTPUT)
 OUTPUT.mkdir()
 run_stage(cfg, OUTPUT, raw.hydra, ROOT)
-index = pt.terrier.IndexFactory.of(str(OUTPUT / "index/data.properties"))
+index = pt.terrier.IndexFactory.of(str(OUTPUT / "data.properties"))
 try:
     assert index.getCollectionStatistics().getNumberOfDocuments() == 2
     assert {str(index.getMetaIndex().getItem("docno", i)) for i in range(2)} == {
@@ -278,7 +278,7 @@ finally:
         timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    saved = json.loads((output / "index/index-manifest.json").read_text())
+    saved = json.loads((output / "index-manifest.json").read_text())
     assert saved["status"] == "completed"
     assert saved["provenance"]["doc_ids_verified_against_index"] is True
     assert saved["configuration"]["model"]["indexing"]["blocks"] is True

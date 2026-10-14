@@ -53,9 +53,9 @@ uv run scientific-tot dry_run=true model=colbert representation=fulltext
 uv run scientific-tot dry_run=true model=visual representation=figures
 uv run scientific-tot dry_run=true split=train split.corpus=train
 uv run scientific-tot dry_run=true 'model.retrieval.controls={bm25.b:0.5,bm25.k_1:1.5}'
-uv run scientific-tot dry_run=true stage=retrieve paths.index=results/prior/index retrieval.top_k=200
-uv run scientific-tot dry_run=true stage=evaluate paths.run=results/prior/retrieve 'evaluation.metrics=[RR@10,R@100]'
-uv run scientific-tot dry_run=true stage=search paths.index=results/prior/index 'stage.query=encoder diagram'
+uv run scientific-tot dry_run=true stage=retrieve paths.index=results/indexes/prior-index retrieval.top_k=200
+uv run scientific-tot dry_run=true stage=evaluate paths.run=results/models/prior-run 'evaluation.metrics=[RR@10,R@100]'
+uv run scientific-tot dry_run=true stage=search paths.index=results/indexes/prior-index 'stage.query=encoder diagram'
 ```
 
 BM25 control names are **literal dotted library keys**. Override their dictionary
@@ -123,28 +123,53 @@ without Hydra settings retain their historical cache API/defaults.
 `run.name` defaults to the effective
 `<model>_<representation>_c-<corpus split>_q-<query split>` after all overrides;
 `run.name=my-study` gives a custom plain filesystem-safe label. Names label a
-study, not a unique parameter identity: resolved snapshots and checksums identify
-settings. A timestamp identifies each attempt; sweep job numbers distinguish jobs.
+study; artifact identities are independent of that label for indexes. Retrieval
+includes the run label because it is serialized in `run.trec`.
 
 ```text
-output_root/
-  bm25_fulltext_c-all_q-test/index/<timestamp>/
+results/                           # launcher.output_root defaults to ./results
+  indexes/<model>_<representation>_c-<corpus>_<hash>/
     .hydra/{config,hydra,overrides}.yaml
     manifest.json
-    index/                         # persistent Terrier index + index-manifest.json
-  multirun/<timestamp>/
-    multirun.yaml
-    0-bm25_fulltext_c-all_q-train-index/
-    1-bm25_fulltext_c-all_q-test-index/
-cache_root/                        # outside output_root
+    index-manifest.json
+    data.properties or index.faiss # backend files directly alongside snapshots
+  models/<model>_<representation>_c-<corpus>_q-<queries>_<hash>/
+    .hydra/  manifest.json  run.trec  topics.jsonl  qrels.tsv
+    query-ids.jsonl  corpus-ids.jsonl
+  evaluations/<model>_<representation>_c-<corpus>_q-<queries>_<hash>/
+    .hydra/  manifest.json  metrics.csv  per-query.csv
+  prepared/<model>_<representation>_c-<corpus>_q-<queries>_<hash>/
+    .hydra/  manifest.json  corpus.jsonl  queries.jsonl  qrels.jsonl
+cache_root/                        # outside output_root, unchanged
   datasets/
-  embeddings/
+  embeddings/                      # includes existing library model caches
 ```
+
+`artifact_identity.py` is the centralized authority for names and locations.
+Hydra's `artifact_dir` resolver calls it before directory creation; YAML contains
+no separate hash/path algorithm. The suffix is 16 hex characters of the full
+SHA256 stored as `artifact_sha256`, with the complete `artifact_identity` stored
+alongside the existing full-configuration checksum. Short-name collisions fail
+verification rather than overwriting an artifact.
+
+Index identities use selected original corpus text/IDs/order, dataset repository
+and resolved commit, corpus selection, document representation/preprocessing,
+backend construction settings, and resolved document encoder commit/settings.
+Relevant backend library versions and thread settings are retained. Filesystem
+input locations remain exact provenance but do not determine corpus content
+identity. Index identities exclude query artifacts/split/mode, evaluation metrics,
+ranking depth, BM25 scoring controls, dense query prompts and passage aggregation.
+Retrieval identities reference the exact source index manifest (path and checksum),
+query content/selection/revision, model/ranking settings, prompts and depth.
+Evaluation identities reference the exact source retrieval manifest and evaluation
+settings. `prepare` includes selected corpus, queries, judgments and representation.
+Model weights are not loaded to resolve names; mutable dense model references are
+resolved to immutable commits and pinned for the actual build.
 
 | Stage | Inputs and intended output | Current boundary |
 | --- | --- | --- |
 | `prepare` | Selected corpus/queries → `corpus.jsonl`, `queries.jsonl`, `qrels.jsonl` with coverage/provenance sidecars | BM25/dense text representations supported; every positive validated |
-| `index` | Corpus → fresh `paths.index`, default `<run_dir>/index` | Persistent Terrier or FAISS index; YAML parameters applied; existing destinations refused |
+| `index` | Corpus → `results/indexes/<index-id>` or explicit `paths.index` | Persistent Terrier or FAISS index; verified identical artifacts reused |
 | `retrieve` | Verified `paths.index` + batch queries → `run.trec`, `topics.jsonl`, `qrels.tsv`, `query-ids.jsonl`, `corpus-ids.jsonl` | BM25/dense batch retrieval; canonical paper IDs and artifact hashes |
 | `evaluate` | Completed retrieval `paths.run` → aggregate/per-query metrics | Saved artifact/configuration validation; ir_measures aggregate/per-query metrics |
 | `search` | Verified `paths.index` + required `stage.query` → ad hoc ranking | Index verification wired; interactive execution unimplemented |
@@ -160,14 +185,14 @@ uv run scientific-tot stage=index dataset.root=/your/restored/data
 uv run scientific-tot stage=index dataset.root=/your/restored/data paths.index=/fresh/index
 ```
 
-Preparation and indexing construct one configured `DatasetAdapter`, load the selected corpus
-and queries, and validate every positive target. `dataset.missing=skip` cannot
+Preparation loads corpus and queries and validates every positive target. Indexing
+loads only the selected corpus; query files and qrels are unnecessary. `dataset.missing=skip` cannot
 omit a positive target. Local restored data is read in place; Hub mode pins
 all reads to one resolved commit and downloads configured components through the
 existing adapter. Required absent components fail explicitly. No dataset restoration
 or document conversion algorithm is added. `prepare` writes canonical JSONL with
-existing `Records.write_jsonl` sidecars; it does not start Java. `index` validates
-queries but only builds an index, without retrieval or evaluation. BM25 indexing uses
+existing `Records.write_jsonl` sidecars; it does not start Java. `index` builds only an index, without query reads, retrieval or evaluation.
+Explicit index downloads filter out query components and use the corpus split. BM25 indexing uses
 `model.indexing` and `launcher.threads.indexing`, checks metadata capacity against
 UTF-8 paper IDs, and verifies stored IDs and document count before completion.
 Failed builds retain their output but have no completed index manifest.
@@ -182,27 +207,42 @@ blocked during that test.
 
 ## Snapshots, provenance, and reuse
 
-A callback reserves a fresh run or sweep root **before Hydra writes**. Existing
-roots are refused, including dry runs. The pinned Hydra 1.3 basic sweeper is expanded
-and every composed job is validated before `multirun.yaml` is written; repeated
-external index destinations are refused. Supported subdirectory layouts are
-`${hydra.job.num}-${run.name}-${stage.name}` and `${hydra.job.num}`. Other sweepers
-need an explicit preflight integration. Automatic Hydra output subdirectories and
-job file logging must remain disabled.
+`FreshOutput` protects inputs/caches and reserves a new single-run artifact directory
+**before Hydra writes**. Existing completed identical artifacts are fully verified
+and reused without rewriting snapshots, manifests or outputs. Failed, incomplete,
+corrupted or incompatible destinations fail explicitly. An exclusive `.run.lock`
+also guards direct callers racing on an empty directory. Outputs are inventoried
+and checksummed before the read-only manifest is marked completed. Sources are
+checked again after construction; changed inputs cannot claim completion under
+the reserved identity. Resolve failures before a destination is known leave no
+artifact; failures after reservation preserve their snapshots and failed manifest.
 
-Each execution attempt exclusively reserves `.run.lock`, then stores resolved,
-absolute application settings, Hydra settings, and overrides in `.hydra/`. Snapshots
-are read-only files; the application config has a canonical SHA256 in the manifest.
-Status progresses from started to completed/failed; the final manifest is read-only.
-Failed attempts are retained and cannot be reused. Git commit and dirty status
-are recorded for a checkout; installed wheels outside a checkout report null.
-Requested revisions are recorded separately from resolved artifact provenance.
+The pinned Hydra basic sweeper validates all composed job paths and identities
+before writing `multirun.yaml`. Distinct identities resolve to separate directories;
+identical jobs can share a destination and reuse the first completed artifact.
+Concurrent identical jobs encountering an unfinished reservation fail safely.
+Conflicting identities or ancestor/descendant output paths fail in preflight.
+Only `${artifact_dir:}` is supported for `hydra.sweep.subdir`. Mutable sweep
+orchestration metadata lives in an exclusively reserved temporary directory outside
+`results/`, never as an artifact wrapper. An explicit `hydra.sweep.dir` remains
+supported and must be fresh; temporary orchestration directories can be removed
+after a sweep. Other sweepers need explicit preflight integration. Automatic Hydra
+snapshots and job file logging remain disabled.
+
+`.hydra/` contains resolved absolute application settings, Hydra settings and
+overrides; all three snapshots are read-only. Requested revisions remain in those
+snapshots, while manifests record resolved dataset/model revisions and builder
+provenance. Git commit and dirty status are recorded for a checkout; installed
+wheels outside a checkout report null. `dry_run=true` resolves/validates configuration
+without reading datasets/models, writes no snapshots/manifests, and uses a clearly
+separate `dry-runs/` destination. Dry-run hashes describe requested configuration,
+not a resolved artifact identity.
 
 `write_index_manifest(index, cfg, provenance=...)` defines the builder's
 completion contract: immutable full configuration, checksum, index-relevant settings,
 resolved dataset/model revisions, and corpus SHA256. It uses exclusive creation.
 `verify_index` is wired into retrieve/search preflight before backend dispatch.
-It rejects missing/legacy manifests, incomplete artifacts, changed configuration,
+It rejects missing/unsupported manifests, incomplete artifacts, changed configuration,
 model/corpus/representation mismatch, and mismatched pinned revision provenance.
 Query split, metric selection, ranking depth, BM25 retrieval controls, and dense
 query prompt may change without rebuilding the corpus index. Other model build
@@ -213,13 +253,15 @@ mutable refs/null revisions must be pinned before consuming an index, preventing
 query encoding from resolving newer weights. Local dense checkpoint execution
 remains unsupported by the existing Hub model-revision resolver.
 
-These contracts verify configuration identity and saved batch integrity. Dense
-index files are checksummed; BM25 binaries are opened and validated by Terrier,
-without an independent full binary checksum inventory. Neither certifies local
-dataset origins. Legacy tutorial
-indexes/caches need a future explicit verified migration; they are never accepted
-by guessing their build settings. `verify_retrieval` requires a completed retrieve
-manifest, intact config checksum, and all five batch artifacts with exact paths and checksums.
+Schema-2 index manifests inventory both Terrier and FAISS output bytes with exact
+references/checksums. Completed stage manifests additionally seal snapshots and all
+outputs; identical artifact reuse verifies that entire inventory. This does not
+certify local dataset origins. Schema-1 Hydra indexes and saved batches may still
+be consumed via explicit paths under their original verification contracts, but
+cannot be reused as schema-2 outputs. Unmanifested tutorial indexes remain
+unsupported. There is no implicit migration: rebuild from original inputs for new
+artifacts and deterministic names. `verify_retrieval` requires a completed retrieve
+manifest, intact config checksum and all five batch files with exact paths/checksums.
 
 ## Existing integration functions
 

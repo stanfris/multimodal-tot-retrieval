@@ -308,7 +308,7 @@ def test_retrieve_requires_persisted_index(tmp_path, batch_setup):
     cfg, hydra = settings(
         tmp_path, target, batch_setup.dataset, "retrieve", f"paths.index={batch_setup.index_dir}"
     )
-    with pytest.raises(FileNotFoundError, match="Incomplete Terrier"):
+    with pytest.raises(FileNotFoundError, match="Incomplete"):
         execute(cfg, hydra, target)
     assert batch_setup.calls == []
 
@@ -479,7 +479,7 @@ DatasetAdapter.load_corpus = blocked
 pt.terrier.IterDictIndexer = blocked
 pt.Experiment = blocked
 shutil.rmtree(DATASET / "preprocessed")
-execute("retrieve", extra=[f"paths.index={BASE / 'index/index'}", "retrieval.top_k=1"])
+execute("retrieve", extra=[f"paths.index={BASE / 'index'}", "retrieval.top_k=1"])
 assert not (BASE / "retrieve/metrics.csv").exists()
 """
     )

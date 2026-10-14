@@ -44,7 +44,7 @@ def _verify_document_ids(index, documents: tuple[dict[str, str], ...]) -> None:
         raise RuntimeError("Terrier indexed docnos differ from canonical corpus IDs")
 
 
-def build_bm25_index(corpus: Records, inputs: TerrierInputs, cfg) -> dict:
+def build_bm25_index(corpus: Records, inputs: TerrierInputs, cfg, *, reserved=False) -> dict:
     """Persist a fresh classic Terrier index without constructing a retrieval model."""
     from scientific_tot.config_arguments import bm25_arguments, require_corpus_settings
     from scientific_tot.config_artifacts import write_index_manifest
@@ -57,7 +57,12 @@ def build_bm25_index(corpus: Records, inputs: TerrierInputs, cfg) -> dict:
     )
     target = Path(cfg.paths.index)
     # Exclusive reservation also protects concurrent builders of an external destination.
-    target.mkdir(parents=True, exist_ok=False)
+    if reserved:
+        from scientific_tot.config_artifacts import require_index_reservation
+
+        require_index_reservation(target)
+    else:
+        target.mkdir(parents=True, exist_ok=False)
     import pyterrier as pt
 
     _start_terrier(pt, cfg.launcher.terrier_version)

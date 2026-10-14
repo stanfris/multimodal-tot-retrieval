@@ -64,7 +64,7 @@ def project_passages(corpus: Records, cfg) -> Records:
     )
 
 
-def build_dense_index(corpus: Records, inputs, cfg) -> dict:
+def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
     """Encode documents only, reuse verified cached vectors/index, and publish a fresh index."""
     import faiss
 
@@ -87,7 +87,12 @@ def build_dense_index(corpus: Records, inputs, cfg) -> dict:
     config = EncodingConfig(**dense_arguments(cfg))
     revision = resolve_model_revision(config)
     target = Path(cfg.paths.index)
-    target.mkdir(parents=True, exist_ok=False)
+    if reserved:
+        from scientific_tot.config_artifacts import require_index_reservation
+
+        require_index_reservation(target)
+    else:
+        target.mkdir(parents=True, exist_ok=False)
     vectors, cached, entry, hit = cached_encoding(
         config,
         revision,

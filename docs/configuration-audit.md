@@ -62,7 +62,7 @@ values without optional backends; `config_artifacts.py` defines artifact identit
 | Top-level seed=42 was never used | Remove the misleading unused seed; no stochastic behavior or scientific defaults changed. Future stochastic execution must wire its actual seed argument explicitly |
 | title_abstract.fields was mutable despite fixed adapter projection | Keep established fields and refuse other projections |
 | Artifact overrides were accepted even though Dataset requires canonical paths | Keep dry-run contracts; reject relocated artifacts in the existing configured adapter, without adding a filesystem abstraction |
-| Output timestamps lacked study identity and could mix caches/results | Label paths with effective model/representation/splits; guard output/cache overlap including custom Hydra roots and external indexes |
+| Output timestamps lacked study identity and could mix caches/results | Use content identities under indexes/models/evaluations/prepared; guard output/cache overlap including custom Hydra roots and external indexes |
 | Single-run guards did not validate all swept jobs before writing metadata | Expand the pinned basic sweeper and preflight every composition before reservation; reject unsafe job layouts and duplicate external index destinations |
 | Configuration snapshots were preserved but writable; Git SHA omitted dirty state | Make snapshots/final manifests read-only, hash resolved config, record dirty status, retain failed attempts and exclusive creation |
 | Index consumers could not verify build configuration | Add completed index-manifest schema with immutable config, digest, resolved revisions and corpus content digest; reject incompatible/legacy/missing snapshots before dispatch |

@@ -7,6 +7,7 @@ from hydra.core.hydra_config import HydraConfig
 from hydra.utils import get_original_cwd
 from omegaconf import DictConfig, OmegaConf
 
+import scientific_tot.artifact_identity  # noqa: F401 - registers the Hydra path resolver
 from scientific_tot.configuration import CONFIG_DIR, resolve_config
 from scientific_tot.hydra_run import run_stage
 

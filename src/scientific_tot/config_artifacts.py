@@ -59,6 +59,19 @@ def index_settings(cfg: DictConfig, provenance: dict | None = None) -> dict:
     }
 
 
+def require_index_reservation(target: Path) -> None:
+    """Builders may share a stage reservation, never an existing backend index."""
+    if {path.name for path in target.iterdir()} != {".run.lock", ".hydra", "manifest.json"}:
+        raise FileExistsError(f"Refusing to overwrite nonempty index destination: {target}")
+    manifest = json.loads((target / "manifest.json").read_text())
+    if (
+        manifest.get("stage") != "index"
+        or manifest.get("status") != "started"
+        or manifest.get("index_location") != str(target.resolve())
+    ):
+        raise FileExistsError(f"Index destination lacks a fresh stage reservation: {target}")
+
+
 def write_index_manifest(index: Path, cfg: DictConfig, *, provenance: dict) -> None:
     """Called only after a builder completes; legacy indexes require explicit migration.
 
@@ -69,27 +82,44 @@ def write_index_manifest(index: Path, cfg: DictConfig, *, provenance: dict) -> N
         raise ValueError("Index manifests require a stage=index build configuration")
     _validate_provenance(cfg, provenance)
     configuration = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
+    from scientific_tot.artifact_identity import index_identity
+
+    identity = {"stage": "index", "index": index_identity(cfg, provenance)}
+    files = {
+        str(path.relative_to(index)): artifact_reference(path)
+        for path in sorted(index.rglob("*"))
+        if path.is_file()
+        and ".hydra" not in path.relative_to(index).parts
+        and path.name not in {"manifest.json", ".run.lock", "index-manifest.json"}
+    }
     save_json(
         index / "index-manifest.json",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "status": "completed",
             "configuration": configuration,
             "configuration_sha256": digest(configuration),
             "index_settings": index_settings(cfg, provenance),
+            "artifact_identity": identity,
+            "artifact_sha256": digest(identity),
+            "index_files": files,
             "provenance": provenance,
         },
     )
 
 
-def verify_index(index: Path, cfg: DictConfig) -> dict:
+def verify_index(index: Path, cfg: DictConfig, *, allow_building: bool = False) -> dict:
     """Fail closed before a backend opens an index built with incompatible settings."""
     manifest = json.loads((index / "index-manifest.json").read_text())
-    if manifest.get("schema_version") != 1 or manifest.get("status") != "completed":
+    if manifest.get("schema_version") not in {1, 2} or manifest.get("status") != "completed":
         raise ValueError("Index manifest is not a completed supported artifact")
-    if cfg.model.name == "dense" and (
-        not isinstance(cfg.model.revision, str)
-        or not re.fullmatch(r"[0-9a-f]{40}", cfg.model.revision)
+    if (
+        cfg.model.name == "dense"
+        and cfg.stage.name != "index"
+        and (
+            not isinstance(cfg.model.revision, str)
+            or not re.fullmatch(r"[0-9a-f]{40}", cfg.model.revision)
+        )
     ):
         raise ValueError("Dense index consumers must pin model.revision to the build commit")
     configuration = manifest["configuration"]
@@ -99,9 +129,38 @@ def verify_index(index: Path, cfg: DictConfig) -> dict:
     built_config = OmegaConf.create(configuration)
     _validate_provenance(built_config, provenance)
     built = index_settings(built_config, provenance)
-    if built != manifest["index_settings"] or built != index_settings(cfg):
+    if built != manifest["index_settings"] or built != index_settings(
+        cfg, provenance if cfg.stage.name == "index" else None
+    ):
         raise ValueError("Index configuration differs from requested corpus/model/representation")
     _validate_provenance(cfg, provenance)
+    if manifest["schema_version"] == 2:
+        if not manifest.get("artifact_identity") or not manifest.get("index_files"):
+            raise ValueError("Incomplete index identity/file inventory")
+        stage_manifest = index / "manifest.json"
+        if stage_manifest.exists() and not allow_building:
+            stage = json.loads(stage_manifest.read_text())
+            if (
+                stage.get("status") != "completed"
+                or stage.get("artifact_identity") != manifest["artifact_identity"]
+            ):
+                raise ValueError(
+                    "Index stage manifest is incomplete or differs from index identity"
+                )
+        from scientific_tot.artifact_identity import index_identity
+
+        identity = {"stage": "index", "index": index_identity(built_config, provenance)}
+        if identity != manifest["artifact_identity"] or digest(identity) != manifest.get(
+            "artifact_sha256"
+        ):
+            raise ValueError("Index identity checksum differs")
+        for name, reference in manifest.get("index_files", {}).items():
+            if not (index / name).is_file():
+                raise FileNotFoundError(f"Incomplete persistent index: {index / name}")
+            if artifact_reference(index / name) != reference:
+                raise ValueError(
+                    f"Incomplete/corrupt index artifact reference/checksum differs: {name}"
+                )
     return manifest
 
 
@@ -109,11 +168,15 @@ def verify_retrieval(directory: Path, cfg: DictConfig | None = None) -> dict:
     """Metrics consume a completed batch artifact; they never implicitly retrieve."""
     manifest = json.loads((directory / "manifest.json").read_text())
     if (
-        manifest.get("schema_version") != 1
+        manifest.get("schema_version") not in {1, 2}
         or manifest.get("status") != "completed"
         or manifest.get("stage") != "retrieve"
     ):
         raise ValueError("paths.run must identify a completed retrieve stage")
+    if manifest["schema_version"] == 2:
+        identity = manifest.get("artifact_identity")
+        if not identity or digest(identity) != manifest.get("artifact_sha256"):
+            raise ValueError("Retrieval identity checksum differs")
     snapshot = OmegaConf.to_container(
         OmegaConf.load(directory / ".hydra/config.yaml"), resolve=True
     )
