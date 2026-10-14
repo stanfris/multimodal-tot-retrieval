@@ -429,6 +429,8 @@ class DatasetAdapter:
                         "paper_metadata": store.locator(meta_path) if full else None,
                         "content": store.locator(markdown)
                         if representation == "fulltext"
+                        else {"source_pdf_relpath": source_path}
+                        if representation == "pages"
                         else {
                             "fields": [
                                 k

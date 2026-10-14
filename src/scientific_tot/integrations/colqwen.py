@@ -3,6 +3,7 @@
 import json
 import shutil
 import tempfile
+from contextlib import closing
 from importlib.metadata import version
 from pathlib import Path
 from urllib.parse import quote, unquote
@@ -15,9 +16,11 @@ from scientific_tot.config_arguments import configured_adapter, corpus_arguments
 from scientific_tot.config_artifacts import (
     artifact_reference,
     require_index_reservation,
+    save_json,
     verify_index,
     write_index_manifest,
 )
+from scientific_tot.data.validation import DatasetFormatError
 from scientific_tot.integrations.bm25_batch import save_batch
 from scientific_tot.integrations.pyterrier import to_pyterrier_queries
 from scientific_tot.records import IncompleteCorpusError, Issue, Records, Report, records_digest
@@ -36,6 +39,9 @@ def dependency_versions() -> dict:
             "pypdfium2",
             "qdrant-client",
             "numpy",
+            "tokenizers",
+            "huggingface-hub",
+            "accelerate",
         )
     }
 
@@ -48,8 +54,8 @@ def page_id(doc_id: str, number: int) -> str:
 
 def render_page(pdf, number: int, cfg):
     """PDFium owns rasterization; PIL images are passed unchanged to the processor."""
-    with pdf[number - 1] as page:
-        with page.render(scale=cfg.representation.rendering.scale) as bitmap:
+    with closing(pdf[number - 1]) as page:
+        with closing(page.render(scale=cfg.representation.rendering.scale)) as bitmap:
             return bitmap.to_pil().copy()
 
 
@@ -76,6 +82,8 @@ def load_pdf_corpus(adapter, cfg) -> Records:
                 for number in range(1, len(pdf) + 1):
                     render_page(pdf, number, cfg).close()
                 count = len(pdf)
+        except DatasetFormatError:
+            raise
         except (OSError, pdfium.PdfiumError, ValueError) as exc:
             report.skipped += 1
             report.issues.append(
@@ -130,16 +138,20 @@ def load_model(cfg):
     """
     import torch
     from huggingface_hub import snapshot_download
-    from sentence_transformers import MultiVectorEncoder
 
     torch.set_num_threads(cfg.launcher.threads.encoding)
-    if cfg.model.device == "cuda" and not torch.cuda.is_available():
+    if not torch.cuda.is_available():
         raise RuntimeError("ColQwen CUDA execution requires an available NVIDIA GPU")
+    from sentence_transformers import MultiVectorEncoder
+
     cache = Path(cfg.launcher.cache_root) / "models"
     cache.mkdir(parents=True, exist_ok=True)
     adapter = Path(
         snapshot_download(cfg.model.model_id, revision=cfg.model.revision, cache_dir=str(cache))
     )
+    metadata = json.loads((adapter / "config_sentence_transformers.json").read_text())
+    if metadata["model_type"] != "MultiVectorEncoder" or not (adapter / "modules.json").is_file():
+        raise ValueError("Checkpoint lacks its official MultiVectorEncoder conversion")
     base = snapshot_download(
         cfg.model.base_model_id, revision=cfg.model.base_revision, cache_dir=str(cache)
     )
@@ -158,8 +170,12 @@ def load_model(cfg):
         (view / "adapter_config.json").write_text(json.dumps(config))
         assert cfg.model.processor == "checkpoint"
         model = MultiVectorEncoder(str(view), device=cfg.model.device, local_files_only=True)
+    if model.similarity_fn_name != "maxsim":
+        raise ValueError("Checkpoint similarity must match Qdrant MAX_SIM")
     processor = model[0].processor
     effective = {
+        "module_config": model[0].get_config_dict(),
+        "chat_template": processor.chat_template,
         "processor": processor.to_dict(),
         "image_processor": processor.image_processor.to_dict(),
         "model_config": model[0].model.config.to_dict(),
@@ -303,10 +319,13 @@ def retrieve(cfg, target: Path) -> dict:
     if effective["checkpoint_files"] != provenance["effective_model"]["checkpoint_files"]:
         raise ValueError("Checkpoint bytes differ from indexed model")
     batches = []
-    page_rows = []
+    page_score_count = 0
     # Local Qdrant opens writable SQLite/lock files. Search a disposable copy to
     # keep the published artifact immutable and allow independent concurrent runs.
-    with tempfile.TemporaryDirectory(prefix="colqwen-search-") as folder:
+    with (
+        tempfile.TemporaryDirectory(prefix="colqwen-search-") as folder,
+        (target / "page-scores.jsonl").open("x", encoding="utf-8") as page_scores,
+    ):
         work = Path(folder) / "qdrant"
         shutil.copytree(location / "qdrant", work)
         for path in work.rglob("*"):
@@ -345,7 +364,15 @@ def retrieve(cfg, target: Path) -> dict:
                         rows.append(
                             {"qid": topic.qid, "docno": hit.payload["page_id"], "score": hit.score}
                         )
-                        page_rows.append({"qid": topic.qid, **hit.payload, "score": hit.score})
+                        page_scores.write(
+                            json.dumps(
+                                {"qid": topic.qid, **hit.payload, "score": hit.score},
+                                ensure_ascii=False,
+                                allow_nan=False,
+                            )
+                            + "\n"
+                        )
+                        page_score_count += 1
                     batches.append(aggregate_pages(pd.DataFrame(rows), cfg.retrieval.top_k))
         finally:
             client.close()
@@ -355,11 +382,25 @@ def retrieve(cfg, target: Path) -> dict:
         {row["query_key"]: row["domain"] for row in queries}
     )
     outputs = save_batch(run, inputs, query_mapping, pd.DataFrame(list(corpus)), cfg, target)
-    Records(
-        "page_scores", page_rows, Report(emitted=len(page_rows)), queries.provenance
-    ).write_jsonl(target / "page-scores.jsonl")
+    save_json(
+        target / "page-scores.jsonl.manifest.json",
+        {
+            "schema_version": 1,
+            "kind": "page_scores",
+            "count": page_score_count,
+            "artifact": artifact_reference(target / "page-scores.jsonl"),
+            "provenance": queries.provenance,
+        },
+    )
+    outputs["page-scores.jsonl"] = artifact_reference(target / "page-scores.jsonl")
     return {
-        "inputs": {"index_manifest": artifact_reference(location / "index-manifest.json")},
+        "inputs": {
+            "index_manifest": artifact_reference(location / "index-manifest.json"),
+            "query_files": [
+                {"dataset_path": name, **artifact_reference(adapter.dataset.get_file(name))}
+                for name in queries.provenance["selection"]["files"]
+            ],
+        },
         "outputs": outputs,
         "queries": len(queries),
         "qrels": len(inputs.qrels),
@@ -400,6 +441,10 @@ def execute_visual_stage(cfg, run_dir) -> dict:
     return {
         "documents": len(corpus),
         "pages": len(mapping),
+        "queries": len(queries),
+        "qrels": len(qrels),
+        "corpus_provenance": corpus.provenance,
+        "query_provenance": queries.provenance,
         "corpus_report": corpus.report.to_dict(),
         "rendering": OmegaConf.to_container(cfg.representation.rendering, resolve=True),
     }

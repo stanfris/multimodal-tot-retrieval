@@ -143,7 +143,8 @@ indexing builds persistent Terrier/FAISS indexes and saves completion manifests.
 Dense task caches reuse existing encoders/cache I/O; LangChain splits passages and
 PyTerrier aggregates their FAISS scores to canonical papers. Retrieval saves
 checksummed batches; evaluation consumes them without dataset/index/model access.
-Remaining stage/model combinations are unimplemented. Combined tutorial functions
+ColQwen pages also execute through the independent stages. Other stage/model
+combinations remain unimplemented. Combined tutorial functions
 are never used as stage implementations. Reusable caches must be outside experiment results.
 See the [configuration guide](configuration.md) and [complete profile audit](configuration-audit.md).
 
@@ -156,3 +157,16 @@ map to canonical papers through a checksummed index mapping. Shared identity,
 manifest, batch serialization and saved-run evaluation mechanisms are reused.
 Fulltext is prefix-truncated to `doc_maxlen` tokens without passage splitting.
 See [the ColBERT guide](colbert-retrieval.md).
+
+## ColQwen visual boundary
+
+`integrations/colqwen.py` uses the adapter's canonical source join and pages-only
+selection without consuming extracted text. PDFium rasterizes original pages;
+Sentence Transformers 6's official MultiVectorEncoder handles checkpoint-defined
+processing/inference. Qdrant local owns multi-vector persistence and exact MaxSim.
+The shared artifact lifecycle binds PDF bytes, model/base commits, rendering,
+settings and versions. Explicit page mappings preserve canonical paper identities.
+PyTerrier max_passage and canonical tie-breaking give paper-level ranks after
+exhaustive page search. Retrieval opens a disposable Qdrant copy to preserve sealed
+artifacts; automatic selection never opens originals. Shared batch serialization
+and saved-run evaluation are reused. See [the visual guide](colqwen-retrieval.md).

@@ -21,7 +21,7 @@ existing low-level integration functions via `settings`.
 | `representation/title_abstract.yaml` | name → existing metadata projection in `load_corpus`; fields fixed to title/abstract (overrides rejected); modality/source → compatibility and identity checks |
 | `representation/passages.yaml` | RecursiveCharacterTextSplitter consumes chunk size/overlap/separators/whitespace; reversible passage IDs retain canonical parents; PyTerrier max/mean aggregation produces paper rankings |
 | `representation/figures.yaml` | Existing adapter can attach original figure metadata/locators to text records. A figure-only corpus and include_captions transformation are not implemented; profile is a validated prospective representation |
-| `representation/pages.yaml` | Future pypdfium2 page rendering scale; original PDF source/modality validated. No renderer, page IDs, or page-to-paper aggregation implemented |
+| `representation/pages.yaml` | ColQwen consumes pypdfium2 rendering scale; original PDFs and ordered page mappings; PyTerrier maximum aggregation at paper level |
 | `model/bm25.yaml` | type → `IndexingType.CLASSIC` enum; blocks/meta → `IterDictIndexer`; wmodel/controls → `Retriever`. `bm25_arguments` binds these; configured metadata capacity is checked before truncation |
 | `model/dense.yaml` | model_id/revision/device → `SentenceTransformer`; batch_size → encode_query/encode_document; normalize_embeddings → encoding (through existing cosine/dot config); prompts → encode prompt arguments; Flat/inner_product → existing `IndexFlatIP`. `dense_arguments` binds these; unsupported L2 is rejected |
 | `model/colbert.yaml` | Pinned checkpoint snapshot → Stanford Indexer/Searcher; index_bsize, nbits, kmeans_niters, doc_maxlen, query_maxlen → ColBERTConfig; CPU/CUDA RunConfig, canonical PID mapping, shared batch/evaluation |
@@ -39,6 +39,8 @@ existing low-level integration functions via `settings`.
 | `experiment/bm25_fulltext.yaml` | Hydra absolute overrides select BM25/fulltext/index; reusable group bodies remain independent |
 | `experiment/colbert_fulltext.yaml` | Hydra absolute overrides select ColBERT/fulltext/index; 220-token prefix truncation, no passages |
 | `experiment/dense_passages.yaml` | Hydra absolute overrides select dense/passages/index; executes the passage builder and cached FAISS indexing |
+| `model/colqwen.yaml` | Pinned adapter/base snapshots → ST 6; official processor → checkpoint; device/batches → encoder; dot/max_sim → Qdrant collection; exact → query search |
+| `experiment/colqwen_pages.yaml` | Hydra absolute overrides select ColQwen/pages/index; separate locked environment |
 | `experiment/visual_pages.yaml` | Hydra absolute overrides select visual/pages/index; validated preset, execution unsupported |
 
 `config_arguments.py` contains plain bindings to existing APIs, not a new dataset
@@ -77,7 +79,7 @@ currently default to 1; this repository's established setting is deliberate and
 is not silently changed to track an external default.
 
 Unsupported functionality remains explicit: search/export stages,
-other model backends, image/page pipelines, relocated artifacts,
+other model backends, figure/Byaldi pipelines, relocated artifacts,
 scheduler/custom sweeper integration, binary-index integrity checking/migration,
 and independent verification of local dataset origins. A dry run can inspect
 planned configurations without pretending those operations exist.

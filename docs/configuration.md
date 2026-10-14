@@ -11,8 +11,8 @@ BM25 and dense `prepare`, `index`, `retrieve`, and `evaluate` execute with
 `fulltext` or `title_abstract`; dense also supports `passages`. `search`, `export`,
 and other models remain unimplemented. Existing BM25/dense
 tutorial functions and scripts remain executable with their established defaults.
-ColBERT executes the same four stages with `fulltext`. Byaldi, figure retrieval,
-and page rendering remain configuration-only profiles.
+ColBERT executes the same four stages with `fulltext`. ColQwen executes them with
+original PDF `pages`. Byaldi and figure retrieval remain configuration-only profiles.
 
 ## Ownership and consumers
 
@@ -21,15 +21,16 @@ and page rendering remain configuration-only profiles.
 | `dataset` | `default`, `hub` | `configured_adapter` → existing `Dataset` / `DatasetAdapter`; configured Hub downloads supported; artifact relocation unsupported |
 | `split` | `all`, `train`, `test`, `train+test` | `corpus_arguments` / `query_arguments` → adapter selection |
 | `representation` | `fulltext`, `title_abstract` | `corpus_arguments` → `DatasetAdapter.load_corpus`; original content is preserved |
-| `representation` | `passages`, `figures`, `pages` | Dense passages execute through LangChain and PyTerrier aggregation; figures/pages remain configuration-only |
+| `representation` | `passages`, `figures`, `pages` | Dense passages execute through LangChain/PyTerrier; ColQwen pages execute through PDFium; figures remain configuration-only |
 | `model` | `bm25`, `dense` | `bm25_arguments` / `dense_arguments` → existing optional integration functions when passed `settings=cfg` |
 | `model` | `colbert` | Stanford Indexer/Searcher; fulltext with token truncation |
 | `model` | `visual` | Configuration-only compatibility validation |
+| `model` | `colqwen` | ST 6 MultiVectorEncoder with pinned adapter/base and official processor; persistent Qdrant DOT/MAX_SIM |
 | `retrieval` | `default` | PyTerrier `Retriever.num_results` / FAISS `Index.search` depth in the existing functions; BM25/dense retrieve; search remains unimplemented |
 | `evaluation` | `default` | `evaluate_run` → `ir_measures.parse_measure` and PyTerrier `Experiment.eval_metrics` |
 | `launcher` | `local_cpu`, `local_gpu` | Path normalization, output guards, model device, PyTorch/FAISS/Terrier threads and Terrier version |
 | `stage` | `prepare`, `index`, `retrieve`, `evaluate`, `search`, `export` | `run_stage` artifact preflight / provenance, then BM25/dense prepare/index/retrieve/evaluate dispatch |
-| `experiment` | `bm25_fulltext`, `dense_passages`, `colbert_fulltext`, `visual_pages` | Hydra defaults-list composition; no duplicated model settings or runtime dispatcher |
+| `experiment` | `bm25_fulltext`, `dense_passages`, `colbert_fulltext`, `visual_pages`, `colqwen_pages` | Hydra defaults-list composition; no duplicated model settings or runtime dispatcher |
 
 `model` owns algorithm/library parameters. `representation` owns source content
 and prospective transformations. `retrieval.top_k` owns ranking depth;
@@ -368,3 +369,34 @@ commands, native extension requirements, provenance and tests.
 ColBERT, like dense, selects `launcher=local_gpu` through its model defaults.
 Indexing and retrieval require CUDA and reject CPU/MPS or an unavailable GPU.
 Saved-run evaluation requires no GPU.
+
+## ColQwen original PDF pages
+
+See [the visual retrieval guide](colqwen-retrieval.md) for the four stage commands,
+locked separate environment, source restoration, and resource limits.
+`config/model/colqwen.yaml` owns the official adapter and base identifiers/full
+commit revisions, `processor=checkpoint`, model device, document `batch_size`,
+and Qdrant settings. `distance=dot` and `comparator=max_sim` bind the external
+VectorParams; `exact=true` binds SearchParams and is mandatory. Query
+`model.retrieval.batch_size` binds `encode_query` independently and is excluded
+from index identity. Document batch size binds `encode_document` and PDF image
+batching. The checkpoint processor supplies all image/text preprocessing;
+custom processors and other checkpoints are rejected. ColQwen defaults to
+`launcher=local_gpu` and requires `device=cuda`; CPU/MPS overrides are rejected.
+Indexing and query encoding fail before downloads when CUDA is unavailable.
+Preparation/evaluation do not require GPU availability. Device must match launcher;
+`launcher.threads.encoding` binds Torch threads.
+
+`representation=pages` owns source/modality, PDFium library selection, and positive
+rendering scale. It selects every original page in order; there is no unused
+page-filter option. The experiment preset only composes model/pages/index groups.
+`dataset`, `split`, `retrieval`, and `evaluation` retain their current defaults.
+`retrieval.top_k` counts papers after PyTerrier maximum page-score aggregation;
+all page scores are searched and preserved, with canonical paper ID tie-breaking.
+
+ColQwen index names include their content digest. Automatic retrieval selects
+compatible completed manifests without resolving original PDFs. Multiple compatible
+content versions require `paths.index=...`. Identical index invocations verify
+and reuse completed outputs. Query split/mode/batch size, depth, and metrics may
+change without rebuilding pages. Evaluation uses the shared saved-run contract
+and loads no model, PDF, or index.

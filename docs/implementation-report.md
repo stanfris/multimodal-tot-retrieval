@@ -13,8 +13,9 @@ standalone scripts and notebooks retain their defaults.
 | Dense fulltext / title_abstract | Canonical records and coverage exports | Document encoding and persistent FAISS index | Independent query encoding and FAISS search | Saved-run metrics |
 | Dense passages | Canonical paper records plus passage export | Library splitting, document encoding, persistent vector-to-paper mapping | FAISS passage scores, library aggregation, paper cutoff | Paper-level saved-run metrics |
 
-`search`, `export`, visual/page retrieval, and local dense model-path
-loading remain unsupported. ColBERT is now covered by the separate
+`search`, `export`, and local dense model-path loading remain unsupported.
+ColQwen visual pages are now covered by the separate
+[visual implementation report](colqwen-implementation-report.md). ColBERT is now covered by the separate
 [ColBERT implementation report](colbert-implementation-report.md). Unsupported operations fail explicitly.
 
 ## BM25 and canonical data

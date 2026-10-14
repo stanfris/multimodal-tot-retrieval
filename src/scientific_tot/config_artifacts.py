@@ -186,7 +186,12 @@ def verify_retrieval(directory: Path, cfg: DictConfig | None = None) -> dict:
     from scientific_tot.configuration import resolve_config
 
     built = resolve_config(OmegaConf.create(snapshot), directory.parent)
-    if built.stage.name != "retrieve" or built.model.name not in {"bm25", "dense", "colbert", "colqwen"}:
+    if built.stage.name != "retrieve" or built.model.name not in {
+        "bm25",
+        "dense",
+        "colbert",
+        "colqwen",
+    }:
         raise ValueError("Saved batch configuration must describe a supported retrieve stage")
     if cfg is not None:
         if (

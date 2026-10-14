@@ -637,6 +637,8 @@ def test_every_yaml_profile_composes_and_validates(tmp_path, profile):
         overrides += (
             ["model=visual", "representation=pages"] if group == "model" else ["model=visual"]
         )
+    if group == "model" and name == "colqwen":
+        overrides.append("representation=pages")
     if group == "stage" and name in {"retrieve", "search"}:
         overrides.append("paths.index=prior-index")
     if group == "stage" and name == "evaluate":

@@ -269,6 +269,7 @@ def _validate(cfg: DictConfig) -> None:
                 f"model.encoding.{task}_prompt must be a string (empty is allowed)",
             )
     elif model.name == "colqwen":
+        _require(model.device == "cuda", "ColQwen encoding requires launcher.device=cuda")
         _require(rep.name == "pages", "ColQwen requires representation=pages")
         _require(model.model_id == "vidore/colqwen2.5-v0.2", "Only ColQwen2.5 v0.2 is supported")
         _require(model.base_model_id == "vidore/colqwen2.5-base", "Incorrect ColQwen base model")

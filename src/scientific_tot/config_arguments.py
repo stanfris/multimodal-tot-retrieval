@@ -113,7 +113,7 @@ def corpus_arguments(cfg: DictConfig) -> dict:
         "representation": representation,
         "missing": cfg.dataset.missing,
         "include_figures": False,
-        "include_metadata": cfg.representation.name == "title_abstract",
+        "include_metadata": cfg.representation.name in {"title_abstract", "pages"},
     }
 
 

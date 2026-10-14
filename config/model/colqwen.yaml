@@ -1,3 +1,7 @@
+defaults:
+  - override /launcher@_global_.launcher: local_gpu
+  - _self_
+
 name: colqwen
 backend: sentence_transformers_qdrant
 model_id: vidore/colqwen2.5-v0.2

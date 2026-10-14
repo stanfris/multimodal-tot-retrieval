@@ -9,7 +9,7 @@ The published dataset is the source of truth. The
 [generation repository](https://github.com/stanfris/multimodal-tip-of-tongue-retrieval-for-scientific-papers)
 creates the artifacts; this package does not depend on that pipeline at runtime
 and delegates ranking, pretrained encoding, and evaluation to PyTerrier,
-Sentence Transformers, FAISS, Stanford ColBERT, and ir_measures.
+Sentence Transformers, FAISS, Stanford ColBERT, Qdrant, and ir_measures.
 
 **Publication status rechecked 2026-10-11:** revision
 `3b764a4c6855925ec802a2560712c4f5cc96f980` contains query collections only.
@@ -23,7 +23,9 @@ never fabricated. [Evidence and data contract](docs/dataset-schema.md).
 Use Python 3.11 (selected by `.python-version`) and [uv](https://docs.astral.sh/uv/).
 Run all commands from the repository root. One locked `.venv` contains the adapter,
 Parquet reader, BM25, dense retrieval, bundled Java runtime, JupyterLab, and test tools.
-`uv run` uses this same environment; no extra flags or separate environments are needed:
+`uv run` uses this environment for textual baselines. ColQwen uses the separate
+locked `.venv-colqwen` environment because Transformers 5 conflicts with ColBERT
+(see below):
 
 ```sh
 uv sync --locked
@@ -353,6 +355,37 @@ missing fulltext; all query positives must still resolve. CLI options use
 An existing experiment output is rejected to prevent stale indexes. Choose a new
 `--output` for a rerun; reuse the dense `--cache` directory.
 
+## Visual PDF retrieval with ColQwen2.5
+
+`experiment=colqwen_pages` uses the pinned `vidore/colqwen2.5-v0.2` checkpoint
+through Sentence Transformers 6.1's `MultiVectorEncoder`. PDFium renders original
+PDF pages; the official checkpoint processor handles model preprocessing. Qdrant
+persists page multi-vectors and performs exact MaxSim search. Maximum page-score
+aggregation produces canonical paper rankings, and `retrieval.top_k` counts
+papers. This aggregation is specific to our paper-level benchmark.
+
+```sh
+export TOT_DATA_ROOT=/your/restored/data
+./scripts/01_prepare.sh experiment=colqwen_pages
+./scripts/02_index.sh experiment=colqwen_pages
+./scripts/03_retrieve.sh experiment=colqwen_pages
+./scripts/04_evaluate.sh experiment=colqwen_pages
+```
+
+These scripts automatically use the locked `.venv-colqwen` environment and
+select CUDA. ColQwen encoding requires an available NVIDIA GPU; CPU/MPS
+overrides and CPU fallback are rejected. Preparation and saved-run evaluation
+require no GPU. PDF rendering and Qdrant search remain CPU operations. Originals must be restored
+under `pdf_datasets/` with canonical extraction identity metadata. Indexes have
+content hashes and are verified before reuse across query splits/modes/depths.
+Retrieval consumes saved pages; evaluation consumes only saved rankings.
+Exact local search loads vectors into RAM and scans all pages, so this is a
+resource-intensive correctness baseline. Pretrained CPU/GPU inference and full
+corpus performance have not been exercised locally. See the
+[visual retrieval guide](docs/colqwen-retrieval.md) for pinned versions, rendering,
+identity, resource requirements, and the selectable real-checkpoint test, and the
+[implementation report](docs/colqwen-implementation-report.md) for executed checks.
+
 ## Discovery and Hub use
 
 ```python
@@ -397,6 +430,6 @@ Default tests block network connections and use small synthetic fixtures.
 project environment includes all example dependencies and CUDA-enabled
 Torch on Linux. Dense encoding requires an NVIDIA GPU with a compatible driver.
 A model download is required only when running pretrained encoding.
-Library consumers can still install the small core wheel and choose package extras;
-this does not change the single repository environment. Code is MIT licensed;
+Library consumers can still install the small core wheel and choose package extras.
+ColQwen has a separate locked environment; textual workflows retain the default one. Code is MIT licensed;
 dataset artifacts retain their own licenses.

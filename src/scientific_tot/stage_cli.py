@@ -10,12 +10,25 @@ from pathlib import Path
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
-from scientific_tot.config_artifacts import verify_retrieval
+from scientific_tot.config_artifacts import verify_index, verify_retrieval
 from scientific_tot.configuration import CONFIG_DIR, resolve_config
 
 
 def find_artifact(cfg, stage: str) -> Path | None:
     """Select exact indexes by current corpus identity; saved runs by verified settings."""
+    if stage == "index" and cfg.model.name == "colqwen":
+        # Visual retrieval selects completed metadata; originals and rendering are
+        # unavailable by contract. Multiple content versions require an explicit path.
+        candidates = []
+        for path in sorted(Path(cfg.launcher.output_root).glob("indexes/*/index-manifest.json")):
+            try:
+                verify_index(path.parent, cfg)
+                candidates.append(path.parent)
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+        if len(candidates) > 1:
+            raise ValueError("Multiple compatible visual indexes; supply paths.index explicitly")
+        return candidates[0] if candidates else None
     if stage == "index":
         from scientific_tot.artifact_identity import artifact_directory, resolve_identity
         from scientific_tot.hydra_run import verify_completed
