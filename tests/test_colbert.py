@@ -51,6 +51,9 @@ def execute(base, stage, name, *overrides, dataset=None):
 
 @pytest.fixture
 def backend(monkeypatch, tmp_path):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     calls = []
     checkpoint = tmp_path / "checkpoint"
     checkpoint.mkdir()
@@ -251,6 +254,10 @@ def test_incomplete_index_is_never_reused(tmp_path, backend):
 @pytest.mark.colbert_live
 def test_pretrained_colbertv2_tiny_corpus(tmp_path):
     """Real checkpoint, compression, native scoring, serialization and saved evaluation."""
+    import torch
+
+    if not torch.cuda.is_available():
+        pytest.skip("Real ColBERT indexing/retrieval requires an NVIDIA GPU")
     dataset = tmp_path / "data"
     shutil.copytree(FIXTURE, dataset)
     # Enough real tokens for the upstream automatic k-means partition heuristic.
@@ -285,3 +292,17 @@ def test_local_model_content_enters_identity(tmp_path, backend):
     before = resolve_identity(cfg)
     (checkpoint / "config.json").write_text("changed local checkpoint")
     assert resolve_identity(cfg) != before
+
+
+def test_cuda_default_and_runtime_requirement(tmp_path, backend, monkeypatch):
+    import torch
+
+    cfg, _ = settings(tmp_path, "index", tmp_path / "index")
+    assert cfg.launcher.device == "cuda"
+    assert colbert.run_config(cfg).gpus == 1
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    with pytest.raises(RuntimeError, match="NVIDIA GPU"):
+        colbert.library_config(cfg, tmp_path / "index")
+    cpu, _ = settings(tmp_path, "index", tmp_path / "index", "launcher=local_cpu")
+    with pytest.raises(ValueError, match="require launcher.device=cuda"):
+        colbert.library_config(cpu, tmp_path / "index")

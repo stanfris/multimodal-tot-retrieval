@@ -19,6 +19,17 @@ dependencies = [
 scientific-tot = "scientific_tot.hydra_entry:main"
 
 [project.optional-dependencies]
+colqwen = [
+    "sentence-transformers[image]==6.1.0",
+    "transformers==5.15.0",
+    "peft==0.19.1",
+    "pypdfium2==5.9.0",
+    "qdrant-client==1.17.1",
+    "pandas>=2.2,<4",
+    "pyterrier>=1.1.2,<2",
+    "ir-measures>=0.4,<1",
+    "pyarrow>=18,<24",
+]
 colbert = [
     "colbert-ai==0.2.22",
     "transformers==4.57.6",
@@ -54,6 +65,9 @@ dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 # All scripts and both notebooks share the default .venv. Extras above remain
 # available for library consumers; project users do not need extra flags.
 examples = [
+    "pypdfium2==5.9.0",
+    "qdrant-client==1.17.1",
+    "pillow==12.3.0",
     "colbert-ai==0.2.22",
     "transformers==4.57.6",
     "langchain-text-splitters>=0.3,<2",
@@ -83,8 +97,9 @@ include = ["src", "config", "tests", "docs", "examples", "README.md", "LICENSE",
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not live and not terrier and not dense_live and not colbert_live'"
+addopts = "-m 'not live and not terrier and not dense_live and not colbert_live and not colqwen_live'"
 markers = [
+    "colqwen_live: opt-in real ColQwen checkpoint inference and indexing",
     "colbert_live: opt-in pretrained ColBERTv2 download and native indexing/search",
     "live: opt-in network checks against the published dataset",
     "dense_live: opt-in pretrained model download and encoding integration test",
@@ -101,3 +116,8 @@ select = ["E", "F", "I", "UP", "B"]
 # Dense encoding requires CUDA; use the default PyPI PyTorch distribution.
 [tool.uv]
 default-groups = ["dev", "examples"]
+conflicts = [
+    [{ extra = "colqwen" }, { extra = "colbert" }],
+    [{ extra = "colqwen" }, { extra = "dense" }],
+    [{ extra = "colqwen" }, { group = "examples" }],
+]

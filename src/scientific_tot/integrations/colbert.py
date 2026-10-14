@@ -59,11 +59,10 @@ def library_config(cfg, target: Path, *, retrieval=False):
     import torch
     from colbert.infra import ColBERTConfig
 
-    cuda = torch.cuda.is_available()
-    if cfg.launcher.device == "cuda" and not cuda:
-        raise RuntimeError("ColBERT CUDA execution requires an available NVIDIA GPU")
-    if cfg.launcher.device == "cpu" and torch.cuda.device_count():
-        raise RuntimeError("ColBERT CPU execution requires CUDA_VISIBLE_DEVICES='' before startup")
+    if cfg.launcher.device != "cuda":
+        raise ValueError("ColBERT indexing and retrieval require launcher.device=cuda")
+    if not torch.cuda.is_available():
+        raise RuntimeError("ColBERT requires an available NVIDIA GPU; CUDA is unavailable")
     torch.set_num_threads(cfg.launcher.threads.encoding)
     faiss.omp_set_num_threads(cfg.launcher.threads.faiss)
     # Keep native-extension compilation in reusable caches, outside sealed artifacts.
@@ -82,7 +81,7 @@ def run_config(cfg):
         experiment="colbert",
         name="baseline",
         nranks=1,
-        gpus=1 if cfg.launcher.device == "cuda" else 0,
+        gpus=1,
         avoid_fork_if_possible=True,
     )
 

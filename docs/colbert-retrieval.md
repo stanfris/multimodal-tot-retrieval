@@ -15,16 +15,14 @@ export TOT_DATA_ROOT=/your/restored/data
 ./scripts/04_evaluate.sh experiment=colbert_fulltext
 ```
 
-The default is CPU. For CUDA, add `launcher=local_gpu` consistently to index,
-retrieve and evaluate commands. CPU execution on a CUDA machine requires
-`CUDA_VISIBLE_DEVICES=''` before Python starts: the upstream implementation
-selects several code paths from the number of visible GPUs, independently of
-`RunConfig.gpus`. MPS is unsupported. The upstream CUDA k-means path uses
-FAISS CPU training with our existing `faiss-cpu` dependency; model encoding and
-residual compression/search use CUDA. CUDA requires a compatible driver and
-CUDA toolkit for the upstream native extensions. CPU search also compiles C++
-extensions and requires a working compiler and Ninja. Single-rank indexing uses
-`avoid_fork_if_possible=True`, letting upstream exceptions propagate directly.
+CUDA is selected by the model profile by default and is required for indexing
+and retrieval. CPU/MPS execution is rejected; unavailable CUDA raises an error
+instead of falling back. Saved-run evaluation requires no GPU. The upstream
+CUDA k-means path uses FAISS CPU training with our existing `faiss-cpu`
+dependency; model encoding and residual compression/search use CUDA. A compatible
+driver, CUDA toolkit, compiler and Ninja are required for native extensions.
+Single-rank indexing uses `avoid_fork_if_possible=True`, letting upstream
+exceptions propagate directly.
 
 The checkpoint is `colbert-ir/colbertv2.0`, pinned by `model.revision` to
 `c1e84128e85ef755c096a95bdb06b47793b13acf`. Since ColBERT's checkpoint APIs do
@@ -84,7 +82,7 @@ use its base package with the repository's existing Torch >=2.6 instead.
 
 ```sh
 uv run pytest                      # offline; no model downloads
-uv run pytest -m colbert_live tests/test_colbert.py
+uv run pytest -m colbert_live tests/test_colbert.py  # requires an NVIDIA GPU
 uv run ruff check .
 uv run ruff format --check .
 uv lock --check

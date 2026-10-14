@@ -17,6 +17,10 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
     assert cfg.stage.name == "index" or run_dir is not None, (
         f"stage={cfg.stage.name} requires a fresh run directory"
     )
+    if cfg.model.name == "colqwen" and cfg.stage.name != "evaluate":
+        from scientific_tot.integrations.colqwen import execute_visual_stage
+
+        return execute_visual_stage(cfg, run_dir)
     if cfg.stage.name == "retrieve":
         if cfg.model.name == "colbert":
             from scientific_tot.integrations.colbert import retrieve_colbert

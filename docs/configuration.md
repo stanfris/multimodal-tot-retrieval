@@ -364,3 +364,7 @@ and metrics do not affect index identity. The default 220-token document limit
 includes special tokens and truncates scientific fulltext to its prefix; no
 passage splitting is implied. See [the ColBERT guide](colbert-retrieval.md) for
 commands, native extension requirements, provenance and tests.
+
+ColBERT, like dense, selects `launcher=local_gpu` through its model defaults.
+Indexing and retrieval require CUDA and reject CPU/MPS or an unavailable GPU.
+Saved-run evaluation requires no GPU.

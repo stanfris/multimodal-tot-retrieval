@@ -23,7 +23,7 @@ from scientific_tot.records import (
 
 Domain = str | Sequence[str]
 Split = Literal["train", "test", "train+test", "all"]
-Representation = Literal["fulltext", "title_abstract"]
+Representation = Literal["fulltext", "title_abstract", "pages"]
 MissingPolicy = Literal["error", "skip"]
 MODES = {"visual-and-text": "visual_and_text", "visual-only": "visual_only"}
 
@@ -118,6 +118,22 @@ class DatasetAdapter:
                         raise MissingComponentError("PDF restoration requires metadata.parquet")
                     selected.add("metadata.parquet")
         return tuple(self.dataset.get_file(name) for name in sorted(selected))
+
+    def resolve_pdf(self, row: dict) -> Path:
+        """Resolve an original restored PDF using the adapter's canonical source join.
+
+        Packaged TAR PDFs must first be restored by the upstream restoration tool.
+        """
+        source = row["source_pdf_relpath"]
+        if source is None:
+            raise MissingComponentError(f"No original PDF source for {row['doc_id']}")
+        name = f"pdf_datasets/{relative_path(source)}"
+        path = self.dataset.get_file(name)
+        if self.dataset.local_dir is not None and not path.resolve().is_relative_to(
+            self.dataset.local_dir.resolve()
+        ):
+            raise DatasetFormatError(f"PDF escapes dataset root: {name}")
+        return path
 
     def load_metadata(self, *, domain: Domain) -> Records:
         """Read domain-filtered PDF metadata without fetching any PDF or extraction archive.
@@ -246,8 +262,8 @@ class DatasetAdapter:
         missing='skip' returns an explicit coverage report, never placeholder text.
         """
         domains, splits = _domains(domain), _splits(split)
-        if representation not in {"fulltext", "title_abstract"}:
-            raise ValueError("representation must be fulltext or title_abstract")
+        if representation not in {"fulltext", "title_abstract", "pages"}:
+            raise ValueError("representation must be fulltext, title_abstract, or pages")
         if missing not in {"error", "skip"}:
             raise ValueError("missing must be error or skip")
         inventory = self.dataset.discover()
@@ -367,6 +383,8 @@ class DatasetAdapter:
                 if checksum is not None and hashlib.sha256(text.encode()).hexdigest() != checksum:
                     _skip(report, "markdown_checksum_mismatch", markdown, paper_id)
                     continue
+            elif representation == "pages":
+                text = ""
             else:
                 text = "\n\n".join(value for value in (title, abstract) if value)
                 if not text:

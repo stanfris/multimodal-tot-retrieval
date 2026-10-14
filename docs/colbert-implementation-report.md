@@ -13,7 +13,7 @@ existing four-stage pipeline and preserves pre-existing workspace changes.
 - Extended `stages.py` and `hydra_run.py` dispatch and verified ColBERT index reuse;
   existing BM25/dense skip behavior is retained.
 - Extended `artifact_identity.py`, `configuration.py` and `config_artifacts.py`
-  for ColBERT dependency fingerprints, fulltext/CPU/CUDA compatibility, immutable
+  for ColBERT dependency fingerprints, fulltext/CUDA compatibility, immutable
   model revisions and acceptance of standard ColBERT retrieval artifacts.
 - Updated `pyproject.toml` and `uv.lock` for Stanford ColBERT and Transformers;
   changed Hub entry-class imports in `data/hub.py`, `test_data.py` and
@@ -64,8 +64,9 @@ export TOT_DATA_ROOT=/your/restored/data
 ./scripts/04_evaluate.sh experiment=colbert_fulltext
 ```
 
-Optional preparation uses `01_prepare.sh` with the same preset. Add
-`launcher=local_gpu` consistently for CUDA; CPU is the default. Fulltext is
+Optional preparation uses `01_prepare.sh` with the same preset. The model
+profile selects CUDA by default; indexing/retrieval require an NVIDIA GPU.
+Saved-run evaluation requires no GPU. Fulltext is
 original extracted Markdown, prefix-truncated by the library to at most 220
 WordPiece tokens including CLS, D marker and SEP. There is one PID per paper;
 no passage splitting/aggregation. The policy is explicit in index provenance.
@@ -97,9 +98,10 @@ corrupt/incompatible indexes and runs, and checkpoint byte changes.
 
 ## Practical limits
 
-CPU/native search requires a C++ compiler and Ninja; CUDA native extensions also
-require a CUDA toolkit. CPU mode on a GPU host requires hiding CUDA devices before
-startup because upstream code consults visible GPU count. MPS is unsupported.
+ColBERT indexing/retrieval require CUDA, a C++ compiler, Ninja and a CUDA toolkit.
+CPU/MPS execution is rejected. The earlier CPU smoke result above records the
+initial implementation; the current opt-in test requires a GPU and skips without
+one. CUDA default/requirement and unavailable-GPU errors are covered offline.
 The upstream automatic k-means partition heuristic can fail on very small corpora
 of short documents; the live test uses two long synthetic documents and does not
 change the algorithm. Full scientific datasets and GPU performance have not been
@@ -110,4 +112,23 @@ This macOS host has duplicate OpenMP runtimes in Torch/FAISS: an unmodified test
 process aborts. Local verification uses `KMP_DUPLICATE_LIB_OK=TRUE` only in the
 shell environment, which is an unsupported host workaround and is not injected
 by application code. This does not certify production macOS execution; a Linux
-CPU/CUDA environment is the intended deployment verification target.
+CUDA environment is the deployment verification target.
+
+## CUDA default correction
+
+The ColBERT model now overrides the launcher to `local_gpu`, matching dense.
+Indexing and retrieval reject CPU configurations and unavailable CUDA; there is
+no CPU fallback. RunConfig always selects one GPU. Saved-run evaluation still
+requires no CUDA runtime. Offline tests simulate GPU availability for mocked
+inference and verify the CUDA default, one-GPU binding and both rejection paths.
+
+Validation after this correction: 170 focused ColBERT/configuration tests passed
+(excluding the unrelated in-progress ColQwen profiles); 45 BM25/dense/stage-CLI
+regression tests passed. Ruff and formatting checks for changed Python files and
+Git whitespace checks passed. The real ColBERT test now skips on this host because
+no NVIDIA GPU is available. The unfiltered configuration run had one failure in
+an existing in-progress ColQwen YAML profile test, unrelated to this change.
+
+A failed CPU attempt leaves an incomplete reserved index. Preserve it by renaming
+`results/indexes/colbert_fulltext_c-all` before retrying the normal three commands;
+incomplete artifacts are never silently overwritten.

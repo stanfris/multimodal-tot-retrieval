@@ -1,3 +1,7 @@
+defaults:
+  - override /launcher@_global_.launcher: local_gpu
+  - _self_
+
 name: colbert
 backend: colbert
 checkpoint: colbert-ir/colbertv2.0  # Or an explicit local checkpoint directory.

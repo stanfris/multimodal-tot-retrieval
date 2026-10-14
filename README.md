@@ -237,8 +237,8 @@ their established output layouts and APIs.
 This uses the pinned `colbert-ir/colbertv2.0` checkpoint and original extracted
 fulltext, truncated by ColBERT to **220 tokens including special tokens** per
 paper. It does not split documents into passages. Preparation is optional; model
-weights download on first indexing/search. CPU is the default; CUDA is selectable
-with `launcher=local_gpu`. Native C++ extensions require a compiler and Ninja.
+weights download on first indexing/search. CUDA is selected by default and required for indexing/retrieval. Saved-run
+evaluation requires no GPU. Native extensions require a compiler, Ninja and a CUDA toolkit.
 [ColBERT guide](docs/colbert-retrieval.md) covers parameters, provenance,
 requirements and the opt-in real-checkpoint test.
 

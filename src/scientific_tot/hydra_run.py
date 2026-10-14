@@ -145,7 +145,7 @@ class FreshOutput(Callback):
 def execute_stage(cfg: DictConfig, *, run_dir: Path | None = None) -> dict | None:
     """Dispatch one operation using the already resolved application settings."""
     name = cfg.stage.name
-    if cfg.model.name in {"bm25", "dense", "colbert"} and name in {
+    if cfg.model.name in {"bm25", "dense", "colbert", "colqwen"} and name in {
         "prepare",
         "index",
         "retrieve",
@@ -185,11 +185,11 @@ def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: 
         or (Path(cfg.paths.index).exists() and Path(cfg.paths.index) != run_dir)
         or any(run_dir.iterdir())
     ):
-        if cfg.model.name == "colbert":
+        if cfg.model.name in {"colbert", "colqwen"}:
             from scientific_tot.artifact_identity import resolve_identity
 
             verify_completed(Path(cfg.paths.index), cfg, resolve_identity(cfg))
-            print(f"Reusing verified ColBERT index: {cfg.paths.index}", flush=True)
+            print(f"Reusing verified index: {cfg.paths.index}", flush=True)
         else:
             print(f"Skipping existing index: {cfg.paths.index}", flush=True)
         return

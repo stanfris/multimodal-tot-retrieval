@@ -48,6 +48,11 @@ def index_identity(cfg, provenance: dict) -> dict:
         if cfg.representation.name == "passages":
             names.append("langchain-text-splitters")
         settings["versions"] = {name: version(name) for name in names}
+    elif cfg.model.name == "colqwen":
+        from scientific_tot.integrations.colqwen import dependency_versions
+
+        settings["encoding_threads"] = cfg.launcher.threads.encoding
+        settings["versions"] = dependency_versions()
     elif cfg.model.name == "colbert":
         settings["encoding_threads"] = cfg.launcher.threads.encoding
         settings["faiss_threads"] = cfg.launcher.threads.faiss
@@ -95,7 +100,12 @@ def _resolve_identity(cfg) -> dict:
             "run_name": cfg.run.name,
         }
     adapter = configured_adapter(cfg)
-    corpus = adapter.load_corpus(**corpus_arguments(cfg))
+    if cfg.model.name == "colqwen":
+        from scientific_tot.integrations.colqwen import load_pdf_corpus
+
+        corpus = load_pdf_corpus(adapter, cfg)
+    else:
+        corpus = adapter.load_corpus(**corpus_arguments(cfg))
     if stage == "prepare":
         from scientific_tot.adapter import validate_qrels
 
@@ -115,7 +125,7 @@ def _resolve_identity(cfg) -> dict:
         from scientific_tot.integrations.dense import EncodingConfig, resolve_model_revision
 
         revision = resolve_model_revision(EncodingConfig(**dense_arguments(cfg)))
-    if cfg.model.name == "colbert":
+    if cfg.model.name in {"colbert", "colqwen"}:
         revision = cfg.model.revision
     provenance = {
         "dataset_revision": corpus.provenance["revision"],
@@ -124,6 +134,10 @@ def _resolve_identity(cfg) -> dict:
             {"docno": row["doc_id"], "text": row["text"]} for row in corpus
         ),
     }
+    if cfg.model.name == "colqwen":
+        from scientific_tot.integrations.colqwen import pdf_corpus_digest
+
+        provenance["corpus_sha256"] = pdf_corpus_digest(corpus)
     return {"stage": stage, "index": index_identity(cfg, provenance)}
 
 
@@ -134,9 +148,10 @@ def resolve_identity(cfg) -> dict:
 
 def artifact_name(cfg, identity: dict) -> str:
     stem = f"{cfg.model.name}_{cfg.representation.name}_c-{cfg.split.corpus}"
-    if cfg.stage.name == "index" and not cfg.dry_run:
+    if cfg.stage.name == "index" and not cfg.dry_run and cfg.model.name != "colqwen":
         return stem
-    stem += f"_q-{cfg.split.queries}"
+    if cfg.stage.name != "index" or cfg.model.name != "colqwen":
+        stem += f"_q-{cfg.split.queries}"
     return f"{stem}_{digest(identity)[:16]}"
 
 
@@ -160,7 +175,9 @@ def hydra_directory(*, _root_) -> str:
         identity = {"dry_run": OmegaConf.to_container(cfg, resolve=True)}
         return str(Path(cfg.launcher.output_root) / "dry-runs" / artifact_name(cfg, identity))
     if cfg.stage.name == "index":
-        directory = artifact_directory(cfg, {})
+        directory = artifact_directory(
+            cfg, resolve_identity(cfg) if cfg.model.name == "colqwen" else {}
+        )
         # Hydra creates the directory before dispatch; remember whether it already existed.
         INDEX_EXISTENCE.setdefault(directory, directory.exists())
         return str(directory)

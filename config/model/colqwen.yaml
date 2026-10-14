@@ -1,0 +1,15 @@
+name: colqwen
+backend: sentence_transformers_qdrant
+model_id: vidore/colqwen2.5-v0.2
+revision: dcbe8d9cede518bce830488364ba0e40c873645b
+base_model_id: vidore/colqwen2.5-base
+base_revision: 92908120384b7a2110c5beda3ab29cbdb2c08e49
+processor: checkpoint
+device: ${launcher.device}
+batch_size: 2
+indexing:
+  distance: dot
+  comparator: max_sim
+  exact: true
+retrieval:
+  batch_size: 2

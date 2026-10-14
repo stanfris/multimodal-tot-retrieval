@@ -1,4 +1,3 @@
-# Configuration contract only: execution is not implemented.
 name: pages
 modality: image
 source: original_pdf_pages

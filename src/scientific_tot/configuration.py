@@ -20,6 +20,7 @@ BACKENDS = {
     "dense": "sentence_transformers_faiss",
     "colbert": "colbert",
     "visual": "byaldi",
+    "colqwen": "sentence_transformers_qdrant",
 }
 REPRESENTATIONS = {
     "title_abstract": ("text", "original_metadata"),
@@ -194,7 +195,7 @@ def _validate(cfg: DictConfig) -> None:
     )
     _require(model.name in BACKENDS, f"Unsupported model: {model.name}")
     _require(model.backend == BACKENDS[model.name], f"Incorrect backend for model {model.name}")
-    expected = "image" if model.name == "visual" else "text"
+    expected = "image" if model.name in {"visual", "colqwen"} else "text"
     _require(
         rep.modality == expected,
         f"model={model.name} is incompatible with representation={rep.name}; needs {expected}",
@@ -237,7 +238,7 @@ def _validate(cfg: DictConfig) -> None:
             and rep.rendering.scale > 0,
             "rendering.scale must be positive",
         )
-    if model.name in {"dense", "visual"}:
+    if model.name in {"dense", "visual", "colqwen"}:
         _require(_text(model.model_id), f"model.model_id is required for {model.name}")
         _require(model.device == cfg.launcher.device, "model.device must match launcher.device")
     if model.name == "dense":
@@ -267,6 +268,21 @@ def _validate(cfg: DictConfig) -> None:
                 isinstance(model.encoding[f"{task}_prompt"], str),
                 f"model.encoding.{task}_prompt must be a string (empty is allowed)",
             )
+    elif model.name == "colqwen":
+        _require(rep.name == "pages", "ColQwen requires representation=pages")
+        _require(model.model_id == "vidore/colqwen2.5-v0.2", "Only ColQwen2.5 v0.2 is supported")
+        _require(model.base_model_id == "vidore/colqwen2.5-base", "Incorrect ColQwen base model")
+        for key in ("revision", "base_revision"):
+            _require(
+                isinstance(model[key], str) and re.fullmatch(r"[0-9a-f]{40}", model[key]),
+                f"model.{key} requires an immutable commit",
+            )
+        _require(_positive(model.batch_size), "model.batch_size must be positive")
+        _require(_positive(model.retrieval.batch_size), "query batch_size must be positive")
+        _require(model.indexing.distance == "dot", "ColQwen index requires dot distance")
+        _require(model.indexing.comparator == "max_sim", "ColQwen index requires max_sim")
+        _require(model.indexing.exact is True, "ColQwen requires exact page search")
+        _require(model.processor == "checkpoint", "Use the official checkpoint processor")
     elif model.name == "colbert":
         _require(rep.name == "fulltext", "ColBERT requires representation=fulltext")
         _require(cfg.launcher.device in {"cpu", "cuda"}, "ColBERT supports CPU or CUDA")
