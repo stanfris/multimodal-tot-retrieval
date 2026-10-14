@@ -425,3 +425,21 @@ def test_colqwen_defaults_to_cuda_and_fails_without_gpu(tmp_path, dataset, monke
     monkeypatch.setattr("huggingface_hub.snapshot_download", blocked)
     with pytest.raises(RuntimeError, match="available NVIDIA GPU"):
         colqwen.load_model(cfg)
+
+
+def test_lean_pages_use_original_filename_format(tmp_path, dataset, encoder):
+    # Reproduce the real restored tree: no paper.json, no metadata.parquet,
+    # all-corpus selection, and canonical ACL_<original filename stem> IDs.
+    for path in dataset.glob("preprocessed/ACL/*/paper.json"):
+        (path.parent / "_SUCCESS").touch()
+        path.unlink()
+    cfg, _ = settings(tmp_path, dataset, "prepare")
+    corpus = colqwen.load_pdf_corpus(configured_adapter(cfg), cfg)
+    assert [row["source_pdf_relpath"] for row in corpus] == [
+        "ACL/2022.example-1.1.pdf",
+        "ACL/2022.example-1.2.pdf",
+    ]
+    assert [row["doc_id"] for row in corpus] == ["ACL_2022.example-1.1", "ACL_2022.example-1.2"]
+    index, _, _ = execute(tmp_path, dataset, "index", "lean-index")
+    output, _, _ = execute(tmp_path, dataset, "retrieve", "lean-run", f"paths.index={index}")
+    assert len((output / "run.trec").read_text().splitlines()) == 2

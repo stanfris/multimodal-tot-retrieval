@@ -144,3 +144,13 @@ and CUDA device forwarding are covered by offline tests.
 After enforcing CUDA, the full offline suite passed: **366 passed, 7 deselected**.
 The focused visual/configuration suite passed: **184 passed, 1 deselected**.
 Ruff lint/format, offline lockfile and whitespace checks also passed.
+
+A real lean-corpus failure exposed a path-formatting omission: with all-corpus
+selection and no metadata index/source fields, every `source_pdf_relpath` was
+unset despite restored originals. For page records without explicit source paths,
+format the original filename directly: `ACL_2026.findings-acl.999` becomes
+`ACL/2026.findings-acl.999.pdf`. Remove only the leading domain prefix and append
+`.pdf`; no filename matching or PDF inventory search is added. Explicit metadata
+paths and canonical IDs are retained. The lean-layout regression exercises real
+PDF rendering, indexing and retrieval with mocked neural inference. Textual
+source-selection behavior remains unchanged.

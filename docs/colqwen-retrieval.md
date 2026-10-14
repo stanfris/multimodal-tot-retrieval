@@ -48,10 +48,14 @@ UV_PROJECT_ENVIRONMENT=.venv-colqwen uv run --locked --no-default-groups --extra
 
 Restore source PDFs with the upstream dataset restoration tool into
 `DATA_ROOT/pdf_datasets/<source_pdf_relpath>`, alongside the canonical
-`preprocessed/` identity metadata and query collections. Packaged PDF TAR shards
+`preprocessed/` extraction identity directories and query collections. Packaged PDF TAR shards
 are not original PDF paths: restore them first. The adapter's existing canonical
-paper/source join and split/domain selection are reused. Page selection needs
-identity metadata but does not need extracted Markdown or title/abstract text.
+paper/source join and split/domain selection are reused. Page selection uses existing extraction IDs and does not require title/abstract
+text. When page source metadata is absent, format the canonical ID directly: remove
+the leading domain prefix and append `.pdf` within that domain directory. For
+example, `ACL_2026.findings-acl.999` resolves to
+`pdf_datasets/ACL/2026.findings-acl.999.pdf`. Explicit source metadata takes
+precedence. No PDF filename matching or inventory search is used.
 A Hub revision can be used only if it contains restored original PDF paths;
 this integration does not implement another PDF restoration algorithm.
 

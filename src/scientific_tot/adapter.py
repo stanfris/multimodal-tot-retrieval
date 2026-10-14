@@ -314,7 +314,11 @@ class DatasetAdapter:
                 paper.get("paper_id") if full else PurePosixPath(directory).name,
                 f"{directory}: paper_id",
             )
+            domain_name = directory.split("/")[1]
             source_path = paper.get("source_pdf_relpath")
+            if source_path is None and representation == "pages":
+                filename = paper_id.removeprefix(f"{domain_name}_")
+                source_path = f"{domain_name}/{filename}.pdf"
             if source_path is not None:
                 relative_path(source_path)
                 if (
@@ -329,7 +333,6 @@ class DatasetAdapter:
                         f"{directory}: ambiguous source mapping for {paper_id}"
                     )
                 source_path = next(iter(matches), None)
-            domain_name = directory.split("/")[1]
             if paper.get("source_paper_dataset", domain_name) != domain_name:
                 raise DatasetFormatError(f"{directory}: source domain disagrees with artifact path")
             if source_path is not None and source_path.split("/")[0] != domain_name:
