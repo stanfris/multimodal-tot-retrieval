@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from huggingface_hub import RepoFile
+from huggingface_hub.hf_api import RepoFile
 
 from scientific_tot import (
     Dataset,

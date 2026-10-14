@@ -268,6 +268,12 @@ def _validate(cfg: DictConfig) -> None:
                 f"model.encoding.{task}_prompt must be a string (empty is allowed)",
             )
     elif model.name == "colbert":
+        _require(rep.name == "fulltext", "ColBERT requires representation=fulltext")
+        _require(cfg.launcher.device in {"cpu", "cuda"}, "ColBERT supports CPU or CUDA")
+        _require(
+            isinstance(model.revision, str) and re.fullmatch(r"[0-9a-f]{40}", model.revision),
+            "ColBERT requires model.revision pinned to an immutable commit",
+        )
         _require(_text(model.checkpoint), "model.checkpoint is required for colbert")
         for key in ("index_bsize", "kmeans_niters", "doc_maxlen"):
             _require(_positive(model.indexing[key]), f"model.indexing.{key} must be positive")

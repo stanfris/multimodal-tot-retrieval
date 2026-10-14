@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
-    "huggingface-hub>=1.0,<2",
+    "huggingface-hub>=0.34,<2",
     "hydra-core>=1.3.2,<1.4",
     "omegaconf>=2.3,<2.4",
 ]
@@ -19,6 +19,16 @@ dependencies = [
 scientific-tot = "scientific_tot.hydra_entry:main"
 
 [project.optional-dependencies]
+colbert = [
+    "colbert-ai==0.2.22",
+    "transformers==4.57.6",
+    "torch>=2.6,<3",
+    "faiss-cpu>=1.10,<2",
+    "numpy>=1.26,<3",
+    "pandas>=2.2,<4",
+    "pyterrier>=1.1.2,<2",
+    "ir-measures>=0.4,<1",
+]
 dense = [
     "langchain-text-splitters>=0.3,<2",
     "faiss-cpu>=1.10,<2",
@@ -44,6 +54,8 @@ dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 # All scripts and both notebooks share the default .venv. Extras above remain
 # available for library consumers; project users do not need extra flags.
 examples = [
+    "colbert-ai==0.2.22",
+    "transformers==4.57.6",
     "langchain-text-splitters>=0.3,<2",
     "faiss-cpu>=1.10,<2",
     "numpy>=1.26,<3",
@@ -71,8 +83,9 @@ include = ["src", "config", "tests", "docs", "examples", "README.md", "LICENSE",
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not live and not terrier and not dense_live'"
+addopts = "-m 'not live and not terrier and not dense_live and not colbert_live'"
 markers = [
+    "colbert_live: opt-in pretrained ColBERTv2 download and native indexing/search",
     "live: opt-in network checks against the published dataset",
     "dense_live: opt-in pretrained model download and encoding integration test",
     "terrier: opt-in JVM indexing/evaluation integration tests",

@@ -61,10 +61,12 @@ def test_default_composition(tmp_path):
 def test_model_representation_matrix(tmp_path, model, rep):
     cfg = config(f"model={model}", f"representation={rep}")
     compatible = (model == "visual") == (rep in {"figures", "pages"})
+    if model == "colbert":
+        compatible = rep == "fulltext"
     if compatible:
         assert resolve_config(cfg, tmp_path).representation.name == rep
     else:
-        with pytest.raises(ValueError, match="incompatible"):
+        with pytest.raises(ValueError, match="incompatible|requires representation"):
             resolve_config(cfg, tmp_path)
 
 
@@ -73,6 +75,7 @@ def test_model_representation_matrix(tmp_path, model, rep):
     [
         ("bm25_fulltext", "bm25", "fulltext"),
         ("dense_passages", "dense", "passages"),
+        ("colbert_fulltext", "colbert", "fulltext"),
         ("visual_pages", "visual", "pages"),
     ],
 )
@@ -488,7 +491,7 @@ def test_index_destination_and_cache_guard(tmp_path):
             resolve_config(config("stage=index", override), tmp_path, tmp_path / "attempt")
 
 
-def test_existing_index_refused_before_dispatch(tmp_path, monkeypatch):
+def test_existing_index_skipped_before_dispatch(tmp_path, monkeypatch):
     (tmp_path / "index").mkdir()
     sentinel = tmp_path / "index/keep"
     sentinel.write_text("existing index")
@@ -499,8 +502,8 @@ def test_existing_index_refused_before_dispatch(tmp_path, monkeypatch):
     )
     run = tmp_path / "attempt"
     run.mkdir()
-    with pytest.raises(FileExistsError, match="existing index"):
-        run_stage(cfg, run, config(hydra=True).hydra, ROOT)
+    run_stage(cfg, run, config(hydra=True).hydra, ROOT)
+    assert not list(run.iterdir())
     assert not calls
     assert sentinel.read_text() == "existing index"
 

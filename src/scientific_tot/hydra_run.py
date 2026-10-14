@@ -49,6 +49,8 @@ class FreshOutput(Callback):
             if reuse:
                 task = OmegaConf.masked_copy(config, [k for k in config if k != "hydra"])
                 cfg = resolve_config(task, Path.cwd(), target)
+                if not cfg.dry_run and cfg.stage.name == "index":
+                    return
                 if not cfg.dry_run:
                     from scientific_tot.artifact_identity import resolve_identity
 
@@ -127,7 +129,7 @@ class FreshOutput(Callback):
             if not resolved.dry_run:
                 from scientific_tot.artifact_identity import resolve_identity
 
-                identity = resolve_identity(resolved)
+                identity = {} if resolved.stage.name == "index" else resolve_identity(resolved)
                 for previous, previous_identity in destinations.items():
                     if overlaps(directory, previous) and (
                         directory != previous or identity != previous_identity
@@ -143,7 +145,12 @@ class FreshOutput(Callback):
 def execute_stage(cfg: DictConfig, *, run_dir: Path | None = None) -> dict | None:
     """Dispatch one operation using the already resolved application settings."""
     name = cfg.stage.name
-    if cfg.model.name in {"bm25", "dense"} and name in {"prepare", "index", "retrieve", "evaluate"}:
+    if cfg.model.name in {"bm25", "dense", "colbert"} and name in {
+        "prepare",
+        "index",
+        "retrieve",
+        "evaluate",
+    }:
         from scientific_tot.stages import execute_text_stage
 
         return execute_text_stage(cfg, run_dir=run_dir)
@@ -171,6 +178,21 @@ def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: 
     # Hydra creates directories but automatic snapshots/logging are disabled.
     cfg = resolve_config(cfg, Path.cwd(), run_dir)
     print(f"Starting {cfg.stage.name}: {cfg.run.name}; output={run_dir}", flush=True)
+    from scientific_tot.artifact_identity import INDEX_EXISTENCE
+
+    if cfg.stage.name == "index" and (
+        INDEX_EXISTENCE.get(run_dir, False)
+        or (Path(cfg.paths.index).exists() and Path(cfg.paths.index) != run_dir)
+        or any(run_dir.iterdir())
+    ):
+        if cfg.model.name == "colbert":
+            from scientific_tot.artifact_identity import resolve_identity
+
+            verify_completed(Path(cfg.paths.index), cfg, resolve_identity(cfg))
+            print(f"Reusing verified ColBERT index: {cfg.paths.index}", flush=True)
+        else:
+            print(f"Skipping existing index: {cfg.paths.index}", flush=True)
+        return
     if any(run_dir.iterdir()):
         from scientific_tot.artifact_identity import resolve_identity
 
@@ -214,12 +236,6 @@ def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: 
     try:
         from scientific_tot.artifact_identity import PLANNED_IDENTITIES, resolve_identity
 
-        if (
-            cfg.stage.name == "index"
-            and Path(cfg.paths.index).exists()
-            and Path(cfg.paths.index) != run_dir
-        ):
-            raise FileExistsError(f"Refusing to overwrite existing index: {cfg.paths.index}")
         print("Resolving and verifying input identity...", flush=True)
         identity = resolve_identity(cfg)
         if run_dir in PLANNED_IDENTITIES and PLANNED_IDENTITIES[run_dir] != identity:

@@ -72,7 +72,7 @@ def test_corrupt_and_changed_corpus_cannot_select_stale_index(monkeypatch):
         plan("retrieve", [])
     paper = next(Path("data").glob("preprocessed/**/markdown.md"))
     paper.write_text("changed corpus")
-    with pytest.raises(ValueError, match="No compatible completed artifact"):
+    with pytest.raises(FileExistsError, match="different identity"):
         plan("retrieve", [])
 
 

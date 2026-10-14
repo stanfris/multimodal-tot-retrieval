@@ -24,19 +24,20 @@ existing low-level integration functions via `settings`.
 | `representation/pages.yaml` | Future pypdfium2 page rendering scale; original PDF source/modality validated. No renderer, page IDs, or page-to-paper aggregation implemented |
 | `model/bm25.yaml` | type → `IndexingType.CLASSIC` enum; blocks/meta → `IterDictIndexer`; wmodel/controls → `Retriever`. `bm25_arguments` binds these; configured metadata capacity is checked before truncation |
 | `model/dense.yaml` | model_id/revision/device → `SentenceTransformer`; batch_size → encode_query/encode_document; normalize_embeddings → encoding (through existing cosine/dot config); prompts → encode prompt arguments; Flat/inner_product → existing `IndexFlatIP`. `dense_arguments` binds these; unsupported L2 is rejected |
-| `model/colbert.yaml` | Future checkpoint → Indexer/Searcher; index_bsize, nbits, kmeans_niters, doc_maxlen, query_maxlen → ColBERTConfig. No ColBERT integration, device binding, or runtime consumer implemented |
+| `model/colbert.yaml` | Pinned checkpoint snapshot → Stanford Indexer/Searcher; index_bsize, nbits, kmeans_niters, doc_maxlen, query_maxlen → ColBERTConfig; CPU/CUDA RunConfig, canonical PID mapping, shared batch/evaluation |
 | `model/visual.yaml` | Future model_id/device → Byaldi from_pretrained; storage/overwrite/image dimensions → index. No executing visual integration or generic revision/batch-size argument |
-| `retrieval/default.yaml` | top_k → Retriever.num_results / FAISS.search k in existing integration functions; future Byaldi.search k / ColBERT.search k contracts; distinct from metrics |
+| `retrieval/default.yaml` | top_k → Retriever.num_results / FAISS.search k in existing integration functions; ColBERT Searcher.search k; future Byaldi.search k contract; distinct from metrics |
 | `evaluation/default.yaml` | backend identifies ir_measures; metrics → parse_measure → Experiment eval_metrics. Defaults are RR@10, R@1, R@10, nDCG@10 |
 | `launcher/local_cpu.yaml` | kind/device → local validation and supported model device argument; dataset/cache/output roots → original-cwd normalization and guards; indexing threads → Terrier indexer/retriever; encoding threads → torch.set_num_threads; faiss threads → faiss.omp_set_num_threads; terrier_version → pt.terrier.set_version/JVM-version check |
-| `launcher/local_gpu.yaml` | Inherits infrastructure settings and overrides device=cuda; FAISS stays CPU and Terrier stays JVM; no GPU promise for unimplemented ColBERT |
-| `stage/prepare.yaml` | BM25/dense → configured adapter, positive validation, canonical JSONL exports and coverage sidecars; dense passages also export splitter output |
+| `launcher/local_gpu.yaml` | Inherits infrastructure settings and overrides device=cuda; FAISS stays CPU and Terrier stays JVM; ColBERT encoding/compression/search use CUDA with native extensions |
+| `stage/prepare.yaml` | BM25/dense/ColBERT → configured adapter, positive validation, canonical JSONL exports and coverage sidecars; dense passages also export splitter output |
 | `stage/export.yaml` | Name → stage contract; body unimplemented |
 | `stage/index.yaml` | BM25 → configured IterDictIndexer; dense → existing document encoder/cache and persistent FAISS/mapping; fresh destinations and completed manifests, no ranking/evaluation |
-| `stage/retrieve.yaml` | Name → index snapshot/configuration verification; BM25/dense query-only batch retrieval with persistent indexes |
+| `stage/retrieve.yaml` | Name → index snapshot/configuration verification; BM25/dense/ColBERT query-only batch retrieval with persistent indexes |
 | `stage/evaluate.yaml` | Name → completed retrieval artifact/config/depth verification; shared saved-run aggregate/per-query evaluation, with no inference |
 | `stage/search.yaml` | Name/query → required ad hoc query and verified index contract; body unimplemented |
 | `experiment/bm25_fulltext.yaml` | Hydra absolute overrides select BM25/fulltext/index; reusable group bodies remain independent |
+| `experiment/colbert_fulltext.yaml` | Hydra absolute overrides select ColBERT/fulltext/index; 220-token prefix truncation, no passages |
 | `experiment/dense_passages.yaml` | Hydra absolute overrides select dense/passages/index; executes the passage builder and cached FAISS indexing |
 | `experiment/visual_pages.yaml` | Hydra absolute overrides select visual/pages/index; validated preset, execution unsupported |
 
@@ -92,5 +93,5 @@ The prospective contracts were checked against primary API sources:
 [ColBERT settings](https://github.com/stanford-futuredata/ColBERT/blob/main/colbert/infra/config/settings.py),
 and [Byaldi wrapper](https://github.com/AnswerDotAI/byaldi/blob/main/byaldi/RAGModel.py).
 Byaldi exposes model path/device and image indexing options but no revision
-argument; ColBERT exposes a checkpoint/config. Future reproducible execution of
-those profiles needs an immutable local checkpoint with recorded content identity.
+argument. ColBERT exposes a checkpoint/config: execution now resolves a pinned
+Hub snapshot and records its content identity. Byaldi remains prospective.

@@ -11,8 +11,8 @@ BM25 and dense `prepare`, `index`, `retrieve`, and `evaluate` execute with
 `fulltext` or `title_abstract`; dense also supports `passages`. `search`, `export`,
 and other models remain unimplemented. Existing BM25/dense
 tutorial functions and scripts remain executable with their established defaults.
-ColBERT, Byaldi, figure retrieval, and page rendering are
-configuration-only profiles; no new retrieval model is implemented.
+ColBERT executes the same four stages with `fulltext`. Byaldi, figure retrieval,
+and page rendering remain configuration-only profiles.
 
 ## Ownership and consumers
 
@@ -23,12 +23,13 @@ configuration-only profiles; no new retrieval model is implemented.
 | `representation` | `fulltext`, `title_abstract` | `corpus_arguments` → `DatasetAdapter.load_corpus`; original content is preserved |
 | `representation` | `passages`, `figures`, `pages` | Dense passages execute through LangChain and PyTerrier aggregation; figures/pages remain configuration-only |
 | `model` | `bm25`, `dense` | `bm25_arguments` / `dense_arguments` → existing optional integration functions when passed `settings=cfg` |
-| `model` | `colbert`, `visual` | External API contracts and compatibility validation only |
+| `model` | `colbert` | Stanford Indexer/Searcher; fulltext with token truncation |
+| `model` | `visual` | Configuration-only compatibility validation |
 | `retrieval` | `default` | PyTerrier `Retriever.num_results` / FAISS `Index.search` depth in the existing functions; BM25/dense retrieve; search remains unimplemented |
 | `evaluation` | `default` | `evaluate_run` → `ir_measures.parse_measure` and PyTerrier `Experiment.eval_metrics` |
 | `launcher` | `local_cpu`, `local_gpu` | Path normalization, output guards, model device, PyTorch/FAISS/Terrier threads and Terrier version |
 | `stage` | `prepare`, `index`, `retrieve`, `evaluate`, `search`, `export` | `run_stage` artifact preflight / provenance, then BM25/dense prepare/index/retrieve/evaluate dispatch |
-| `experiment` | `bm25_fulltext`, `dense_passages`, `visual_pages` | Hydra defaults-list composition; no duplicated model settings or runtime dispatcher |
+| `experiment` | `bm25_fulltext`, `dense_passages`, `colbert_fulltext`, `visual_pages` | Hydra defaults-list composition; no duplicated model settings or runtime dispatcher |
 
 `model` owns algorithm/library parameters. `representation` owns source content
 and prospective transformations. `retrieval.top_k` owns ranking depth;
@@ -130,7 +131,7 @@ includes the run label because it is serialized in `run.trec`.
 
 ```text
 results/                           # launcher.output_root defaults to ./results
-  indexes/<model>_<representation>_c-<corpus>_<hash>/
+  indexes/<model>_<representation>_c-<corpus>/
     .hydra/{config,hydra,overrides}.yaml
     manifest.json
     index-manifest.json
@@ -149,7 +150,9 @@ cache_root/                        # outside output_root, unchanged
 
 `artifact_identity.py` is the centralized authority for names and locations.
 Hydra's `artifact_dir` resolver calls it before directory creation; YAML contains
-no separate hash/path algorithm. The suffix is 16 hex characters of the full
+no separate hash/path algorithm. Index names omit the checksum suffix; an existing
+index destination skips generation without reading sources or checking checksums.
+Use a distinct `paths.index` for another build. For other stages, the suffix is 16 hex characters of the full
 SHA256 stored as `artifact_sha256`, with the complete `artifact_identity` stored
 alongside the existing full-configuration checksum. Short-name collisions fail
 verification rather than overwriting an artifact.
@@ -171,7 +174,7 @@ resolved to immutable commits and pinned for the actual build.
 | Stage | Inputs and intended output | Current boundary |
 | --- | --- | --- |
 | `prepare` | Selected corpus/queries → `corpus.jsonl`, `queries.jsonl`, `qrels.jsonl` with coverage/provenance sidecars | BM25/dense text representations supported; every positive validated |
-| `index` | Corpus → `results/indexes/<index-id>` or explicit `paths.index` | Persistent Terrier or FAISS index; verified identical artifacts reused |
+| `index` | Corpus → `results/indexes/<index-id>` or explicit `paths.index` | Persistent Terrier or FAISS index; existing destinations skipped |
 | `retrieve` | Verified `paths.index` + batch queries → `run.trec`, `topics.jsonl`, `qrels.tsv`, `query-ids.jsonl`, `corpus-ids.jsonl` | BM25/dense batch retrieval; canonical paper IDs and artifact hashes |
 | `evaluate` | Completed retrieval `paths.run` → aggregate/per-query metrics | Saved artifact/configuration validation; ir_measures aggregate/per-query metrics |
 | `search` | Verified `paths.index` + required `stage.query` → ad hoc ranking | Index verification wired; interactive execution unimplemented |
@@ -210,7 +213,8 @@ blocked during that test.
 ## Snapshots, provenance, and reuse
 
 `FreshOutput` protects inputs/caches and reserves a new single-run artifact directory
-**before Hydra writes**. Existing completed identical artifacts are fully verified
+**before Hydra writes**. Index generation skips existing destinations. For other
+stages, existing completed identical artifacts are fully verified
 and reused without rewriting snapshots, manifests or outputs. Failed, incomplete,
 corrupted or incompatible destinations fail explicitly. An exclusive `.run.lock`
 also guards direct callers racing on an empty directory. Outputs are inventoried
@@ -220,10 +224,11 @@ the reserved identity. Resolve failures before a destination is known leave no
 artifact; failures after reservation preserve their snapshots and failed manifest.
 
 The pinned Hydra basic sweeper validates all composed job paths and identities
-before writing `multirun.yaml`. Distinct identities resolve to separate directories;
-identical jobs can share a destination and reuse the first completed artifact.
-Concurrent identical jobs encountering an unfinished reservation fail safely.
-Conflicting identities or ancestor/descendant output paths fail in preflight.
+before writing `multirun.yaml`. Index jobs sharing a destination skip after the first
+build, even if construction settings differ. For other stages, distinct identities
+resolve to separate directories; identical jobs can share a destination and reuse the first completed artifact.
+Index jobs skip unfinished existing destinations too. Other stages reject unfinished
+reservations and conflicting identities. Ancestor/descendant output paths fail in preflight.
 Only `${artifact_dir:}` is supported for `hydra.sweep.subdir`. Mutable sweep
 orchestration metadata lives in an exclusively reserved temporary directory outside
 `results/`, never as an artifact wrapper. An explicit `hydra.sweep.dir` remains
@@ -347,3 +352,15 @@ FAISS remains the existing CPU `IndexFlatIP`; no GPU
 FAISS implementation is introduced. Local model-path loading remains unsupported
 by the existing revision resolver. Standalone combined tutorial functions retain
 their established behavior; passage execution uses the separate Hydra stages.
+
+## ColBERTv2
+
+`experiment=colbert_fulltext` composes the existing model/fulltext/index profiles.
+All indexing values go to `ColBERTConfig`; `model.retrieval.query_maxlen` controls
+query tokenization and `retrieval.top_k` controls `Searcher.search`. The added
+`model.revision` pins the checkpoint commit. Existing completed ColBERT indexes
+are verified against their identity and checksums before reuse. Query settings
+and metrics do not affect index identity. The default 220-token document limit
+includes special tokens and truncates scientific fulltext to its prefix; no
+passage splitting is implied. See [the ColBERT guide](colbert-retrieval.md) for
+commands, native extension requirements, provenance and tests.

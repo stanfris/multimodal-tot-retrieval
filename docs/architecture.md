@@ -137,7 +137,7 @@ changing defaults for callers that omit them.
 `hydra_run.py` reserves fresh outputs, preflights every basic-sweeper job, stores
 read-only configuration/provenance and validates stage artifacts. `config_artifacts.py`
 provides index build-setting identity and retrieval snapshot verification.
-`stages.py` executes BM25/dense preparation, indexing, retrieval and saved-run
+`stages.py` executes BM25/dense/ColBERT preparation, indexing, retrieval and saved-run
 evaluation through the existing adapter and backend integrations. Preparation exports validated canonical records;
 indexing builds persistent Terrier/FAISS indexes and saves completion manifests.
 Dense task caches reuse existing encoders/cache I/O; LangChain splits passages and
@@ -146,3 +146,13 @@ checksummed batches; evaluation consumes them without dataset/index/model access
 Remaining stage/model combinations are unimplemented. Combined tutorial functions
 are never used as stage implementations. Reusable caches must be outside experiment results.
 See the [configuration guide](configuration.md) and [complete profile audit](configuration-audit.md).
+
+## ColBERT textual boundary
+
+`integrations/colbert.py` binds the existing four stages to Stanford colbert-ai
+Indexer/Searcher. An immutable model snapshot supplies tokenization/inference;
+the library owns residual compression and late-interaction search. Ordered PIDs
+map to canonical papers through a checksummed index mapping. Shared identity,
+manifest, batch serialization and saved-run evaluation mechanisms are reused.
+Fulltext is prefix-truncated to `doc_maxlen` tokens without passage splitting.
+See [the ColBERT guide](colbert-retrieval.md).

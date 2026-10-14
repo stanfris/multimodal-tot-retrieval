@@ -18,6 +18,10 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
         f"stage={cfg.stage.name} requires a fresh run directory"
     )
     if cfg.stage.name == "retrieve":
+        if cfg.model.name == "colbert":
+            from scientific_tot.integrations.colbert import retrieve_colbert
+
+            return retrieve_colbert(cfg, run_dir)
         if cfg.model.name == "dense":
             from scientific_tot.integrations.dense_batch import retrieve_dense
 
@@ -32,7 +36,8 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
     if cfg.stage.name == "index":
         assert cfg.paths.index is not None, "stage=index requires a resolved index destination"
         if Path(cfg.paths.index).exists() and Path(cfg.paths.index) != run_dir:
-            raise FileExistsError(f"Refusing to overwrite existing index: {cfg.paths.index}")
+            print(f"Skipping existing index: {cfg.paths.index}", flush=True)
+            return {"index_location": cfg.paths.index}
     adapter = configured_adapter(cfg)
     if cfg.dataset.download.enabled:
         components = [
@@ -69,7 +74,13 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
         ):
             raise ValueError("Index requires nonempty text and canonical document IDs")
         inputs = SimpleNamespace(documents=documents)
-        if cfg.model.name == "dense":
+        if cfg.model.name == "colbert":
+            from scientific_tot.integrations.colbert import build_colbert_index
+
+            provenance = build_colbert_index(
+                corpus, inputs, cfg, reserved=Path(cfg.paths.index) == run_dir
+            )
+        elif cfg.model.name == "dense":
             from scientific_tot.integrations.dense_batch import build_dense_index
 
             provenance = build_dense_index(

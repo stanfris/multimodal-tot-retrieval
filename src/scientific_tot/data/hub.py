@@ -9,7 +9,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from huggingface_hub import HfApi, RepoFile, hf_hub_download
+from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub.hf_api import RepoFile
 
 from scientific_tot.data.schemas import FileInfo, Inventory, Paper, QueryCollection
 from scientific_tot.data.validation import (

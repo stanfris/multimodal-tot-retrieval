@@ -1,7 +1,7 @@
-# Configuration contract only: execution is not implemented.
 name: colbert
 backend: colbert
-checkpoint: colbert-ir/colbertv2.0  # Can also be a local pinned checkpoint directory.
+checkpoint: colbert-ir/colbertv2.0  # Or an explicit local checkpoint directory.
+revision: c1e84128e85ef755c096a95bdb06b47793b13acf
 indexing:
   index_bsize: 64
   nbits: 2

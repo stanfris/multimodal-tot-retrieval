@@ -27,6 +27,7 @@ from scientific_tot.configuration import resolve_config
 from scientific_tot.records import records_digest
 
 PLANNED_IDENTITIES: dict[Path, dict] = {}
+INDEX_EXISTENCE: dict[Path, bool] = {}
 
 
 def index_identity(cfg, provenance: dict) -> dict:
@@ -47,6 +48,18 @@ def index_identity(cfg, provenance: dict) -> dict:
         if cfg.representation.name == "passages":
             names.append("langchain-text-splitters")
         settings["versions"] = {name: version(name) for name in names}
+    elif cfg.model.name == "colbert":
+        settings["encoding_threads"] = cfg.launcher.threads.encoding
+        settings["faiss_threads"] = cfg.launcher.threads.faiss
+        settings["device"] = cfg.launcher.device
+        settings["versions"] = {
+            name: version(name)
+            for name in ("colbert-ai", "transformers", "torch", "faiss-cpu", "numpy")
+        }
+        if Path(cfg.model.checkpoint).is_absolute():
+            from scientific_tot.integrations.colbert import local_checkpoint_digest
+
+            settings["checkpoint_sha256"] = local_checkpoint_digest(Path(cfg.model.checkpoint))
     return settings
 
 
@@ -102,6 +115,8 @@ def _resolve_identity(cfg) -> dict:
         from scientific_tot.integrations.dense import EncodingConfig, resolve_model_revision
 
         revision = resolve_model_revision(EncodingConfig(**dense_arguments(cfg)))
+    if cfg.model.name == "colbert":
+        revision = cfg.model.revision
     provenance = {
         "dataset_revision": corpus.provenance["revision"],
         "model_revision": revision,
@@ -119,8 +134,9 @@ def resolve_identity(cfg) -> dict:
 
 def artifact_name(cfg, identity: dict) -> str:
     stem = f"{cfg.model.name}_{cfg.representation.name}_c-{cfg.split.corpus}"
-    if cfg.stage.name != "index":
-        stem += f"_q-{cfg.split.queries}"
+    if cfg.stage.name == "index" and not cfg.dry_run:
+        return stem
+    stem += f"_q-{cfg.split.queries}"
     return f"{stem}_{digest(identity)[:16]}"
 
 
@@ -143,6 +159,11 @@ def hydra_directory(*, _root_) -> str:
         # Dry runs validate without touching dataset/model sources or pretending to resolve content.
         identity = {"dry_run": OmegaConf.to_container(cfg, resolve=True)}
         return str(Path(cfg.launcher.output_root) / "dry-runs" / artifact_name(cfg, identity))
+    if cfg.stage.name == "index":
+        directory = artifact_directory(cfg, {})
+        # Hydra creates the directory before dispatch; remember whether it already existed.
+        INDEX_EXISTENCE.setdefault(directory, directory.exists())
+        return str(directory)
     print(f"Planning {cfg.stage.name}: resolving selected inputs...", flush=True)
     identity = resolve_identity(cfg)
     directory = artifact_directory(cfg, identity)

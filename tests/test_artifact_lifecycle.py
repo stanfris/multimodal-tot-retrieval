@@ -49,9 +49,10 @@ def identity(base, *overrides):
     return value, artifact_directory(cfg, value)
 
 
-def test_index_identity_tracks_only_document_inputs(tmp_path, dataset):
+def test_index_name_has_no_checksum(tmp_path, dataset):
     original, path = identity(tmp_path)
     assert path.parent == tmp_path / "results/indexes"
+    assert path.name == "bm25_fulltext_c-all"
     for change in (
         "split.queries=train",
         "retrieval.top_k=5",
@@ -61,14 +62,14 @@ def test_index_identity_tracks_only_document_inputs(tmp_path, dataset):
     ):
         assert identity(tmp_path, change) == (original, path)
     for change in (
-        "model.indexing.blocks=true",
         "representation=title_abstract",
         "split.corpus=test",
     ):
         assert identity(tmp_path, change)[1] != path
     paper = next(dataset.glob("preprocessed/**/markdown.md"))
     paper.write_text(paper.read_text() + " changed original corpus")
-    assert identity(tmp_path)[1] != path
+    assert identity(tmp_path)[1] == path
+    assert identity(tmp_path)[0] != original
 
 
 def test_dense_identity_pins_encoder_and_excludes_query_settings(tmp_path, dataset):
@@ -81,7 +82,8 @@ def test_dense_identity_pins_encoder_and_excludes_query_settings(tmp_path, datas
         "model.encoding.document_prompt='New document: '",
         "model.encoding.normalize_embeddings=false",
     ):
-        assert identity(tmp_path, "model=dense", change)[1] != original[1]
+        assert identity(tmp_path, "model=dense", change)[0] != original[0]
+        assert identity(tmp_path, "model=dense", change)[1] == original[1]
     passages = identity(tmp_path, "model=dense", "representation=passages")
     assert (
         identity(
@@ -141,8 +143,9 @@ def test_index_identity_and_stage_do_not_read_queries(tmp_path, dataset, monkeyp
     assert len(calls) == 1
     assert before == {p: p.read_bytes() for p in target.rglob("*") if p.is_file()}
     (target / "data.properties").write_text("corrupted")
-    with pytest.raises(FileExistsError, match="checksum"):
-        run_stage(cfg, target, hydra, ROOT)
+    shutil.rmtree(dataset)
+    monkeypatch.setattr("scientific_tot.hydra_run.artifact_reference", blocked)
+    run_stage(cfg, target, hydra, ROOT)
     assert len(calls) == 1
 
 
@@ -193,7 +196,7 @@ def test_actual_hydra_lifecycle_reuse_and_independent_evaluation(tmp_path, datas
     snapshot = {p: p.read_bytes() for p in index.rglob("*") if p.is_file()}
     repeated = offline_cli(tmp_path, "stage=index", "split.queries=train", *common)
     check(repeated)
-    assert "Reusing verified" in repeated.stdout
+    assert "Skipping existing index" in repeated.stdout
     assert snapshot == {p: p.read_bytes() for p in index.rglob("*") if p.is_file()}
     check(offline_cli(tmp_path, "stage=retrieve", f"paths.index={index}", *common))
     run = next((tmp_path / "results/models").iterdir())
@@ -239,7 +242,7 @@ def test_actual_hydra_lifecycle_reuse_and_independent_evaluation(tmp_path, datas
     assert "checksum differs" in invalid.stderr
 
 
-def test_actual_multirun_shares_index_and_separates_content(tmp_path, dataset, cached_terrier):
+def test_actual_multirun_skips_shared_index(tmp_path, dataset, cached_terrier):
     command = [
         "--multirun",
         "stage=index",
@@ -248,7 +251,7 @@ def test_actual_multirun_shares_index_and_separates_content(tmp_path, dataset, c
     ]
     check(offline_cli(tmp_path, *command))
     indexes = list((tmp_path / "results/indexes").iterdir())
-    assert len(indexes) == 2
+    assert len(indexes) == 1
     before = {p: p.read_bytes() for p in (tmp_path / "results").rglob("*") if p.is_file()}
     check(offline_cli(tmp_path, *command))
     assert before == {p: p.read_bytes() for p in (tmp_path / "results").rglob("*") if p.is_file()}
@@ -259,9 +262,8 @@ def test_actual_multirun_shares_index_and_separates_content(tmp_path, dataset, c
         "paths.index=shared",
         "model.indexing.blocks=false,true",
     )
-    assert conflict.returncode != 0
-    assert "distinct destinations" in conflict.stderr
-    assert not (tmp_path / "shared").exists()
+    check(conflict)
+    assert (tmp_path / "shared/data.properties").is_file()
 
 
 def test_concurrent_cli_reservations_do_not_overwrite(tmp_path, dataset, cached_terrier):
@@ -275,13 +277,12 @@ def test_concurrent_cli_reservations_do_not_overwrite(tmp_path, dataset, cached_
     check(offline_cli(tmp_path, "stage=index"))
 
 
-def test_incomplete_reservation_fails_without_writes(tmp_path, dataset):
+def test_existing_index_skips_without_writes(tmp_path, dataset):
     cfg, hydra = configuration(tmp_path, "stage=index")
     target = artifact_directory(cfg, resolve_identity(cfg))
     target.mkdir(parents=True)
     (target / ".run.lock").touch()
-    with pytest.raises(FileExistsError, match="incomplete"):
-        run_stage(cfg, target, hydra, ROOT)
+    run_stage(cfg, target, hydra, ROOT)
     assert list(target.iterdir()) == [target / ".run.lock"]
 
 
@@ -365,3 +366,24 @@ def test_reserved_builder_refuses_existing_backend_files(tmp_path, dataset):
     with pytest.raises(FileExistsError, match="nonempty index"):
         build_bm25_index(corpus, inputs, cfg, reserved=True)
     assert (target / "data.properties").read_text() == "existing index"
+
+
+@pytest.mark.parametrize("model", ["bm25", "dense"])
+@pytest.mark.parametrize("empty", [False, True])
+def test_cli_skips_existing_index_without_dataset(tmp_path, model, empty):
+    target = tmp_path / "results/indexes" / f"{model}_fulltext_c-all"
+    target.mkdir(parents=True)
+    if not empty:
+        (target / "index.bin").write_bytes(b"existing index")
+    before = {p: p.read_bytes() for p in target.rglob("*") if p.is_file()}
+    result = subprocess.run(
+        [sys.executable, "-m", "scientific_tot.hydra_entry", "stage=index", f"model={model}"],
+        cwd=tmp_path,
+        env=dict(os.environ, PYTHONPATH=str(ROOT / "src"), HYDRA_FULL_ERROR="1"),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    check(result)
+    assert "Skipping existing index" in result.stdout
+    assert before == {p: p.read_bytes() for p in target.rglob("*") if p.is_file()}

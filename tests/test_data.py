@@ -3,7 +3,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
-from huggingface_hub import RepoFile, RepoFolder
+from huggingface_hub.hf_api import RepoFile, RepoFolder
 
 from scientific_tot import Dataset
 from scientific_tot.data.hub import MissingComponentError

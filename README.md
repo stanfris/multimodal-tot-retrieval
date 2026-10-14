@@ -9,7 +9,7 @@ The published dataset is the source of truth. The
 [generation repository](https://github.com/stanfris/multimodal-tip-of-tongue-retrieval-for-scientific-papers)
 creates the artifacts; this package does not depend on that pipeline at runtime
 and delegates ranking, pretrained encoding, and evaluation to PyTerrier,
-Sentence Transformers, FAISS, and ir_measures.
+Sentence Transformers, FAISS, Stanford ColBERT, and ir_measures.
 
 **Publication status rechecked 2026-10-11:** revision
 `3b764a4c6855925ec802a2560712c4f5cc96f980` contains query collections only.
@@ -77,7 +77,8 @@ results/
 ```
 
 Dense indexes use the same layout with `dense_fulltext` or `dense_passages`
-and FAISS/vector files. `models/` contains retrieval outputs; pretrained weights
+and FAISS/vector files. ColBERT indexes store the upstream compressed index
+under `colbert/` with a canonical PID mapping. `models/` contains retrieval outputs; pretrained weights
 and embeddings stay in the existing `cache/` hierarchy. There are no timestamped
 artifact wrappers.
 
@@ -198,7 +199,10 @@ uv run scientific-tot dry_run=true experiment=dense_passages launcher=local_gpu
 uv run scientific-tot --multirun stage=index split.queries=train,test
 ```
 
-Names combine readable model/representation/split labels with the first 16 hex
+Index names use readable model/representation/corpus split labels without a checksum
+suffix. Existing BM25/dense index generation skips existing destinations. ColBERT
+instead verifies corpus/settings identity and sealed checksums before reuse. Use a different `paths.index` to build another index.
+Other stage names combine readable model/representation/split labels with the first 16 hex
 characters of a SHA256 of the resolved content identity. Full identities and
 hashes remain in manifests alongside full configuration hashes. Index identities
 include corpus bytes, dataset commit, representation, construction settings and
@@ -208,19 +212,35 @@ index manifest, query content/selection and ranking parameters. Evaluation ident
 include the exact saved retrieval manifest and metric settings; evaluation needs
 neither the original dataset nor the index.
 
-Identical completed outputs are reused only after manifest, snapshot and output
-checksum verification, without rewriting files. Incomplete, corrupted, legacy or
+For stages other than index generation, identical completed outputs are reused
+only after manifest, snapshot and output checksum verification, without rewriting files. Incomplete, corrupted, legacy or
 conflicting destinations fail explicitly. Concurrent writers reserve exclusively;
-identical multirun jobs reuse completed outputs, while different identities get
-separate destinations. Index and retrieval consumers require schema-2 artifacts
+index multirun jobs sharing a destination skip subsequent builds. Other stages
+reuse identical completed outputs and give different identities separate destinations. Index and retrieval consumers require schema-2 artifacts
 and explicit document-domain identities. Rebuild older artifacts from original inputs.
 
 [Configuration guide](docs/configuration.md) covers profiles, naming, provenance,
 reuse and limitations. BM25 and dense `prepare`, `index`, `retrieve`, and `evaluate`
 execute for text corpora. Dense passages preserve the configured LangChain splitter
-and PyTerrier max/mean aggregation. `search`, `export`, ColBERT, visual/page/figure
-profiles remain configuration-only. Standalone tutorial examples below retain
+and PyTerrier max/mean aggregation. ColBERT executes all four stages with fulltext.
+`search`, `export`, and visual/page/figure profiles remain configuration-only. Standalone tutorial examples below retain
 their established output layouts and APIs.
+
+## ColBERTv2 textual baseline
+
+```sh
+./scripts/02_index.sh experiment=colbert_fulltext
+./scripts/03_retrieve.sh experiment=colbert_fulltext
+./scripts/04_evaluate.sh experiment=colbert_fulltext
+```
+
+This uses the pinned `colbert-ir/colbertv2.0` checkpoint and original extracted
+fulltext, truncated by ColBERT to **220 tokens including special tokens** per
+paper. It does not split documents into passages. Preparation is optional; model
+weights download on first indexing/search. CPU is the default; CUDA is selectable
+with `launcher=local_gpu`. Native C++ extensions require a compiler and Ninja.
+[ColBERT guide](docs/colbert-retrieval.md) covers parameters, provenance,
+requirements and the opt-in real-checkpoint test.
 
 ## Full document collection (default)
 

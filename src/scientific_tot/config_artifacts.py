@@ -186,7 +186,7 @@ def verify_retrieval(directory: Path, cfg: DictConfig | None = None) -> dict:
     from scientific_tot.configuration import resolve_config
 
     built = resolve_config(OmegaConf.create(snapshot), directory.parent)
-    if built.stage.name != "retrieve" or built.model.name not in {"bm25", "dense"}:
+    if built.stage.name != "retrieve" or built.model.name not in {"bm25", "dense", "colbert"}:
         raise ValueError("Saved batch configuration must describe a supported retrieve stage")
     if cfg is not None:
         if (
@@ -220,8 +220,8 @@ def _validate_provenance(cfg: DictConfig, provenance: dict) -> None:
             raise ValueError(f"Resolved {field} must be an immutable commit SHA or null")
     if cfg.dataset.source == "hub" and provenance["dataset_revision"] is None:
         raise ValueError("Hub index requires a resolved dataset revision")
-    if cfg.model.name == "dense" and provenance["model_revision"] is None:
-        raise ValueError("Dense index requires a resolved model revision")
+    if cfg.model.name in {"dense", "colbert"} and provenance["model_revision"] is None:
+        raise ValueError(f"{cfg.model.name} index requires a resolved model revision")
     for field, requested in (
         ("dataset_revision", cfg.dataset.revision),
         ("model_revision", cfg.model.get("revision")),
