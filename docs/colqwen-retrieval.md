@@ -76,9 +76,9 @@ and Qdrant's local exact search remain CPU operations; model inference always
 runs on CUDA. Pretrained CUDA inference has not been verified on this development
 machine.
 
-Preparation validates the selected original PDFs and every page's rasterization,
+Preparation resolves and opens the selected original PDFs and reads their page counts,
 exports canonical corpus/query/qrel records and the page mapping, and initializes
-no model. PDFium renders every page in original order at `rendering.scale=2`
+no model and performs no renderability precheck. During indexing, PDFium renders every page in original order at `rendering.scale=2`
 (144 pixels/inch for ordinary 72-point PDF units). PDFium's defaults remain in
 force: white opaque background, no crop or extra rotation, color rendering,
 annotations enabled, normal smoothing, and forms drawn when a form environment
@@ -90,8 +90,7 @@ physical DPI expectations.
 
 Missing, corrupt, empty, and unreadable PDFs follow `dataset.missing=error|skip`.
 Reports retain selected papers, emitted usable PDFs, skipped count, and reasons.
-Filesystem escapes and malformed identity data always fail. An unreadable later
-page excludes the entire paper under skip. Preparation and retrieval validate
+Filesystem escapes and malformed identity data always fail. Rendering errors encountered during indexing fail the build. Preparation and retrieval validate
 all selected query positives: skipping a relevant paper raises an unresolved
 relevance error. Independent indexing does not load queries to judge relevance.
 
@@ -167,8 +166,8 @@ shape. Local Qdrant loads the entire vector collection into memory and warns
 above 20,000 points. Exact search scales with all page/token vectors per query.
 A temporary index copy needs additional disk space approximately equal to the
 persistent Qdrant directory. Exhaustive page-score exports grow as queries ×
-pages. PDF validation rasterizes pages again when input identities are checked;
-preparation does not cache page images. No full-corpus timing, GPU compatibility,
+pages. Input identity checks read PDF hashes and page counts without rendering pages;
+page images are rendered only during document encoding. No full-corpus timing, GPU compatibility,
 or scalability measurements have been performed.
 
 Default tests use tiny synthetic PDFs, real PDFium rendering, Qdrant persistence

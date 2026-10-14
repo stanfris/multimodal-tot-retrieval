@@ -305,20 +305,16 @@ def test_pdf_path_safety_is_not_a_skip_policy(tmp_path, dataset):
         colqwen.load_pdf_corpus(configured_adapter(cfg), cfg)
 
 
-def test_failure_on_later_page_excludes_entire_paper(tmp_path, dataset, monkeypatch):
-    render = colqwen.render_page
+def test_preparation_and_identity_do_not_render_pages(tmp_path, dataset, encoder, monkeypatch):
+    def blocked(*args, **kwargs):
+        raise AssertionError("Pages must only be rendered for document encoding")
 
-    def fail(pdf, number, cfg):
-        if number == 2:
-            raise pdfium.PdfiumError("Unreadable second page")
-        return render(pdf, number, cfg)
-
-    monkeypatch.setattr(colqwen, "render_page", fail)
-    cfg, _ = settings(tmp_path, dataset, "prepare", None, "dataset.missing=skip")
-    corpus = colqwen.load_pdf_corpus(configured_adapter(cfg), cfg)
-    assert len(corpus) == 1
-    assert len(colqwen.page_mapping(corpus)) == 1
-    assert "second page" in corpus.report.issues[-1].detail
+    monkeypatch.setattr(colqwen, "render_page", blocked)
+    output, _, _ = execute(tmp_path, dataset, "prepare", "prepared")
+    assert len((output / "page-mapping.jsonl").read_text().splitlines()) == 4
+    cfg, _ = settings(tmp_path, dataset, "index")
+    assert resolve_identity(cfg)["index"]["corpus_sha256"]
+    assert encoder == []
 
 
 def test_model_loader_pins_base_and_preserves_official_processor(tmp_path, dataset, monkeypatch):

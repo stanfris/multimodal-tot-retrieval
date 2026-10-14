@@ -60,7 +60,7 @@ def render_page(pdf, number: int, cfg):
 
 
 def load_pdf_corpus(adapter, cfg) -> Records:
-    """Reuse canonical corpus selection, validate originals, and report explicit exclusions."""
+    """Resolve original PDFs, fingerprint their bytes, and read page counts."""
     import pypdfium2 as pdfium
     from tqdm.auto import tqdm
 
@@ -71,16 +71,13 @@ def load_pdf_corpus(adapter, cfg) -> Records:
         issues=list(selected.report.issues),
     )
     rows = []
-    for row in tqdm(selected, desc="Validating original PDFs", unit="paper"):
+    for row in tqdm(selected, desc="Reading original PDFs", unit="paper"):
         try:
             path = adapter.resolve_pdf(row)
             reference = artifact_reference(path)
             with pdfium.PdfDocument(path) as pdf:
                 if not len(pdf):
                     raise ValueError("PDF contains no pages")
-                # Detect errors on any page before skip policy can exclude the whole paper.
-                for number in range(1, len(pdf) + 1):
-                    render_page(pdf, number, cfg).close()
                 count = len(pdf)
         except DatasetFormatError:
             raise

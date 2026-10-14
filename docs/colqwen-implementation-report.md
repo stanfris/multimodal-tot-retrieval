@@ -115,7 +115,7 @@ existing saved-run implementation without model, PDF or index access.
   `uv lock --check` passed. The UV cache directory was explicitly set to an allowed
   temporary directory for the offline lock check.
 
-Offline tests cover missing/corrupt/later-page PDF failures, path safety, canonical
+Offline tests cover missing/corrupt PDF failures and rendering-free preparation/identity checks, path safety, canonical
 IDs with slash/percent/Unicode, rendering scale and order, model/base pin propagation,
 independent index creation/reuse/corruption, query-only retrieval, maximum aggregation,
 deduplication, paper cutoff when the top three pages share a paper, stable ties,
@@ -128,8 +128,9 @@ argument, selection, or supported-value constraint; the experiment copies no set
 Original PDFs must already be restored; packaged PDF TAR restoration is delegated
 to the existing upstream tool. Local Qdrant loads the entire vector collection into
 RAM, scans all pages per query, and requires a temporary disk copy for immutable
-artifact search. Validation rasterizes PDFs again during content-identity checks;
-there is no page-image cache. Page-score exports scale with queries × pages.
+artifact search. Preparation and content-identity checks read hashes and page counts without
+rendering pages. Pages are rendered only for document encoding; there is no
+page-image cache. Page-score exports scale with queries × pages.
 Canonical TREC identifiers retain the shared existing no-whitespace restriction.
 No real pretrained inference, GPU compatibility, full-corpus performance, numerical
 parity across devices, or large-index scalability was measured. The selectable
