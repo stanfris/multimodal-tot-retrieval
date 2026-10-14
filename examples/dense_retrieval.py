@@ -33,7 +33,7 @@ def main():
     parser.add_argument(
         "--model-revision", help="Commit SHA or ref; refs resolve once to a pinned SHA"
     )
-    parser.add_argument("--device", default="cpu", help="Embedding device: cpu, cuda, or cuda:0")
+    parser.add_argument("--device", default="cuda", help="CUDA embedding device: cuda or cuda:0")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--max-seq-length", type=int)
     parser.add_argument("--encoding-threads", type=int, default=1, help="PyTorch CPU threads")

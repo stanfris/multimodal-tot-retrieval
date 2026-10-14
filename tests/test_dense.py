@@ -1,6 +1,7 @@
 """Offline fixtures exercise real FAISS/evaluation; neural encoding is stubbed."""
 
 import json
+import sys
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -34,6 +35,7 @@ def data():
 
 @pytest.fixture
 def encoder(monkeypatch):
+    monkeypatch.setattr("scientific_tot.integrations.dense.require_cuda", lambda: None)
     calls = []
 
     def stub(config, revision, model_cache, task, texts, kwargs):
@@ -55,8 +57,37 @@ def encoder(monkeypatch):
     return calls
 
 
+def test_dense_requires_cuda_device():
+    with pytest.raises(ValueError, match="requires a CUDA device"):
+        EncodingConfig(device="cpu")
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_dense_fails_without_gpu_before_cache_or_encoding(monkeypatch, tmp_path, cached):
+    from scientific_tot.integrations.dense import cached_encoding
+
+    cache = tmp_path / "cache"
+    if cached:
+        cache.mkdir()
+        (cache / "manifest.json").write_text("must not be read without CUDA")
+    monkeypatch.setitem(
+        sys.modules, "torch", SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
+    )
+    with pytest.raises(RuntimeError, match="available NVIDIA GPU"):
+        cached_encoding(
+            EncodingConfig(),
+            DEFAULT_MODEL_REVISION,
+            cache,
+            task="document",
+            rows=[{"docno": "paper", "text": "text"}],
+            dataset_revision=None,
+        )
+    assert cache.exists() == cached
+
+
 def test_model_prompts_and_revision_are_explicit():
     config = EncodingConfig()
+    assert config.device == "cuda"
     assert resolve_model_revision(config) == DEFAULT_MODEL_REVISION
     assert encoding_kwargs(config, "query") == {"prompt": "query: "}
     assert encoding_kwargs(config, "document") == {"prompt": "passage: "}

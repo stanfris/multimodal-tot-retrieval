@@ -17,8 +17,9 @@ uv sync --locked
 
 The default project environment includes Sentence Transformers, Torch, FAISS,
 NumPy, Parquet, PyTerrier, JupyterLab, and the bundled JDK. Dense retrieval does
-not start Java. Linux uses the configured PyTorch CPU index to avoid CUDA
-package downloads. No additional install or extra selection is needed.
+not start Java. Linux uses the default PyPI PyTorch distribution with CUDA
+support. Encoding requires an NVIDIA GPU and a compatible driver; unavailable
+CUDA raises an error instead of falling back to CPU.
 
 ## First small run
 
@@ -59,7 +60,7 @@ from scientific_tot.integrations.dense import EncodingConfig, dense_experiment
 adapter = DatasetAdapter(Dataset(local_dir="tests/fixtures/adapter"))
 corpus = adapter.load_corpus(domain="ACL", split="train+test", representation="fulltext")
 queries = adapter.load_queries(domain="ACL", split="test", mode="visual-and-text")
-config = EncodingConfig(device="cpu", batch_size=16)
+config = EncodingConfig(device="cuda", batch_size=16)
 metrics = dense_experiment(
     corpus,
     queries,
@@ -80,7 +81,7 @@ PyTerrier; topics, qrels and mappings retain the same formats as the BM25 output
 
 The tutorial default is `intfloat/e5-small-v2` pinned to
 `ffb93f3bd4047442299a41ebb6fa998a38507c52`. It is a small English pretrained
-retrieval model chosen for a CPU tutorial, not a claim of experimental superiority.
+retrieval model chosen for this tutorial, not a claim of experimental superiority.
 Its model card requires query and passage prefixes, which this example supplies
 through Sentence Transformers' `prompt` argument, without manually prepending
 text. [E5 model card](https://huggingface.co/intfloat/e5-small-v2).
@@ -91,7 +92,7 @@ For another model, select a Hub ID and immutable revision:
 uv run python examples/dense_retrieval.py \
   --local-dir tests/fixtures/adapter --documents 2 --queries 1 \
   --model sentence-transformers/all-MiniLM-L6-v2 --model-revision main \
-  --encoding-profile model --device cpu --batch-size 16 \
+  --encoding-profile model --device cuda --batch-size 16 \
   --cache results/dense-cache --output results/minilm-fixture
 ```
 
@@ -155,7 +156,8 @@ cache. Old entries are retained until you remove them. Changes to software versi
 device or batch configuration deliberately create distinct entries. Cache paths,
 hits, model prompts, dimensions and indexing settings appear in `manifest.json`.
 
-CPU-only execution is supported and was tested on dgx03. The default model has
+Dense encoding now requires CUDA, including runs that reuse cached embeddings.
+The default model has
 about 134 MB of float32 weights; two 250-by-384 float32 embedding/index arrays
 require under 1 MB together, excluding model activations and Python overhead.
 Actual RAM use also includes the adapter's eager selected corpus and restored-root
@@ -168,9 +170,10 @@ thread count is recorded in the manifest. Adjust batch size to fit memory.
 A related upstream issue is tracked in
 [PyTorch #149201](https://github.com/pytorch/pytorch/issues/149201).
 
-The shared locked Linux environment uses CPU Torch, so use `--device cpu` there.
-CUDA encoding requires a different Torch build and is outside this reproducible
-setup. No separate GPU environment is needed for any documented example.
+The shared locked Linux environment includes CUDA-enabled PyTorch. The default
+embedding device is `cuda`; use `--device cuda:0` to select a specific GPU.
+FAISS search and evaluation remain on CPU. Previously recorded CPU results
+describe historical runs, before CUDA became required.
 
 The default uses all available documents in each selected domain, fulltext, and
 all test queries: `--corpus-split all --documents 0 --queries 0`. No numeric cap

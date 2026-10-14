@@ -340,8 +340,10 @@ indexed passage per query before aggregation, then the paper cutoff is applied.
 The method, library, search depth, and paper ranking level are saved in manifests.
 This exact aggregation can be expensive for large passage collections.
 
-`launcher=local_cpu` encodes on CPU; `launcher=local_gpu` forwards CUDA to Sentence
-Transformers where supported. FAISS remains the existing CPU `IndexFlatIP`; no GPU
+`model=dense` selects `launcher=local_gpu` by default and requires CUDA for
+encoding. CPU/MPS encoding is rejected, and unavailable CUDA raises an error
+even when embeddings are cached. Saved-run evaluation does not require CUDA.
+FAISS remains the existing CPU `IndexFlatIP`; no GPU
 FAISS implementation is introduced. Local model-path loading remains unsupported
 by the existing revision resolver. Standalone combined tutorial functions retain
 their established behavior; passage execution uses the separate Hydra stages.

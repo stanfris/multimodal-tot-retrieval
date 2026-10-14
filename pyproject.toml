@@ -85,14 +85,6 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
-# The tutorial's Linux uv environment uses CPU Torch, avoiding CUDA downloads.
-# CPU encoding is the reproducible default for all examples and notebooks.
+# Dense encoding requires CUDA; use the default PyPI PyTorch distribution.
 [tool.uv]
 default-groups = ["dev", "examples"]
-[tool.uv.sources]
-torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true

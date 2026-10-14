@@ -95,7 +95,7 @@ export TOT_DATA_ROOT=/your/restored/data
 ./scripts/03_retrieve.sh experiment=bm25_fulltext split=test
 ./scripts/04_evaluate.sh experiment=bm25_fulltext split=test
 
-# Pretrained dense baseline (intfloat/e5-small-v2, CPU; no fine-tuning).
+# Pretrained dense baseline (intfloat/e5-small-v2, CUDA; no fine-tuning).
 ./scripts/02_index.sh model=dense representation=fulltext split=test
 ./scripts/03_retrieve.sh model=dense representation=fulltext split=test
 ./scripts/04_evaluate.sh model=dense representation=fulltext split=test
@@ -270,12 +270,43 @@ uv run python examples/dense_retrieval.py \
 ```
 
 [Dense retrieval tutorial](docs/dense-retrieval.md) covers configurable model IDs,
-pinned revisions, model-specific prompts, CPU setup and persistent library
+pinned revisions, model-specific prompts, CUDA setup and persistent library
 caches. [Notebook](examples/dense_retrieval.ipynb) demonstrates encoding, FAISS
 search, shared metrics and cache reuse. [Measured subset results](docs/dense-results.md)
 verify the same canonical records as the BM25 baseline. The first dense run
 downloads pretrained weights; subsequent runs reuse the cache.
 No fine-tuning is performed.
+
+Dense embedding generation requires CUDA. Both the example script and Hydra
+`model=dense` (including `experiment=dense_passages`) select CUDA by default.
+If no NVIDIA GPU is available to PyTorch, execution raises an error instead of
+falling back to CPU, even when embeddings are cached. FAISS search and saved-run
+evaluation remain on CPU; evaluating an existing run needs no GPU.
+
+Check GPU availability after syncing the updated environment:
+
+```sh
+uv run python -c "import torch; print(torch.cuda.is_available())"
+```
+
+For a small comparison, these commands select 250 documents and ten test queries,
+keeping all their relevant documents and using the same subset for both baselines.
+They perform indexing, retrieval, and evaluation automatically; use fresh output
+paths for reruns and reuse the dense cache:
+
+```sh
+export TOT_DATA_ROOT=/your/restored/data
+uv run python examples/pyterrier_bm25.py \
+  --local-dir "$TOT_DATA_ROOT" --domain ACL --documents 250 --queries 10 \
+  --output results/small-acl-bm25
+uv run python examples/dense_retrieval.py \
+  --local-dir "$TOT_DATA_ROOT" --domain ACL --documents 250 --queries 10 \
+  --baseline-dir results/small-acl-bm25/fulltext \
+  --cache cache/dense-small --output results/small-acl-dense
+```
+
+The Hydra stage scripts currently use the full selected corpus; subset limits
+are available in the example scripts above.
 
 ## Notebooks in the same environment
 
@@ -343,8 +374,9 @@ uv run pytest -m live
 Default tests block network connections and use small synthetic fixtures.
 [Verification](docs/verification.md) records executed checks and limitations.
 [Integration plan](docs/integration-plan.md) tracks remaining work. The default
-project environment includes all example dependencies and uses CPU
-Torch on Linux. A model download is required only when running pretrained encoding.
+project environment includes all example dependencies and CUDA-enabled
+Torch on Linux. Dense encoding requires an NVIDIA GPU with a compatible driver.
+A model download is required only when running pretrained encoding.
 Library consumers can still install the small core wheel and choose package extras;
 this does not change the single repository environment. Code is MIT licensed;
 dataset artifacts retain their own licenses.

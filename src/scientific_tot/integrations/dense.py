@@ -33,7 +33,7 @@ E5_MODELS = {
 class EncodingConfig:
     model_id: str = DEFAULT_MODEL
     model_revision: str | None = None
-    device: str = "cpu"
+    device: str = "cuda"
     batch_size: int = 16
     max_seq_length: int | None = None
     profile: str = "auto"
@@ -46,6 +46,8 @@ class EncodingConfig:
     encoding_threads: int = 1
 
     def __post_init__(self):
+        if self.device != "cuda" and not self.device.startswith("cuda:"):
+            raise ValueError("Dense retrieval requires a CUDA device")
         if self.batch_size < 1 or self.faiss_threads < 1 or self.encoding_threads < 1:
             raise ValueError("Batch size and thread counts must be positive")
         if self.max_seq_length is not None and self.max_seq_length < 1:
@@ -55,6 +57,17 @@ class EncodingConfig:
         for task in ("query", "document"):
             if getattr(self, f"{task}_prompt") is not None and getattr(self, f"{task}_prompt_name"):
                 raise ValueError("Choose a prompt string or a prompt name, not both")
+
+
+def require_cuda() -> None:
+    """Reject dense execution without a usable CUDA GPU, including cache-only runs."""
+    import torch
+
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "Dense retrieval requires an available NVIDIA GPU and CUDA-enabled PyTorch; "
+            "torch.cuda.is_available() is False."
+        )
 
 
 def encoding_kwargs(config: EncodingConfig, task: str) -> dict:
@@ -228,6 +241,7 @@ def cached_encoding(
 
     if task not in {"document", "query"} or not rows:
         raise ValueError("Choose a nonempty document or query encoding task")
+    require_cuda()
     kwargs = encoding_kwargs(config, task)
     model = asdict(config)
     other = "query" if task == "document" else "document"

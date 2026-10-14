@@ -35,6 +35,7 @@ def dataset(tmp_path):
 
 @pytest.fixture
 def encoder(monkeypatch):
+    monkeypatch.setattr("scientific_tot.integrations.dense.require_cuda", lambda: None)
     calls = []
 
     def stub(config, revision, cache, task, texts, kwargs):
