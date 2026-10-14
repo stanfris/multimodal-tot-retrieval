@@ -130,5 +130,5 @@ no NVIDIA GPU is available. The unfiltered configuration run had one failure in
 an existing in-progress ColQwen YAML profile test, unrelated to this change.
 
 A failed CPU attempt leaves an incomplete reserved index. Preserve it by renaming
-`results/indexes/colbert_fulltext_c-all` before retrying the normal three commands;
+`results/indexes/colbert_fulltext_d-ACL_c-all` before retrying the normal three commands;
 incomplete artifacts are never silently overwritten.

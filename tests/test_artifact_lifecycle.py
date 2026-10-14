@@ -12,7 +12,7 @@ import pytest
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
-from scientific_tot.artifact_identity import artifact_directory, resolve_identity
+from scientific_tot.artifact_identity import artifact_directory, artifact_name, resolve_identity
 from scientific_tot.configuration import CONFIG_DIR, resolve_config
 from scientific_tot.hydra_run import run_stage
 from scientific_tot.records import records_digest
@@ -52,7 +52,7 @@ def identity(base, *overrides):
 def test_index_name_has_no_checksum(tmp_path, dataset):
     original, path = identity(tmp_path)
     assert path.parent == tmp_path / "results/indexes"
-    assert path.name == "bm25_fulltext_c-all"
+    assert path.name == "bm25_fulltext_d-ACL_c-all"
     for change in (
         "split.queries=train",
         "retrieval.top_k=5",
@@ -70,6 +70,21 @@ def test_index_name_has_no_checksum(tmp_path, dataset):
     paper.write_text(paper.read_text() + " changed original corpus")
     assert identity(tmp_path)[1] == path
     assert identity(tmp_path)[0] != original
+
+
+@pytest.mark.parametrize("model", ["bm25", "dense", "colbert"])
+@pytest.mark.parametrize(
+    ("domains", "label"),
+    [
+        ("[ACL]", "ACL"),
+        ("[NeurIPS]", "NeurIPS"),
+        ("[ACL,NeurIPS]", "ACL+NeurIPS"),
+        ("[NeurIPS,ACL]", "ACL+NeurIPS"),
+    ],
+)
+def test_index_name_includes_domains(tmp_path, model, domains, label):
+    cfg, _ = configuration(tmp_path, "stage=index", f"model={model}", f"dataset.domains={domains}")
+    assert artifact_name(cfg, {}) == f"{model}_fulltext_d-{label}_c-all"
 
 
 def test_dense_identity_pins_encoder_and_excludes_query_settings(tmp_path, dataset):
@@ -371,7 +386,7 @@ def test_reserved_builder_refuses_existing_backend_files(tmp_path, dataset):
 @pytest.mark.parametrize("model", ["bm25", "dense"])
 @pytest.mark.parametrize("empty", [False, True])
 def test_cli_skips_existing_index_without_dataset(tmp_path, model, empty):
-    target = tmp_path / "results/indexes" / f"{model}_fulltext_c-all"
+    target = tmp_path / "results/indexes" / f"{model}_fulltext_d-ACL_c-all"
     target.mkdir(parents=True)
     if not empty:
         (target / "index.bin").write_bytes(b"existing index")

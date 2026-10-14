@@ -132,7 +132,7 @@ includes the run label because it is serialized in `run.trec`.
 
 ```text
 results/                           # launcher.output_root defaults to ./results
-  indexes/<model>_<representation>_c-<corpus>/
+  indexes/<model>_<representation>_d-<domains>_c-<corpus>/
     .hydra/{config,hydra,overrides}.yaml
     manifest.json
     index-manifest.json
@@ -151,8 +151,10 @@ cache_root/                        # outside output_root, unchanged
 
 `artifact_identity.py` is the centralized authority for names and locations.
 Hydra's `artifact_dir` resolver calls it before directory creation; YAML contains
-no separate hash/path algorithm. Index names omit the checksum suffix; an existing
-index destination skips generation without reading sources or checking checksums.
+no separate hash/path algorithm. Index names include the selected domains, sorted
+and joined with `+` (for example, `d-ACL+NeurIPS`). Index names omit the checksum
+suffix; an existing index destination skips generation without reading sources or
+checking checksums.
 Use a distinct `paths.index` for another build. For other stages, the suffix is 16 hex characters of the full
 SHA256 stored as `artifact_sha256`, with the complete `artifact_identity` stored
 alongside the existing full-configuration checksum. Short-name collisions fail

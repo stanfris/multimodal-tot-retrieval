@@ -95,7 +95,7 @@ Indexing rasterizes and encodes at most `model.batch_size` pages at once, then
 upserts their ragged arrays into Qdrant's persistent local collection. Qdrant
 owns vector persistence and MaxSim scoring using DOT distance and MAX_SIM;
 HNSW is disabled. The official model supplies normalized token vectors. The
-output is `results/indexes/colqwen_pages_c-all_<hash>/`, with `.hydra/`, both
+output is `results/indexes/colqwen_pages_d-ACL_c-all_<hash>/`, with `.hydra/`, both
 completion manifests, `page-mapping.jsonl` and its report sidecar, and `qdrant/`
 SQLite/configuration files. Each ordered Qdrant integer position maps explicitly
 to an escaped deterministic page ID, canonical `doc_id`, domain, and one-based

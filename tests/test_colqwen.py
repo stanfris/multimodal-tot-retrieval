@@ -173,7 +173,7 @@ def test_independent_lifecycle_identity_reuse_and_integrity(
     )
     assert resolve_identity(changed) == identity
     default, _ = settings(tmp_path, dataset, "index")
-    assert artifact_directory(default, identity).name.startswith("colqwen_pages_c-all_")
+    assert artifact_directory(default, identity).name.startswith("colqwen_pages_d-ACL_c-all_")
     assert "q-test" not in artifact_directory(default, identity).name
     before = artifact_reference(index / "index-manifest.json")
     run_stage(changed, index, hydra, ROOT)

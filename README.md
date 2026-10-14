@@ -64,7 +64,7 @@ The four independent stages write directly into deterministic artifact directori
 
 ```text
 results/
-  indexes/bm25_fulltext_c-all_<index-hash>/
+  indexes/bm25_fulltext_d-ACL_c-all/
     .hydra/{config,hydra,overrides}.yaml
     manifest.json
     index-manifest.json
