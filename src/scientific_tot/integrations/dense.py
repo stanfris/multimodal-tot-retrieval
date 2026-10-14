@@ -156,7 +156,14 @@ def _write_cache(path: Path, configuration: dict, vectors, metadata: dict, *, in
             _read_cache(path, configuration)
 
 
-def _encode_tasks(config: EncodingConfig, revision: str, model_cache: Path, tasks: dict) -> dict:
+def _encode_task(
+    config: EncodingConfig,
+    revision: str,
+    model_cache: Path,
+    task: str,
+    texts: list[str],
+    kwargs: dict,
+) -> tuple:
     import torch
     from sentence_transformers import SentenceTransformer
 
@@ -172,37 +179,34 @@ def _encode_tasks(config: EncodingConfig, revision: str, model_cache: Path, task
     )
     if config.max_seq_length is not None:
         model.max_seq_length = config.max_seq_length
-    encoded = {}
-    for task, request in tasks.items():
-        vectors = getattr(model, f"encode_{task}")(
-            request["texts"],
-            batch_size=config.batch_size,
-            normalize_embeddings=config.similarity == "cosine",
-            precision="float32",
-            convert_to_numpy=True,
-            show_progress_bar=True,
-            **request["kwargs"],
-        )
-        vectors = np.asarray(vectors, dtype=np.float32, order="C")
-        if (
-            vectors.ndim != 2
-            or len(vectors) != len(request["texts"])
-            or vectors.shape[1] < 1
-            or not np.isfinite(vectors).all()
-        ):
-            raise ValueError("Model returned invalid embeddings")
-        metadata = {
-            "max_seq_length": model.max_seq_length,
-            "cpu_threads": torch.get_num_threads(),
-            "saved_prompts": model.prompts,
-            "default_prompt_name": model.default_prompt_name,
-            "task": task,
-            "explicit_prompt_arguments": request["kwargs"],
-            "dimension": vectors.shape[1],
-            "long_text_policy": "model_tokenizer_truncation_no_chunking",
-        }
-        encoded[task] = vectors, metadata
-    return encoded
+    vectors = getattr(model, f"encode_{task}")(
+        texts,
+        batch_size=config.batch_size,
+        normalize_embeddings=config.similarity == "cosine",
+        precision="float32",
+        convert_to_numpy=True,
+        show_progress_bar=True,
+        **kwargs,
+    )
+    vectors = np.asarray(vectors, dtype=np.float32, order="C")
+    if (
+        vectors.ndim != 2
+        or len(vectors) != len(texts)
+        or vectors.shape[1] < 1
+        or not np.isfinite(vectors).all()
+    ):
+        raise ValueError("Model returned invalid embeddings")
+    metadata = {
+        "max_seq_length": model.max_seq_length,
+        "cpu_threads": torch.get_num_threads(),
+        "saved_prompts": model.prompts,
+        "default_prompt_name": model.default_prompt_name,
+        "task": task,
+        "explicit_prompt_arguments": kwargs,
+        "dimension": vectors.shape[1],
+        "long_text_policy": "model_tokenizer_truncation_no_chunking",
+    }
+    return vectors, metadata
 
 
 def cached_encoding(
@@ -255,12 +259,9 @@ def cached_encoding(
     faiss.omp_set_num_threads(config.faiss_threads)
     if not hit:
         text_key = "text" if task == "document" else "query"
-        vectors, metadata = _encode_tasks(
-            config,
-            revision,
-            cache / "models",
-            {task: {"texts": [row[text_key] for row in rows], "kwargs": kwargs}},
-        )[task]
+        vectors, metadata = _encode_task(
+            config, revision, cache / "models", task, [row[text_key] for row in rows], kwargs
+        )
         index = None
         ids = None
         if task == "document":
@@ -329,12 +330,7 @@ def dense_experiment(
     ids = [d["docno"] for d in inputs.documents]
     index = faiss.read_index(str(doc_cache / "index.faiss"))
     cached_ids = json.loads((doc_cache / "ids.json").read_text())
-    if (
-        cached_ids != ids
-        or len(doc_vectors) != len(ids)
-        or index.ntotal != len(ids)
-        or index.d != doc_vectors.shape[1]
-    ):
+    if cached_ids != ids or index.ntotal != len(ids) or index.d != doc_vectors.shape[1]:
         raise ValueError("Cached FAISS index/ID mapping does not match canonical corpus")
     query_vectors, query_manifest, query_cache, query_hit = cached_encoding(
         config,
@@ -344,7 +340,7 @@ def dense_experiment(
         rows=inputs.topics.to_dict("records"),
         dataset_revision=queries.provenance.get("revision"),
     )
-    if len(query_vectors) != len(inputs.topics) or query_vectors.shape[1] != index.d:
+    if query_vectors.shape[1] != index.d:
         raise ValueError("Cached query embeddings do not match topics/index")
     print(
         f"FAISS IndexFlatIP: {index.ntotal:,} documents, dimension={index.d}, "

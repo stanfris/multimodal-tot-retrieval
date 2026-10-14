@@ -36,23 +36,22 @@ def data():
 def encoder(monkeypatch):
     calls = []
 
-    def stub(config, revision, model_cache, tasks):
+    def stub(config, revision, model_cache, task, texts, kwargs):
         calls.append(("load", {"revision": revision}))
-        encoded = {}
-        for task, request in tasks.items():
-            kwargs = {
-                **request["kwargs"],
-                "batch_size": config.batch_size,
-                "normalize_embeddings": config.similarity == "cosine",
-            }
-            calls.append((task, kwargs))
-            vectors = np.array(
-                [[1, 0], [0, 1]] if task == "document" else [[1, 0]], dtype=np.float32
+        calls.append(
+            (
+                task,
+                {
+                    **kwargs,
+                    "batch_size": config.batch_size,
+                    "normalize_embeddings": config.similarity == "cosine",
+                },
             )
-            encoded[task] = (vectors, {"max_seq_length": 512, "dimension": 2})
-        return encoded
+        )
+        vectors = np.array([[1, 0], [0, 1]] if task == "document" else [[1, 0]], dtype=np.float32)
+        return vectors, {"max_seq_length": 512, "dimension": 2}
 
-    monkeypatch.setattr("scientific_tot.integrations.dense._encode_tasks", stub)
+    monkeypatch.setattr("scientific_tot.integrations.dense._encode_task", stub)
     return calls
 
 
@@ -223,7 +222,7 @@ def test_hydra_settings_propagate_into_existing_dense_calls(data, encoder, tmp_p
 def test_sentence_transformer_external_arguments(monkeypatch, tmp_path):
     import sys
 
-    from scientific_tot.integrations.dense import _encode_tasks
+    from scientific_tot.integrations.dense import _encode_task
 
     calls = []
 
@@ -251,9 +250,7 @@ def test_sentence_transformer_external_arguments(monkeypatch, tmp_path):
         ),
     )
     cfg = EncodingConfig(batch_size=7, encoding_threads=2, similarity="dot", device="cuda")
-    _encode_tasks(
-        cfg, "a" * 40, tmp_path, {"document": {"texts": ["paper"], "kwargs": {"prompt": "Doc: "}}}
-    )
+    _encode_task(cfg, "a" * 40, tmp_path, "document", ["paper"], {"prompt": "Doc: "})
     assert calls[0] == ("threads", 2)
     assert calls[1] == (
         cfg.model_id,

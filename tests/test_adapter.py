@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from huggingface_hub import RepoFile
 
 from scientific_tot import (
     Dataset,
@@ -282,13 +283,13 @@ def test_selective_hub_downloads_pinned_and_reusable(complete, monkeypatch):
     archive_extractions(complete)
     sha = "a" * 40
     inventory = [
-        SimpleNamespace(path=p.relative_to(complete).as_posix(), size=p.stat().st_size)
+        RepoFile(path=p.relative_to(complete).as_posix(), size=p.stat().st_size, oid=sha)
         for p in complete.rglob("*")
         if p.is_file()
     ]
     inventory += [
-        SimpleNamespace(path="preprocessed/Physics/shard-00000.tar", size=10**9),
-        SimpleNamespace(path="data/ACL/shard-00000.tar", size=10**9),
+        RepoFile(path="preprocessed/Physics/shard-00000.tar", size=10**9, oid=sha),
+        RepoFile(path="data/ACL/shard-00000.tar", size=10**9, oid=sha),
     ]
     calls = []
     transfers = set()

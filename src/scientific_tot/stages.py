@@ -9,14 +9,11 @@ from scientific_tot.config_arguments import (
     configured_adapter,
     corpus_arguments,
     query_arguments,
-    require_corpus_settings,
 )
 
 
 def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
     """Dispatch independent operations; settings are already resolved by Hydra."""
-    assert cfg.model.name in {"bm25", "dense"}
-    assert cfg.stage.name in {"prepare", "index", "retrieve", "evaluate"}
     assert cfg.stage.name == "index" or run_dir is not None, (
         f"stage={cfg.stage.name} requires a fresh run directory"
     )
@@ -60,7 +57,6 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
     if cfg.stage.name == "index":
         from types import SimpleNamespace
 
-        require_corpus_settings(cfg, corpus)
         print(
             f"Index build: model={cfg.model.get('model_id', cfg.model.name)}, "
             f"backend={cfg.model.backend}, dataset_revision={corpus.provenance['revision']}, "
@@ -89,7 +85,6 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
     print(f"Loading queries: split={cfg.split.queries}, mode={cfg.dataset.query_mode}", flush=True)
     queries = adapter.load_queries(**query_arguments(cfg))
     print(f"Selected queries: {len(queries):,}", flush=True)
-    require_corpus_settings(cfg, corpus, queries)
     qrels = validate_qrels(queries, corpus)
 
     result = {

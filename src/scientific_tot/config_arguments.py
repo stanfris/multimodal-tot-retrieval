@@ -7,8 +7,7 @@ from omegaconf import DictConfig, OmegaConf
 
 def bm25_arguments(cfg: DictConfig, *, docno_bytes: int) -> tuple[dict, dict]:
     """The caller converts classic to PyTerrier's IndexingType.CLASSIC enum."""
-    if cfg.model.name != "bm25":
-        raise ValueError("BM25 arguments require model=bm25")
+    assert cfg.model.name == "bm25"
     indexing = OmegaConf.to_container(cfg.model.indexing, resolve=True)
     if indexing["meta"]["docno"] < docno_bytes:
         raise ValueError("model.indexing.meta.docno would truncate corpus identifiers")
@@ -20,14 +19,11 @@ def bm25_arguments(cfg: DictConfig, *, docno_bytes: int) -> tuple[dict, dict]:
 
 def dense_arguments(cfg: DictConfig) -> dict:
     """Map to EncodingConfig, whose fields feed ST, PyTorch, and FAISS calls."""
-    if cfg.model.name != "dense":
-        raise ValueError("Dense arguments require model=dense")
+    assert cfg.model.name == "dense"
     if cfg.model.model_id.startswith(("/", "./", "../", "~")):
         raise NotImplementedError(
             "Existing dense model revision resolution requires a Hub model ID"
         )
-    if cfg.model.indexing.factory != "Flat" or cfg.model.indexing.metric != "inner_product":
-        raise ValueError("Existing dense implementation requires FAISS Flat inner_product")
     return {
         "model_id": cfg.model.model_id,
         "model_revision": cfg.model.revision,
@@ -44,11 +40,7 @@ def dense_arguments(cfg: DictConfig) -> dict:
 
 def require_corpus_settings(cfg: DictConfig, corpus, queries=None) -> None:
     """Do not apply settings to differently represented or selected library inputs."""
-    expected_representation = cfg.representation.name
-    if expected_representation == "passages" and cfg.model.name == "dense":
-        expected_representation = "fulltext"
-    if expected_representation not in {"fulltext", "title_abstract"}:
-        raise NotImplementedError(f"representation={cfg.representation.name} is not implemented")
+    expected_representation = corpus_arguments(cfg)["representation"]
     if {r["representation"] for r in corpus} != {expected_representation}:
         raise ValueError("Corpus representation differs from Hydra configuration")
     selection = corpus.provenance.get("selection", {})

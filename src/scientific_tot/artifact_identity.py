@@ -15,7 +15,6 @@ from scientific_tot.config_arguments import (
     corpus_arguments,
     dense_arguments,
     query_arguments,
-    require_corpus_settings,
 )
 from scientific_tot.config_artifacts import (
     artifact_reference,
@@ -84,7 +83,6 @@ def _resolve_identity(cfg) -> dict:
         }
     adapter = configured_adapter(cfg)
     corpus = adapter.load_corpus(**corpus_arguments(cfg))
-    require_corpus_settings(cfg, corpus)
     if stage == "prepare":
         from scientific_tot.adapter import validate_qrels
 

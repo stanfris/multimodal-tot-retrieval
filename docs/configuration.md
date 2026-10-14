@@ -63,9 +63,11 @@ as shown; `model.retrieval.controls.bm25.b=...` would address a nonexistent nest
 mapping. When changing a dense model identifier, also select that model's revision and
 intended query/document prompts; the E5 profile's pinned commit and prompts are
 not guessed or reset automatically.
-Unrecognized settings are rejected even when injected with `+` or `++`.
-The YAML profiles supply the allowed key shapes, so an unused addition cannot
-silently become a model parameter.
+Hydra owns configuration composition and override parsing, including its explicit
+`+` and `++` additions. Ordinary overrides of unknown keys are rejected by Hydra.
+Application validation checks supported values, backend compatibility, and safe
+filesystem destinations; it does not reload YAML profiles to rebuild a key schema.
+Missing values and interpolation errors retain OmegaConf's native diagnostics.
 
 The corpus defaults to `all`, retaining unassigned distractors, independently of
 query selection (`test` by default). `all` queries mean the train/test union.

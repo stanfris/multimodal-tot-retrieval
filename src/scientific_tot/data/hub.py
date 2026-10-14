@@ -9,8 +9,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from huggingface_hub import HfApi, hf_hub_download
-from huggingface_hub.errors import HfHubHTTPError
+from huggingface_hub import HfApi, RepoFile, hf_hub_download
 
 from scientific_tot.data.schemas import FileInfo, Inventory, Paper, QueryCollection
 from scientific_tot.data.validation import (
@@ -80,20 +79,14 @@ class Dataset:
                         )
         else:
             api = HfApi()
-            try:
-                self.revision = self.revision or api.dataset_info(self.repo_id).sha
-                files = [
-                    FileInfo(entry.path, entry.size)
-                    for entry in api.list_repo_tree(
-                        self.repo_id, repo_type="dataset", revision=self.revision, recursive=True
-                    )
-                    if hasattr(entry, "size")
-                ]
-            except HfHubHTTPError as exc:
-                raise RuntimeError(
-                    f"Cannot inspect {self.repo_id}: check repository access/revision, "
-                    "or pass local_dir for offline use"
-                ) from exc
+            self.revision = self.revision or api.dataset_info(self.repo_id).sha
+            files = [
+                FileInfo(entry.path, entry.size)
+                for entry in api.list_repo_tree(
+                    self.repo_id, repo_type="dataset", revision=self.revision, recursive=True
+                )
+                if isinstance(entry, RepoFile)
+            ]
         files.sort(key=lambda item: item.path)
         paths = self._paths = frozenset(item.path for item in files)
         collections = []
@@ -125,7 +118,11 @@ class Dataset:
         self._inventory = Inventory(tuple(files), tuple(collections), components, self.revision)
         return self._inventory
 
-    def _file(self, name: str) -> Path:
+    def get_file(self, name: str) -> Path:
+        """Select one exact artifact, using the Hub's revision cache incrementally.
+
+        No other file is downloaded. Local mode returns the existing file only.
+        """
         relative_path(name)
         self.discover()
         if name not in self._paths:
@@ -147,13 +144,6 @@ class Dataset:
             )
         )
 
-    def get_file(self, name: str) -> Path:
-        """Select one exact artifact, using the Hub's revision cache incrementally.
-
-        No other file is downloaded. Local mode returns the existing file only.
-        """
-        return self._file(name)
-
     def read_json(self, name: str, *, max_bytes: int = 2_000_000) -> dict[str, Any]:
         """Read explicitly selected JSON metadata (2 MB default size limit)."""
         relative_path(name)
@@ -164,7 +154,7 @@ class Dataset:
         info = next((f for f in self.discover().files if f.path == name), None)
         if info is not None and (info.size is None or info.size > max_bytes):
             raise ValueError(f"{name}: metadata exceeds max_bytes or size is unknown")
-        path = self._file(name)
+        path = self.get_file(name)
         try:
             return object_record(json.loads(path.read_text(encoding="utf-8")), name)
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -183,7 +173,7 @@ class Dataset:
         if collection not in self.discover().collections:
             raise ValueError("Select a collection from this dataset's discover().collections")
         seen = set()
-        with self._file(collection.queries_path).open(encoding="utf-8") as stream:
+        with self.get_file(collection.queries_path).open(encoding="utf-8") as stream:
             for number, line in enumerate(stream, 1):
                 if not line.strip():
                     continue
@@ -216,7 +206,7 @@ class Dataset:
             raise ImportError(
                 "PDF metadata requires: uv sync --locked (or install the parquet package extra)"
             ) from exc
-        return pq.read_table(self._file("metadata.parquet"))
+        return pq.read_table(self.get_file("metadata.parquet"))
 
     def load_paper(self, directory: str) -> Paper:
         """Read a full, already-restored local extraction; never use generated clues.
@@ -230,7 +220,7 @@ class Dataset:
         metadata = self.read_json(f"{directory}/paper.json")
         paper_id = identifier(metadata.get("paper_id"), f"{directory}: paper_id")
         markdown_name = relative_path(metadata.get("markdown_relpath", "markdown.md"))
-        markdown = self._file(f"{directory}/{markdown_name}").read_text(encoding="utf-8")
+        markdown = self.get_file(f"{directory}/{markdown_name}").read_text(encoding="utf-8")
         if not markdown.strip():
             raise DatasetFormatError(f"{directory}: empty markdown; extraction is incomplete")
         return Paper(paper_id, markdown, metadata)

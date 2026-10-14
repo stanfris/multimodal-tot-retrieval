@@ -3,6 +3,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+from huggingface_hub import RepoFile, RepoFolder
 
 from scientific_tot import Dataset
 from scientific_tot.data.hub import MissingComponentError
@@ -156,8 +157,9 @@ def test_hub_pins_revision_and_only_downloads_requested_file(monkeypatch, local_
         def list_repo_tree(self, repo_id, **kwargs):
             assert kwargs["revision"] == sha
             return [
-                SimpleNamespace(path=filename, size=100),
-                SimpleNamespace(path="data/ACL/shard-00000.tar", size=10**9),
+                RepoFile(path=filename, size=100, oid=sha),
+                RepoFile(path="data/ACL/shard-00000.tar", size=10**9, oid=sha),
+                RepoFolder(path="data/ACL", oid=sha),
             ]
 
     def download(repo_id, name, **kwargs):

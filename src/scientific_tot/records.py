@@ -122,12 +122,11 @@ class Records(Sequence[dict[str, Any]]):
 
 def _atomic_write(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
+    stream = tempfile.NamedTemporaryFile(dir=path.parent, delete=False)
+    temporary = Path(stream.name)
     try:
-        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
-            temporary = Path(stream.name)
+        with stream:
             stream.write(content)
         os.replace(temporary, path)
     finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+        temporary.unlink(missing_ok=True)

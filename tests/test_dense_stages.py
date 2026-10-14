@@ -37,26 +37,19 @@ def dataset(tmp_path):
 def encoder(monkeypatch):
     calls = []
 
-    def stub(config, revision, cache, tasks):
+    def stub(config, revision, cache, task, texts, kwargs):
         assert revision == DEFAULT_MODEL_REVISION
-        calls.append((config, revision, tasks))
-        result = {}
-        for task, request in tasks.items():
-            vectors = np.array(
-                [
-                    [1.0, 0.0]
-                    if "zebra" in text
-                    else [0.75, 0.25]
-                    if "whale" in text
-                    else [0.0, 1.0]
-                    for text in request["texts"]
-                ],
-                dtype=np.float32,
-            )
-            result[task] = vectors, {"dimension": 2, "explicit_prompt_arguments": request["kwargs"]}
-        return result
+        calls.append((config, revision, {task: {"texts": texts, "kwargs": kwargs}}))
+        vectors = np.array(
+            [
+                [1.0, 0.0] if "zebra" in text else [0.75, 0.25] if "whale" in text else [0.0, 1.0]
+                for text in texts
+            ],
+            dtype=np.float32,
+        )
+        return vectors, {"dimension": 2, "explicit_prompt_arguments": kwargs}
 
-    monkeypatch.setattr("scientific_tot.integrations.dense._encode_tasks", stub)
+    monkeypatch.setattr("scientific_tot.integrations.dense._encode_task", stub)
     return calls
 
 

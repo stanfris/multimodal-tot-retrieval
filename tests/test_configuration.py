@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
+from omegaconf.errors import MissingMandatoryValue
 
 from scientific_tot.configuration import CONFIG_DIR, resolve_config
 from scientific_tot.hydra_run import execute_stage, run_stage
@@ -127,7 +128,7 @@ def test_remaining_stages_explicitly_unimplemented(tmp_path, stage):
     "override,message",
     [
         ("dataset.repo_id=null", "repo_id"),
-        ("dataset.root=null", "dataset.root"),
+        ("dataset.root=null", "Filesystem paths"),
         ("dataset.domains=[]", "domains"),
         ("dataset.domains=[../ACL]", "domain"),
         ("dataset.domains=[ACL,ACL]", "distinct"),
@@ -156,7 +157,6 @@ def test_invalid_settings(tmp_path, override, message):
     "overrides,message",
     [
         (["model=dense", "model.model_id=null"], "model_id"),
-        (["model=dense", "model.model_id=???"], "model_id"),
         (["model=dense", "model.batch_size=0"], "batch_size"),
         (["model=dense", "model.indexing.factory=Unknown"], "FAISS"),
         (["model=colbert", "model.checkpoint=null"], "checkpoint"),
@@ -165,7 +165,6 @@ def test_invalid_settings(tmp_path, override, message):
         (["model=visual", "representation=pages", "model.indexing.overwrite=true"], "overwrite"),
         (["representation=passages", "representation.chunking.chunk_overlap=1000"], "overlap"),
         (["stage=evaluate"], "paths.run"),
-        (["stage=search", "paths.index=/tmp/prior-index"], "stage.query"),
     ],
 )
 def test_missing_and_backend_parameters(tmp_path, overrides, message):
@@ -339,10 +338,6 @@ def test_invalid_sweep_paths_cannot_bypass_output_guard(tmp_path, override, exis
 @pytest.mark.parametrize(
     "overrides,message",
     [
-        (["+seed=42"], "Unknown"),
-        (["+model.magic=1"], "Unknown"),
-        (["+evaluation.top_k=100"], "Unknown"),
-        (["+model.retrieval.controls.typo=1"], "Unknown"),
         (["model=dense", "model.encoding.query_prompt=null"], "prompt"),
         (["model=dense", "model.indexing.metric=l2"], "inner_product"),
         (["model=bm25", "model.indexing.blocks=yes"], "boolean"),
@@ -742,3 +737,23 @@ def test_index_contract_records_resolved_commits_not_mutable_refs(tmp_path):
     manifest = verify_index(index, consumer)
     assert manifest["configuration"]["model"]["revision"] == "main"
     assert manifest["index_settings"]["model"]["revision"] == "b" * 40
+
+
+@pytest.mark.parametrize(
+    "overrides,key",
+    [
+        (["model=dense", "model.model_id=???"], "model.model_id"),
+        (["stage=search", "paths.index=/tmp/prior-index"], "stage.query"),
+    ],
+)
+def test_missing_value_uses_omegaconf_error(tmp_path, overrides, key):
+    with pytest.raises(MissingMandatoryValue, match=key):
+        resolve_config(config(*overrides), tmp_path)
+
+
+@pytest.mark.parametrize("override", ["seed=42", "model.magic=1", "evaluation.top_k=100"])
+def test_unknown_override_uses_hydra_error(tmp_path, override):
+    result = cli(tmp_path, "dry_run=true", override)
+    assert result.returncode != 0
+    assert "Could not override" in result.stderr
+    assert not any(tmp_path.iterdir())

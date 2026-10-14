@@ -35,9 +35,6 @@ def find_artifact(cfg, stage: str) -> Path | None:
     candidates = []
     for path in sorted(Path(cfg.launcher.output_root).glob("models/*/manifest.json")):
         try:
-            manifest = json.loads(path.read_text())
-            if manifest.get("schema_version") != 2 or not manifest.get("artifact_identity"):
-                continue
             verify_retrieval(path.parent, cfg)
             saved = OmegaConf.load(path.parent / ".hydra/config.yaml")
             if saved.retrieval.top_k == cfg.retrieval.top_k:

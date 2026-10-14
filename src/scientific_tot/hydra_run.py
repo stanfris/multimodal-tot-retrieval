@@ -15,7 +15,7 @@ from scientific_tot.config_artifacts import (
     verify_index,
     verify_retrieval,
 )
-from scientific_tot.configuration import STAGES, absolute, overlaps, resolve_config
+from scientific_tot.configuration import absolute, overlaps, resolve_config
 
 
 class FreshOutput(Callback):
@@ -36,7 +36,7 @@ class FreshOutput(Callback):
             inputs.append(config.paths.run)
         for value in inputs:
             source = absolute(value, Path.cwd())
-            if target.is_relative_to(source) or source.is_relative_to(target):
+            if overlaps(target, source):
                 raise SystemExit(f"Hydra output {target} overlaps protected input/cache {source}")
         return target
 
@@ -90,7 +90,7 @@ class FreshOutput(Callback):
         try:
             self._check_hydra(config)
             subdir = OmegaConf.to_container(config.hydra.sweep, resolve=False)["subdir"]
-            if subdir not in {"${artifact_dir:}"}:
+            if subdir != "${artifact_dir:}":
                 raise ValueError("hydra.sweep.subdir must use the deterministic artifact layout")
             self._validate_sweep(config)
             self._reserve(config.hydra.sweep.dir, config)
@@ -143,7 +143,6 @@ class FreshOutput(Callback):
 def execute_stage(cfg: DictConfig, *, run_dir: Path | None = None) -> dict | None:
     """Dispatch one operation using the already resolved application settings."""
     name = cfg.stage.name
-    assert name in STAGES, f"Unsupported resolved stage: {name}"
     if cfg.model.name in {"bm25", "dense"} and name in {"prepare", "index", "retrieve", "evaluate"}:
         from scientific_tot.stages import execute_text_stage
 

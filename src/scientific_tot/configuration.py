@@ -7,7 +7,6 @@ import re
 from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
-from omegaconf.errors import OmegaConfBaseException
 
 # The wheel contains the same YAML tree as the checkout, with no duplicated source.
 CONFIG_DIR = Path(__file__).parent / "config"
@@ -48,7 +47,7 @@ def absolute(value: str, base: Path) -> Path:
     """Resolve relative paths once, against the invocation directory."""
     _require(_text(value) and "\x00" not in value, "Filesystem paths must be nonempty strings")
     path = Path(value).expanduser()
-    return (path if path.is_absolute() else base / path).resolve()
+    return (base / path).resolve()
 
 
 def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None) -> DictConfig:
@@ -57,86 +56,77 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
     Does not check data/index existence: dry runs may describe another machine.
     Executing stages must check the actual artifacts before consuming them.
     """
-    try:
-        data = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
-    except OmegaConfBaseException as exc:
-        raise ValueError(f"Cannot resolve configuration: {exc}") from exc
+    data = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
     _require(isinstance(data, dict), "Configuration must be a mapping")
     resolved = OmegaConf.create(data)
-    try:
-        _validate(resolved)
-        base_dir = base_dir.resolve()
-        for key in ("dataset_root", "cache_root", "output_root"):
-            resolved.launcher[key] = str(absolute(resolved.launcher[key], base_dir))
-        for key in ("root", "cache_dir"):
-            resolved.dataset[key] = str(absolute(resolved.dataset[key], base_dir))
-        # Explicit local checkpoint references share the original invocation base.
-        model_key = "checkpoint" if resolved.model.name == "colbert" else "model_id"
-        reference = resolved.model.get(model_key)
-        if isinstance(reference, str) and reference.startswith(("/", "./", "../", "~")):
-            resolved.model[model_key] = str(absolute(reference, base_dir))
-        for key, value in resolved.dataset.artifacts.items():
-            resolved.dataset.artifacts[key] = str(absolute(value, base_dir))
-        for key in ("index", "run"):
-            if resolved.paths[key] is not None:
-                resolved.paths[key] = str(absolute(resolved.paths[key], base_dir))
-        if run_dir is not None and resolved.stage.name == "index" and resolved.paths.index is None:
-            resolved.paths.index = str(run_dir.resolve())
-        inputs = [
-            Path(resolved.dataset.root),
-            *(Path(p) for p in resolved.dataset.artifacts.values()),
-        ]
-        # Output/cache writes must not land in data, nor contain it (including symlinks).
-        writable = [
-            Path(resolved.launcher.output_root),
-            Path(resolved.dataset.cache_dir),
-            Path(resolved.launcher.cache_root),
-        ]
-        if run_dir is not None:
-            writable.append(run_dir.resolve())
-        for output in writable:
-            for source in inputs:
-                _require(
-                    not output.is_relative_to(source) and not source.is_relative_to(output),
-                    f"Writable path {output} overlaps dataset input {source}",
-                )
-        caches = [Path(resolved.launcher.cache_root), Path(resolved.dataset.cache_dir)]
-        outputs = [Path(resolved.launcher.output_root)]
-        if run_dir is not None:
-            outputs.append(run_dir.resolve())
-        if resolved.stage.name == "index" and resolved.paths.index is not None:
-            outputs.append(Path(resolved.paths.index))
-        for output in outputs:
-            for cache in caches:
-                _require(
-                    not overlaps(output, cache), "Experiment output and reusable cache overlap"
-                )
-        if resolved.paths.run is not None and run_dir is not None:
+    _validate(resolved)
+    base_dir = base_dir.resolve()
+    run_dir = run_dir.resolve() if run_dir is not None else None
+    for key in ("dataset_root", "cache_root", "output_root"):
+        resolved.launcher[key] = str(absolute(resolved.launcher[key], base_dir))
+    for key in ("root", "cache_dir"):
+        resolved.dataset[key] = str(absolute(resolved.dataset[key], base_dir))
+    # Explicit local checkpoint references share the original invocation base.
+    model_key = "checkpoint" if resolved.model.name == "colbert" else "model_id"
+    reference = resolved.model.get(model_key)
+    if isinstance(reference, str) and reference.startswith(("/", "./", "../", "~")):
+        resolved.model[model_key] = str(absolute(reference, base_dir))
+    for key, value in resolved.dataset.artifacts.items():
+        resolved.dataset.artifacts[key] = str(absolute(value, base_dir))
+    for key in ("index", "run"):
+        if resolved.paths[key] is not None:
+            resolved.paths[key] = str(absolute(resolved.paths[key], base_dir))
+    if run_dir is not None and resolved.stage.name == "index" and resolved.paths.index is None:
+        resolved.paths.index = str(run_dir)
+    inputs = [
+        Path(resolved.dataset.root),
+        *(Path(p) for p in resolved.dataset.artifacts.values()),
+    ]
+    # Output/cache writes must not land in data, nor contain it (including symlinks).
+    writable = [
+        Path(resolved.launcher.output_root),
+        Path(resolved.dataset.cache_dir),
+        Path(resolved.launcher.cache_root),
+    ]
+    if run_dir is not None:
+        writable.append(run_dir)
+    for output in writable:
+        for source in inputs:
             _require(
-                not overlaps(Path(resolved.paths.run), run_dir.resolve()),
-                "Existing paths.run must be separate from the new run directory",
+                not overlaps(output, source),
+                f"Writable path {output} overlaps dataset input {source}",
             )
-        if run_dir is not None and resolved.paths.index is not None:
-            index, output = Path(resolved.paths.index), run_dir.resolve()
-            if resolved.stage.name != "index":
-                _require(
-                    not index.is_relative_to(output) and not output.is_relative_to(index),
-                    "Existing paths.index must be separate from the new run directory",
-                )
-        if resolved.stage.name == "index" and resolved.paths.index is not None:
-            index = Path(resolved.paths.index)
-            if run_dir is not None:
-                _require(
-                    run_dir.resolve() == index or not run_dir.resolve().is_relative_to(index),
-                    "Index destination must not contain the run directory",
-                )
-            for source in inputs:
-                _require(
-                    not index.is_relative_to(source) and not source.is_relative_to(index),
-                    "paths.index overlaps dataset input",
-                )
-    except (OmegaConfBaseException, TypeError, AttributeError, KeyError) as exc:
-        raise ValueError(f"Invalid configuration structure: {exc}") from exc
+    caches = [Path(resolved.launcher.cache_root), Path(resolved.dataset.cache_dir)]
+    outputs = [Path(resolved.launcher.output_root)]
+    if run_dir is not None:
+        outputs.append(run_dir)
+    if resolved.stage.name == "index" and resolved.paths.index is not None:
+        outputs.append(Path(resolved.paths.index))
+    for output in outputs:
+        for cache in caches:
+            _require(not overlaps(output, cache), "Experiment output and reusable cache overlap")
+    if resolved.paths.run is not None and run_dir is not None:
+        _require(
+            not overlaps(Path(resolved.paths.run), run_dir),
+            "Existing paths.run must be separate from the new run directory",
+        )
+    if run_dir is not None and resolved.paths.index is not None and resolved.stage.name != "index":
+        _require(
+            not overlaps(Path(resolved.paths.index), run_dir),
+            "Existing paths.index must be separate from the new run directory",
+        )
+    if resolved.stage.name == "index" and resolved.paths.index is not None:
+        index = Path(resolved.paths.index)
+        if run_dir is not None:
+            _require(
+                run_dir == index or not run_dir.is_relative_to(index),
+                "Index destination must not contain the run directory",
+            )
+        for source in inputs:
+            _require(
+                not overlaps(index, source),
+                "paths.index overlaps dataset input",
+            )
     OmegaConf.set_readonly(resolved, True)
     return resolved
 
@@ -156,7 +146,6 @@ def _validate(cfg: DictConfig) -> None:
         _text(dataset.repo_id) and re.fullmatch(r"[^/\s]+/[^/\s]+", dataset.repo_id) is not None,
         "dataset.repo_id must be a Hugging Face owner/repository ID",
     )
-    _require(_text(dataset.root), "dataset.root is required")
     _require(
         dataset.revision is None
         or isinstance(dataset.revision, str)
@@ -210,7 +199,6 @@ def _validate(cfg: DictConfig) -> None:
         rep.modality == expected,
         f"model={model.name} is incompatible with representation={rep.name}; needs {expected}",
     )
-    _validate_keys(cfg)
     if rep.name == "title_abstract":
         _require(
             list(rep.fields) == ["title", "abstract"],
@@ -351,55 +339,3 @@ def _validate(cfg: DictConfig) -> None:
 
 def overlaps(first: Path, second: Path) -> bool:
     return first.is_relative_to(second) or second.is_relative_to(first)
-
-
-def _validate_keys(cfg: DictConfig) -> None:
-    """Reject even +overrides that no consumer recognizes; YAML owns the key schema."""
-
-    def check(actual, template, prefix):
-        if isinstance(template, dict):
-            _require(isinstance(actual, dict), f"{prefix} must be a mapping")
-            _require(
-                set(actual) == set(template),
-                f"Unknown or missing settings in {prefix}: {set(actual) ^ set(template)}",
-            )
-            for key in template:
-                check(actual[key], template[key], f"{prefix}.{key}")
-        else:
-            _require(not isinstance(actual, dict), f"{prefix} must not be a mapping")
-
-    actual = OmegaConf.to_container(cfg, resolve=False)
-
-    root = OmegaConf.to_container(OmegaConf.load(CONFIG_DIR / "config.yaml"), resolve=False)
-    groups = {
-        "dataset",
-        "split",
-        "representation",
-        "model",
-        "stage",
-        "retrieval",
-        "evaluation",
-        "launcher",
-    }
-    keys = (set(root) - {"defaults", "hydra"}) | groups
-    _require(set(cfg) == keys, f"Unknown or missing configuration groups: {set(cfg) ^ keys}")
-    for key in set(root) - {"defaults", "hydra"}:
-        check(actual[key], root[key], key)
-    profiles = {
-        "dataset": "default",
-        "launcher": "local_cpu",
-        "evaluation": "default",
-        "retrieval": "default",
-        "split": cfg.split.name,
-        "stage": cfg.stage.name,
-        "model": cfg.model.name,
-        "representation": cfg.representation.name,
-    }
-    for group, profile in profiles.items():
-        check(
-            actual[group],
-            OmegaConf.to_container(
-                OmegaConf.load(CONFIG_DIR / group / f"{profile}.yaml"), resolve=False
-            ),
-            group,
-        )

@@ -149,8 +149,6 @@ def _terrier_inputs(documents, queries: Records, canonical_qrels: Records) -> Te
     by_key = {row["query_key"]: row["qid"] for row in mapping}
     if len(by_key) != len(mapping):
         raise ValueError("Duplicate canonical query keys")
-    if len({row["qid"] for row in mapping}) != len(mapping):
-        raise ValueError("Ambiguous canonical query identifiers")
     qrels = [
         {"qid": by_key[r["query_key"]], "docno": r["doc_id"], "label": r["relevance"]}
         for r in canonical_qrels
