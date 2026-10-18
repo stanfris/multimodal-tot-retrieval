@@ -1,7 +1,9 @@
 """Real PDFium/Qdrant/aggregation lifecycle with offline mocked neural inference."""
 
 import json
+import pickle
 import shutil
+import sqlite3
 from pathlib import Path
 
 import numpy as np
@@ -11,13 +13,14 @@ import pytest
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
-from scientific_tot.artifact_identity import artifact_directory, resolve_identity
+from scientific_tot.artifact_identity import artifact_directory, artifact_name, resolve_identity
 from scientific_tot.config_arguments import configured_adapter
 from scientific_tot.config_artifacts import artifact_reference, verify_index
 from scientific_tot.configuration import CONFIG_DIR, resolve_config
-from scientific_tot.hydra_run import run_stage
+from scientific_tot.hydra_run import run_stage, verify_completed
 from scientific_tot.integrations import colqwen
 from scientific_tot.records import IncompleteCorpusError, UnresolvedRelevanceError
+from scientific_tot.recover_colqwen import recover_index
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests/fixtures/adapter"
@@ -439,3 +442,72 @@ def test_lean_pages_use_original_filename_format(tmp_path, dataset, encoder):
     index, _, _ = execute(tmp_path, dataset, "index", "lean-index")
     output, _, _ = execute(tmp_path, dataset, "retrieve", "lean-run", f"paths.index={index}")
     assert len((output / "run.trec").read_text().splitlines()) == 2
+
+
+@pytest.fixture
+def interrupted(tmp_path, dataset, encoder, monkeypatch):
+    cfg, _ = settings(tmp_path, dataset, "index")
+    name = artifact_name(cfg, resolve_identity(cfg))
+
+    def stop(*args):
+        raise SystemExit("Interrupted before metadata publication")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(colqwen, "publish_index_metadata", stop)
+        with pytest.raises(SystemExit, match="Interrupted"):
+            execute(tmp_path, dataset, "index", name)
+    return tmp_path / name
+
+
+def test_recover_completed_points(interrupted, encoder):
+    database = interrupted / "qdrant/collection/pages/storage.sqlite"
+    before = artifact_reference(database)
+    calls = list(encoder)
+    recover_index(interrupted)
+    assert artifact_reference(database) == before
+    assert encoder == calls  # No document or query encoding during recovery.
+    manifest = json.loads((interrupted / "manifest.json").read_text())
+    assert manifest["status"] == "completed"
+    assert manifest["recovery"]["original_manifest"]["status"] == "started"
+    cfg = OmegaConf.load(interrupted / ".hydra/config.yaml")
+    assert verify_index(interrupted, cfg)["provenance"]["pages"] == 4
+    verify_completed(interrupted, cfg, resolve_identity(cfg))
+
+
+@pytest.mark.parametrize("damage", ["missing", "payload", "vector"])
+def test_recovery_rejects_invalid_points(interrupted, damage):
+    database = interrupted / "qdrant/collection/pages/storage.sqlite"
+    with sqlite3.connect(database) as db:
+        key, blob = db.execute("SELECT id, point FROM points LIMIT 1").fetchone()
+        if damage == "missing":
+            db.execute("DELETE FROM points WHERE id = ?", (key,))
+        else:
+            point = pickle.loads(blob)
+            if damage == "payload":
+                point.payload["doc_id"] = "wrong-paper"
+            else:
+                point.vector = [[float("nan"), 0.0]]
+            db.execute("UPDATE points SET point = ? WHERE id = ?", (pickle.dumps(point), key))
+    with pytest.raises(ValueError, match="count differs|payload differs|Invalid page vectors"):
+        recover_index(interrupted)
+    assert not (interrupted / "index-manifest.json").exists()
+    assert json.loads((interrupted / "manifest.json").read_text())["status"] == "started"
+
+
+def test_recovery_rejects_changed_pdf(interrupted, dataset):
+    pdf = next((dataset / "pdf_datasets").rglob("*.pdf"))
+    with pdf.open("ab") as stream:
+        stream.write(b"\n% changed after indexing\n")
+    with pytest.raises(ValueError, match="original index hash"):
+        recover_index(interrupted)
+    assert not (interrupted / "index-manifest.json").exists()
+
+
+def test_recovery_rejects_active_qdrant(interrupted):
+    import portalocker
+
+    with (interrupted / "qdrant/.lock").open("r+") as lock:
+        portalocker.lock(lock, portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING)
+        with pytest.raises(portalocker.exceptions.LockException):
+            recover_index(interrupted)
+    assert not (interrupted / "index-manifest.json").exists()

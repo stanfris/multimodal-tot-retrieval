@@ -113,6 +113,39 @@ and library versions. Query split/mode/batch size, paper depth, and metrics are
 excluded. Completed identical indexes are checksummed and reused without writes;
 failed, incompatible, or changed artifacts are rejected.
 
+### Finalizing an interrupted index
+
+If indexing stopped after persisting all pages but before writing metadata, use
+the recovery command from the repository root, in the original environment:
+
+```bash
+.venv-colqwen/bin/python -m scientific_tot.recover_colqwen \
+  results/indexes/colqwen_pages_d-ACL_c-all_<hash>
+```
+
+Use only your own trusted index: Qdrant persists Python pickle objects. Stop any
+indexing process first. Recovery holds Qdrant's lock and opens SQLite read-only;
+it streams one point at a time rather than loading the collection into memory.
+It checks the original directory's content identity against the current PDFs,
+saved configuration and dependency versions, then checks every page position,
+payload and vector shape/finite value. Missing pages or changed inputs fail
+without publishing completion. This command finalizes complete data; it does
+not resume a partial encoding run.
+
+Recovery loads the pinned model on CUDA to reconstruct its effective processor
+and checkpoint metadata, but does not render or encode pages. That metadata is
+reconstructed, since the interrupted run did not save it; recovery cannot prove
+that each stored vector was produced by those weights. After validation, it
+writes the normal mapping and index manifest and atomically publishes the
+completed stage manifest, retaining the original manifest in its recovery field.
+Existing index completion metadata is rejected for manual inspection. Full
+validation and repeated file checksums can take substantial time for large
+databases. Leave the original PDFs and index files unchanged throughout.
+
+This avoids loading the collection during recovery only. Retrieval still uses
+local Qdrant, which loads persisted points into memory and requires enough RAM
+for the collection, and makes a temporary disk copy of the database.
+
 Retrieval reads only a completed index and selected queries. Automatic selection
 uses saved index metadata without reopening the PDF collection. If several
 compatible indexes exist, provide `paths.index=...` explicitly. This is useful

@@ -248,6 +248,13 @@ def build_index(corpus, cfg, *, reserved=False) -> dict:
             raise ValueError("Persistent page count differs from mapping")
     finally:
         client.close()
+    return publish_index_metadata(corpus, cfg, effective)
+
+
+def publish_index_metadata(corpus, cfg, effective) -> dict:
+    """Publish metadata after either building or validating the persisted pages."""
+    target = Path(cfg.paths.index)
+    mapping = page_mapping(corpus)
     Records("page_mapping", mapping, Report(emitted=len(mapping)), corpus.provenance).write_jsonl(
         target / "page-mapping.jsonl"
     )
