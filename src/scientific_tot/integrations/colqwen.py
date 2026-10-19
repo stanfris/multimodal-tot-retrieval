@@ -1,13 +1,16 @@
 """Original PDF pages, official ColQwen encoding, and Qdrant exact multi-vector search."""
 
 import json
+import pickle
 import shutil
+import sqlite3
 import tempfile
 from contextlib import closing
 from importlib.metadata import version
 from pathlib import Path
 from urllib.parse import quote, unquote
 
+import numpy as np
 import pandas as pd
 from omegaconf import OmegaConf
 
@@ -188,71 +191,158 @@ def load_model(cfg):
     return model, effective
 
 
-def build_index(corpus, cfg, *, reserved=False) -> dict:
-    import pypdfium2 as pdfium
+def validate_points(
+    database: Path, mapping: list[dict], dimension: int, *, allow_partial=False
+) -> int:
+    """Read one persisted point at a time; never instantiate an in-memory Qdrant index."""
+    from qdrant_client.local.persistence import CollectionPersistence
+    from tqdm.auto import tqdm
+
+    with closing(sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        count = db.execute("SELECT COUNT(*) FROM points").fetchone()[0]
+        print(f"Stored pages: {count:,}; expected pages: {len(mapping):,}", flush=True)
+        if count > len(mapping) or (not allow_partial and count != len(mapping)):
+            raise ValueError("Stored page count differs from corpus; cannot finalize this index")
+        seen = bytearray(count)
+        for key, blob in tqdm(
+            db.execute("SELECT id, point FROM points"), total=count, desc="Validating stored pages"
+        ):
+            point = pickle.loads(blob)
+            position = point.id
+            if type(position) is not int or not 0 <= position < count or seen[position]:
+                raise ValueError(f"Invalid or duplicate page position: {position}")
+            if (
+                key != CollectionPersistence.encode_key(position)
+                or point.payload != mapping[position]
+            ):
+                raise ValueError(f"Stored page identity/payload differs at position {position}")
+            vectors = np.asarray(point.vector, dtype=np.float32)
+            if (
+                vectors.ndim != 2
+                or vectors.shape[0] == 0
+                or vectors.shape[1] != dimension
+                or not np.isfinite(vectors).all()
+            ):
+                raise ValueError(f"Invalid page vectors at position {position}")
+            seen[position] = 1
+        return count
+
+
+def validate_collection(index: Path, dimension: int) -> None:
+    metadata = json.loads((index / "qdrant/meta.json").read_text())
+    vectors = metadata["collections"]["pages"]["vectors"]
+    if (
+        vectors["size"] != dimension
+        or vectors["distance"] != "Dot"
+        or vectors["multivector_config"]["comparator"] != "max_sim"
+        or vectors["hnsw_config"]["m"] != 0
+    ):
+        raise ValueError("Stored collection differs from the expected exact DOT/MAX_SIM index")
+
+
+def build_index(corpus, cfg, *, reserved=False, existing=None) -> dict:
+    """Persist pages incrementally; existing='resume' appends to a validated prefix."""
+    import portalocker
     from qdrant_client import QdrantClient, models
+
+    assert existing in {None, "resume", "finalize"}
+    target = Path(cfg.paths.index)
+    if existing is None:
+        if reserved:
+            require_index_reservation(target)
+        else:
+            target.mkdir(parents=True, exist_ok=False)
+    print("Loading pinned ColQwen model...", flush=True)
+    model, effective = load_model(cfg)
+    dimension = model.get_embedding_dimension()
+    mapping = page_mapping(corpus)
+    if not (target / "qdrant").exists():
+        if existing == "finalize":
+            raise ValueError("No persisted Qdrant collection to finalize")
+        # Create metadata for an empty collection; never reopen a populated local client.
+        with closing(QdrantClient(path=str(target / "qdrant"))) as client:
+            client.create_collection(
+                "pages",
+                vectors_config=models.VectorParams(
+                    size=dimension,
+                    distance=models.Distance(cfg.model.indexing.distance.title()),
+                    multivector_config=models.MultiVectorConfig(
+                        comparator=models.MultiVectorComparator(cfg.model.indexing.comparator)
+                    ),
+                    hnsw_config=models.HnswConfigDiff(m=0),
+                ),
+            )
+    with portalocker.Lock(target / "qdrant/.lock", mode="r+", timeout=0):
+        validate_collection(target, dimension)
+        position = (
+            validate_points(
+                target / "qdrant/collection/pages/storage.sqlite",
+                mapping,
+                dimension,
+                allow_partial=existing == "resume",
+            )
+            if existing is not None
+            else 0
+        )
+        if existing == "resume":
+            print(f"Resuming index: {position:,}/{len(mapping):,} pages already stored", flush=True)
+        if position < len(mapping):
+            persist_pages(corpus, cfg, model, mapping, position)
+        return publish_index_metadata(corpus, cfg, effective)
+
+
+def persist_pages(corpus, cfg, model, mapping, resume_from: int) -> None:
+    """Append new PointStructs through Qdrant's persistence API without a full RAM index."""
+    import pypdfium2 as pdfium
+    from qdrant_client import models
+    from qdrant_client.local.persistence import CollectionPersistence
     from tqdm.auto import tqdm
 
     target = Path(cfg.paths.index)
-    if reserved:
-        require_index_reservation(target)
-    else:
-        target.mkdir(parents=True, exist_ok=False)
-    model, effective = load_model(cfg)
-    mapping = page_mapping(corpus)
-    client = QdrantClient(path=str(target / "qdrant"))
-    try:
-        client.create_collection(
-            "pages",
-            vectors_config=models.VectorParams(
-                size=model.get_embedding_dimension(),
-                distance=models.Distance(cfg.model.indexing.distance.title()),
-                multivector_config=models.MultiVectorConfig(
-                    comparator=models.MultiVectorComparator(cfg.model.indexing.comparator)
-                ),
-                hnsw_config=models.HnswConfigDiff(m=0),
-            ),
-        )
+    with closing(CollectionPersistence(str(target / "qdrant/collection/pages"))) as store:
         position = 0
-        for row in tqdm(corpus, desc="Encoding PDF pages", unit="paper"):
-            with pdfium.PdfDocument(row["pdf_path"]) as pdf:
-                for start in range(1, row["page_count"] + 1, cfg.model.batch_size):
-                    images = [
-                        render_page(pdf, number, cfg)
-                        for number in range(
-                            start, min(start + cfg.model.batch_size, row["page_count"] + 1)
-                        )
-                    ]
-                    try:
-                        vectors = model.encode_document(
-                            images, batch_size=cfg.model.batch_size, convert_to_numpy=True
-                        )
-                    finally:
-                        for image in images:
-                            image.close()
-                    assert len(vectors) == len(images)
-                    client.upsert(
-                        "pages",
-                        points=[
-                            models.PointStruct(
-                                id=position + i,
-                                vector=vector.tolist(),
-                                payload=mapping[position + i],
+        with tqdm(
+            total=len(mapping), initial=resume_from, desc="Encoding PDF pages", unit="page"
+        ) as bar:
+            for row in corpus:
+                end = position + row["page_count"]
+                if end <= resume_from:
+                    position = end
+                    continue
+                with pdfium.PdfDocument(row["pdf_path"]) as pdf:
+                    first = max(1, resume_from - position + 1)
+                    for start in range(first, row["page_count"] + 1, cfg.model.batch_size):
+                        images = [
+                            render_page(pdf, number, cfg)
+                            for number in range(
+                                start, min(start + cfg.model.batch_size, row["page_count"] + 1)
                             )
-                            for i, vector in enumerate(vectors)
-                        ],
-                        wait=True,
-                    )
-                    position += len(vectors)
-        if client.count("pages", exact=True).count != len(mapping):
+                        ]
+                        try:
+                            vectors = model.encode_document(
+                                images, batch_size=cfg.model.batch_size, convert_to_numpy=True
+                            )
+                        finally:
+                            for image in images:
+                                image.close()
+                        assert len(vectors) == len(images)
+                        for i, vector in enumerate(vectors):
+                            offset = position + start - 1 + i
+                            store.persist(
+                                models.PointStruct(
+                                    id=offset, vector=vector.tolist(), payload=mapping[offset]
+                                )
+                            )
+                            bar.update(1)
+                position = end
+        count = store.storage.execute("SELECT COUNT(*) FROM points").fetchone()[0]
+        if count != len(mapping):
             raise ValueError("Persistent page count differs from mapping")
-    finally:
-        client.close()
-    return publish_index_metadata(corpus, cfg, effective)
 
 
 def publish_index_metadata(corpus, cfg, effective) -> dict:
     """Publish metadata after either building or validating the persisted pages."""
+    print("Writing page metadata and checksumming persistent index files...", flush=True)
     target = Path(cfg.paths.index)
     mapping = page_mapping(corpus)
     Records("page_mapping", mapping, Report(emitted=len(mapping)), corpus.provenance).write_jsonl(

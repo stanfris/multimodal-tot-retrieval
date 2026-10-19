@@ -174,17 +174,44 @@ def git_commit(root: Path) -> str | None:
 
 
 def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: Path) -> None:
+    if cfg.stage.name == "index" and cfg.model.name == "colqwen":
+        import portalocker
+
+        with portalocker.Lock(run_dir / ".run.lock", mode="a+", timeout=0):
+            _run_stage(cfg, run_dir, hydra_cfg, repo_root)
+    else:
+        _run_stage(cfg, run_dir, hydra_cfg, repo_root)
+
+
+def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: Path) -> None:
     """Preserve resolved settings and failed attempts without claiming a successful stage."""
     # Hydra creates directories but automatic snapshots/logging are disabled.
     cfg = resolve_config(cfg, Path.cwd(), run_dir)
     print(f"Starting {cfg.stage.name}: {cfg.run.name}; output={run_dir}", flush=True)
     from scientific_tot.artifact_identity import INDEX_EXISTENCE
 
+    contents = {path.name for path in run_dir.iterdir()}
+    if cfg.stage.name == "index" and cfg.model.name == "colqwen":
+        contents.discard(".run.lock")
     if cfg.stage.name == "index" and (
         INDEX_EXISTENCE.get(run_dir, False)
         or (Path(cfg.paths.index).exists() and Path(cfg.paths.index) != run_dir)
-        or any(run_dir.iterdir())
+        or contents
     ):
+        if cfg.model.name == "colqwen":
+            location = Path(cfg.paths.index)
+            saved = location / "manifest.json"
+            if saved.is_file() and json.loads(saved.read_text()).get("status") in {
+                "started",
+                "failed",
+            }:
+                from scientific_tot.recover_colqwen import _recover_locked, recover_index
+
+                if location == run_dir:
+                    _recover_locked(location, requested=cfg)
+                else:
+                    recover_index(location, requested=cfg)
+                return
         if cfg.model.name in {"colbert", "colqwen"}:
             from scientific_tot.artifact_identity import resolve_identity
 
@@ -193,7 +220,7 @@ def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: 
         else:
             print(f"Skipping existing index: {cfg.paths.index}", flush=True)
         return
-    if any(run_dir.iterdir()):
+    if contents:
         from scientific_tot.artifact_identity import resolve_identity
 
         # Fail unfinished reservations before attempting any expensive source reads.
@@ -204,8 +231,9 @@ def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: 
         print(f"Reusing verified {cfg.stage.name} artifact: {run_dir}", flush=True)
         return
     # Exclusive lock also protects direct callers racing on the same empty directory.
-    with (run_dir / ".run.lock").open("x"):
-        pass
+    if not (cfg.stage.name == "index" and cfg.model.name == "colqwen"):
+        with (run_dir / ".run.lock").open("x"):
+            pass
     metadata_dir = run_dir / ".hydra"
     metadata_dir.mkdir(exist_ok=False)
     OmegaConf.save(cfg, metadata_dir / "config.yaml", resolve=True)

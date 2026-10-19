@@ -378,12 +378,12 @@ def test_model_loader_pins_base_and_preserves_official_processor(tmp_path, datas
         colqwen.load_model(cfg)
 
 
-def test_incomplete_index_cannot_be_reused(tmp_path, dataset, encoder):
+def test_incomplete_index_without_snapshot_cannot_be_resumed(tmp_path, dataset, encoder):
     output = tmp_path / "unfinished"
     output.mkdir()
     (output / "manifest.json").write_text('{"status":"started"}')
     cfg, hydra = settings(tmp_path, dataset, "index", output)
-    with pytest.raises(FileExistsError, match="incomplete"):
+    with pytest.raises(FileNotFoundError, match="config.yaml"):
         run_stage(cfg, output, hydra, ROOT)
     assert encoder == []
 
@@ -511,3 +511,130 @@ def test_recovery_rejects_active_qdrant(interrupted):
         with pytest.raises(portalocker.exceptions.LockException):
             recover_index(interrupted)
     assert not (interrupted / "index-manifest.json").exists()
+
+
+@pytest.mark.parametrize("committed", [0, 1, 2, 3, 4])
+@pytest.mark.parametrize("failure", [SystemExit, RuntimeError])
+def test_index_command_resumes_committed_pages(
+    tmp_path, dataset, encoder, monkeypatch, committed, failure
+):
+    from qdrant_client.local.persistence import CollectionPersistence
+
+    cfg, _ = settings(tmp_path, dataset, "index")
+    name = artifact_name(cfg, resolve_identity(cfg))
+    original_persist = CollectionPersistence.persist
+
+    def interrupt(store, point):
+        if committed == 0:
+            raise failure("Interrupted during encoding")
+        original_persist(store, point)
+        if point.id + 1 == committed:
+            raise failure("Interrupted during encoding")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(CollectionPersistence, "persist", interrupt)
+        with pytest.raises(failure, match="Interrupted"):
+            execute(tmp_path, dataset, "index", name)
+
+    output = tmp_path / name
+    database = output / "qdrant/collection/pages/storage.sqlite"
+    with sqlite3.connect(database) as db:
+        before = dict(db.execute("SELECT id, point FROM points"))
+    assert len(before) == committed
+    cfg, hydra = settings(tmp_path, dataset, "index", output)
+    encoder.clear()
+
+    def no_local_client(*args, **kwargs):
+        raise AssertionError("Resume must not load the existing collection into RAM")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("qdrant_client.QdrantClient", no_local_client)
+        run_stage(cfg, output, hydra, ROOT)
+        # A second invocation must reuse the completed index without encoding.
+        calls = list(encoder)
+        run_stage(cfg, output, hydra, ROOT)
+        assert encoder == calls
+
+    assert sum(len(call[1]) for call in encoder) == 4 - committed
+    with sqlite3.connect(database) as db:
+        after = dict(db.execute("SELECT id, point FROM points"))
+    assert len(after) == 4
+    assert all(after[key] == blob for key, blob in before.items())
+    verify_completed(output, cfg, resolve_identity(cfg))
+    run, _, _ = execute(tmp_path, dataset, "retrieve", "resumed-run", f"paths.index={output}")
+    assert len((run / "run.trec").read_text().splitlines()) == 2
+
+
+def test_index_command_rejects_gap_in_saved_pages(interrupted, dataset, tmp_path, encoder):
+    from qdrant_client.local.persistence import CollectionPersistence
+
+    database = interrupted / "qdrant/collection/pages/storage.sqlite"
+    with sqlite3.connect(database) as db:
+        db.execute("DELETE FROM points WHERE id = ?", (CollectionPersistence.encode_key(1),))
+    before = artifact_reference(database)
+    cfg, hydra = settings(tmp_path, dataset, "index", interrupted)
+    encoder.clear()
+    with pytest.raises(ValueError, match="Invalid or duplicate page position"):
+        run_stage(cfg, interrupted, hydra, ROOT)
+    assert encoder == []
+    assert artifact_reference(database) == before
+
+
+def test_index_command_finishes_interrupted_sealing(
+    interrupted, dataset, tmp_path, encoder, monkeypatch
+):
+    cfg, hydra = settings(tmp_path, dataset, "index", interrupted)
+
+    def stop(*args, **kwargs):
+        raise SystemExit("Interrupted during output verification")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("scientific_tot.recover_colqwen.verify_index", stop)
+        with pytest.raises(SystemExit, match="output verification"):
+            run_stage(cfg, interrupted, hydra, ROOT)
+    assert (interrupted / "index-manifest.json").is_file()
+    encoder.clear()
+
+    def no_model(*args, **kwargs):
+        raise AssertionError("Completed backend metadata needs no model reload")
+
+    monkeypatch.setattr(colqwen, "load_model", no_model)
+    run_stage(cfg, interrupted, hydra, ROOT)
+    assert encoder == []
+    verify_completed(interrupted, cfg, resolve_identity(cfg))
+
+
+def test_index_command_rejects_active_run(interrupted, dataset, tmp_path, encoder):
+    import portalocker
+
+    cfg, hydra = settings(tmp_path, dataset, "index", interrupted)
+    with portalocker.Lock(interrupted / ".run.lock", mode="a+", timeout=0):
+        with pytest.raises(portalocker.exceptions.LockException):
+            run_stage(cfg, interrupted, hydra, ROOT)
+
+
+def test_index_command_resumes_before_collection_creation(tmp_path, dataset, encoder, monkeypatch):
+    cfg, _ = settings(tmp_path, dataset, "index")
+    name = artifact_name(cfg, resolve_identity(cfg))
+
+    def stop(*args, **kwargs):
+        raise SystemExit("Interrupted before collection creation")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(colqwen, "load_model", stop)
+        with pytest.raises(SystemExit, match="before collection creation"):
+            execute(tmp_path, dataset, "index", name)
+    output = tmp_path / name
+    assert not (output / "qdrant").exists()
+    cfg, hydra = settings(tmp_path, dataset, "index", output)
+    run_stage(cfg, output, hydra, ROOT)
+    assert sum(len(call[1]) for call in encoder) == 4
+    verify_completed(output, cfg, resolve_identity(cfg))
+
+
+def test_index_command_rejects_changed_settings(interrupted, dataset, tmp_path, encoder):
+    cfg, hydra = settings(tmp_path, dataset, "index", interrupted, "model.batch_size=3")
+    encoder.clear()
+    with pytest.raises(ValueError, match="settings differ"):
+        run_stage(cfg, interrupted, hydra, ROOT)
+    assert encoder == []

@@ -95,7 +95,9 @@ all selected query positives: skipping a relevant paper raises an unresolved
 relevance error. Independent indexing does not load queries to judge relevance.
 
 Indexing rasterizes and encodes at most `model.batch_size` pages at once, then
-upserts their ragged arrays into Qdrant's persistent local collection. Qdrant
+commits each page through Qdrant's persistence API. It creates the empty local
+collection with Qdrant, then writes points without retaining a full in-memory
+collection. Qdrant
 owns vector persistence and MaxSim scoring using DOT distance and MAX_SIM;
 HNSW is disabled. The official model supplies normalized token vectors. The
 output is `results/indexes/colqwen_pages_d-ACL_c-all_<hash>/`, with `.hydra/`, both
@@ -110,8 +112,40 @@ checkpoint-owned processor selection, model/device/document batch settings,
 rendering scale/library, index settings, encoding threads, and relevant versions.
 Effective default preprocessing is determined by those pinned checkpoint files
 and library versions. Query split/mode/batch size, paper depth, and metrics are
-excluded. Completed identical indexes are checksummed and reused without writes;
-failed, incompatible, or changed artifacts are rejected.
+excluded. Completed identical indexes are checksummed and reused without writes.
+Interrupted indexes can resume; incompatible or changed artifacts are rejected.
+
+### Resuming an interrupted index
+
+Rerun the original command with the same environment and index settings:
+
+```bash
+./scripts/02_index.sh experiment=colqwen_pages
+```
+
+For a saved `started` or `failed` ColQwen index, the command verifies the saved
+configuration and original directory content hash against the current PDFs and
+dependency versions. It streams the existing points from SQLite and validates
+their IDs, page-to-paper payloads, vector dimensions and finite values. Points
+must form a contiguous prefix of the expected page order. It then reports:
+
+```text
+Resuming index: 282,258/353,849 pages already stored
+```
+
+Only the remaining pages are rendered and encoded, including when the previous
+run stopped partway through a PDF or batch. Each point is committed separately,
+so another interruption can resume from the last committed page. Existing
+points are not rewritten. Artifact and Qdrant locks prevent concurrent writers.
+Indexing and resumption do not load the stored collection into RAM. Resumption
+does scan all saved point blobs first, which can take time for a large database.
+
+Keep the original index directory, saved configuration and PDFs intact. Use only
+your own trusted index, since Qdrant persists Python pickle objects. Changed
+inputs, corrupt records or gaps in stored positions fail instead of silently
+rebuilding or skipping pages. Once all pages are stored, normal metadata and
+completion manifests are written. A verified backend manifest left by an
+interruption during final sealing is reused without loading the model.
 
 ### Finalizing an interrupted index
 
@@ -138,12 +172,12 @@ reconstructed, since the interrupted run did not save it; recovery cannot prove
 that each stored vector was produced by those weights. After validation, it
 writes the normal mapping and index manifest and atomically publishes the
 completed stage manifest, retaining the original manifest in its recovery field.
-Existing index completion metadata is rejected for manual inspection. Full
+Existing valid index completion metadata is verified and reused. Full
 validation and repeated file checksums can take substantial time for large
 databases. Leave the original PDFs and index files unchanged throughout.
 
-This avoids loading the collection during recovery only. Retrieval still uses
-local Qdrant, which loads persisted points into memory and requires enough RAM
+Indexing and recovery avoid loading the stored collection into RAM. Retrieval
+still uses local Qdrant, which loads persisted points into memory and requires enough RAM
 for the collection, and makes a temporary disk copy of the database.
 
 Retrieval reads only a completed index and selected queries. Automatic selection
