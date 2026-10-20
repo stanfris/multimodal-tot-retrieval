@@ -385,10 +385,15 @@ commit revisions, `processor=checkpoint`, model device, document `batch_size`,
 and Qdrant settings. `distance=dot` and `comparator=max_sim` bind the external
 VectorParams; `exact=true` requires exhaustive MaxSim search. Query
 `model.retrieval.batch_size` binds GPU `encode_query` batches independently.
-`model.retrieval.scoring_batch_size` controls how many encoded queries share a CPU
-matrix multiplication (default 16). Both are excluded from index identity.
-All queries share a single read-only page scan, regardless of either batch size. Document batch size binds `encode_document` and PDF image
-batching. The checkpoint processor supplies all image/text preprocessing;
+`model.retrieval.scoring_batch_size` controls query groups for CUDA MaxSim
+(default 16), `page_batch_size` controls page groups (default 32), and
+`scoring_chunk_elements` binds ST maxsim's padded-document/intermediate element
+budget (default 16,000,000). All retrieval controls are excluded from index
+identity. All queries share a single read-only page scan regardless of batch sizes.
+Scoring explicitly passes `device=cuda` to the official scorer and uses float32
+with highest float32 matmul precision; it has no CPU fallback. Document batch
+size binds `encode_document` and PDF image batching. The checkpoint processor
+supplies all image/text preprocessing;
 custom processors and other checkpoints are rejected. ColQwen defaults to
 `launcher=local_gpu` and requires `device=cuda`; CPU/MPS overrides are rejected.
 Indexing and query encoding fail before downloads when CUDA is unavailable.

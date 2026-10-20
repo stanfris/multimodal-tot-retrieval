@@ -279,10 +279,8 @@ def _validate(cfg: DictConfig) -> None:
             )
         _require(_positive(model.batch_size), "model.batch_size must be positive")
         _require(_positive(model.retrieval.batch_size), "query batch_size must be positive")
-        _require(
-            _positive(model.retrieval.scoring_batch_size),
-            "query scoring_batch_size must be positive",
-        )
+        for key in ("scoring_batch_size", "page_batch_size", "scoring_chunk_elements"):
+            _require(_positive(model.retrieval[key]), f"model.retrieval.{key} must be positive")
         _require(model.indexing.distance == "dot", "ColQwen index requires dot distance")
         _require(model.indexing.comparator == "max_sim", "ColQwen index requires max_sim")
         _require(model.indexing.exact is True, "ColQwen requires exact page search")

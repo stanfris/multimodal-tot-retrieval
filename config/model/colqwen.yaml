@@ -18,3 +18,5 @@ indexing:
 retrieval:
   batch_size: 2
   scoring_batch_size: 16
+  page_batch_size: 32
+  scoring_chunk_elements: 16000000

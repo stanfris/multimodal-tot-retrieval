@@ -163,13 +163,14 @@ See [the ColBERT guide](colbert-retrieval.md).
 `integrations/colqwen.py` uses the adapter's canonical source join and pages-only
 selection without consuming extracted text. PDFium rasterizes original pages;
 Sentence Transformers 6's official MultiVectorEncoder handles checkpoint-defined
-processing/inference. Qdrant local owns multi-vector persistence; NumPy computes
-batched exact DOT/MaxSim with parity checks against Qdrant.
+processing/inference. Qdrant local owns multi-vector persistence; Sentence
+Transformers computes chunked float32 DOT/MaxSim on CUDA with parity checks
+against Qdrant.
 The shared artifact lifecycle binds PDF bytes, model/base commits, rendering,
 settings and versions. Explicit page mappings preserve canonical paper identities.
 PyTerrier max_passage and canonical tie-breaking give paper-level ranks after
 exhaustive page search. Retrieval scans read-only SQLite points once for all queries,
-retaining one page's vectors and a compact query-by-paper score matrix instead
+retaining a bounded page batch and a compact query-by-paper score matrix instead
 of loading or copying the full collection; automatic selection never opens originals.
 Shared batch serialization and saved-run evaluation are reused.
 See [the visual guide](colqwen-retrieval.md).

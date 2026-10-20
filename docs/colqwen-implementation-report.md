@@ -68,8 +68,8 @@ mode was selected after considering ST similarity (no persistent index), the
 existing single-vector FAISS backend (no equivalent MaxSim index), and approximate
 PLAID-style candidate indexing. Qdrant has no HNSW graph in this baseline. Search
 streams read-only SQLite points once for all queries without opening a local
-client or making a temporary index copy. Batched NumPy DOT/MaxSim is checked
-against the pinned Qdrant scorer.
+client or making a temporary index copy. Sentence Transformers' batched CUDA
+DOT/MaxSim scorer is checked against the pinned Qdrant scorer.
 
 Shared identities include canonical papers, PDF SHA256/source joins/page counts,
 dataset provenance, pinned adapter/base, rendering, model/index configuration,
@@ -140,8 +140,8 @@ real-model test remains the required next verification on a suitable CUDA machin
 
 ColQwen now defaults to `launcher=local_gpu` and rejects CPU/MPS model devices.
 Model loading checks CUDA availability before checkpoint downloads; preparation
-and saved-run evaluation still require no GPU. PDFium and local Qdrant search
-remain CPU operations. CUDA defaults, CPU/MPS rejection, unavailable-GPU failure,
+and saved-run evaluation still require no GPU. PDFium and SQLite loading
+remain CPU operations; MaxSim scoring now runs on CUDA. CUDA defaults, CPU/MPS rejection, unavailable-GPU failure,
 and CUDA device forwarding are covered by offline tests.
 
 After enforcing CUDA, the full offline suite passed: **366 passed, 7 deselected**.
@@ -175,8 +175,8 @@ These figures exclude model loading, scoring, shared identity checks and output
 writing; they do not establish full-corpus retrieval throughput. This initial
 streaming version re-read stored points per query batch and is superseded below.
 
-Single-pass retrieval now encodes queries in GPU batches of two, retains CPU
-query embeddings, and scans each stored page once for all queries. CPU scoring
+The initial CPU single-pass implementation encoded queries in GPU batches of two, retains CPU
+query embeddings, and scanned each stored page once for all queries. CPU scoring
 concatenates the token matrices of up to `model.retrieval.scoring_batch_size`
 queries (default 16), computes one DOT product, and applies the usual per-query
 MaxSim reduction. Float64 query-by-paper maxima use 8 × queries × papers bytes;
@@ -195,3 +195,22 @@ A synthetic single-BLAS-thread comparison used 110 ragged queries (16–19 token
 Qdrant scoring took 1.256 s; single-pass decoding and batched scoring took 0.037 s
 (33.6×), with zero score difference in that sample. This excludes SQLite I/O,
 GPU encoding and JSON output, and does not predict DGX03 end-to-end throughput.
+
+CUDA scoring replaces that CPU NumPy implementation. The official Sentence
+Transformers `maxsim` scorer receives explicit `device=cuda`, float32 inputs,
+and a 16,000,000-element padded-page/intermediate budget. Query groups default
+to 16 and page batches to 32; the library can split those page batches further.
+A single oversized page still sets the minimum chunk size. Encoder weights are
+released and unused CUDA cache cleared before scoring. Retrieval manifests record
+the scoring device, precision and library. All controls live under model.retrieval
+and leave existing index identities unchanged.
+
+Offline tests cover bounded page/query batches, partial final batches, single-pass
+coverage, repeated papers, negative scores, zero-valued real token vectors, padding
+masks and float32 parity with Qdrant (2e-6 relative / 2e-5 absolute tolerance).
+The actual ST scorer is tested with small and large budgets; the CUDA variants
+also assert that scoring tensors are on CUDA when a GPU is available. Local
+results: **76 passed, 4 CUDA tests skipped, 1 pretrained test deselected**; related
+configuration/artifact/stage-CLI checks: **200 passed**. CUDA throughput and GPU
+peak memory still require measurement on the target GPU host; no GPU benchmark
+is claimed from this development machine.

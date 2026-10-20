@@ -1,11 +1,13 @@
-"""Original PDF pages, official ColQwen encoding, and Qdrant exact multi-vector search."""
+"""Original PDF pages, official ColQwen encoding, Qdrant storage, and CUDA MaxSim."""
 
+import gc
 import json
 import pickle
 import sqlite3
 import tempfile
 from contextlib import ExitStack, closing
 from importlib.metadata import version
+from itertools import islice
 from pathlib import Path
 from urllib.parse import quote, unquote
 
@@ -227,8 +229,7 @@ def iter_points(
                 or point.payload != mapping[position]
             ):
                 raise ValueError(f"Stored page identity/payload differs at position {position}")
-            # Match LocalCollection.load_vectors: Python float lists become float64 arrays.
-            vectors = np.asarray(point.vector, dtype=np.float64)
+            vectors = np.asarray(point.vector, dtype=np.float32)
             if (
                 vectors.ndim != 2
                 or vectors.shape[0] == 0
@@ -387,7 +388,26 @@ def aggregate_pages(pages: pd.DataFrame, cutoff: int) -> pd.DataFrame:
     return result
 
 
+def score_pages(queries, pages, *, device, chunk_elements) -> np.ndarray:
+    """Use ST's budgeted MaxSim on the requested device; return only small score matrices."""
+    import torch
+    from sentence_transformers.util import maxsim
+
+    with torch.inference_mode():
+        return (
+            maxsim(
+                [torch.as_tensor(vector, dtype=torch.float32, device="cpu") for vector in queries],
+                [torch.as_tensor(vector, dtype=torch.float32, device="cpu") for vector in pages],
+                device=device,
+                chunk_elements=chunk_elements,
+            )
+            .cpu()
+            .numpy()
+        )
+
+
 def retrieve(cfg, target: Path) -> dict:
+    import torch
     from tqdm.auto import tqdm
 
     location = Path(cfg.paths.index)
@@ -433,54 +453,57 @@ def retrieve(cfg, target: Path) -> dict:
             [topic.query for topic in chunk], batch_size=size, convert_to_numpy=True
         )
         assert len(encoded) == len(chunk)
-        vectors.extend(np.asarray(vector, dtype=np.float64) for vector in encoded)
+        vectors.extend(np.asarray(vector, dtype=np.float32) for vector in encoded)
     del model, encoded
-    query_batches = []
-    size = cfg.model.retrieval.scoring_batch_size
-    for start in range(0, len(topics), size):
-        chunk = vectors[start : start + size]
-        offsets = np.cumsum([0, *(len(vector) for vector in chunk)])
-        query_batches.append((start, np.concatenate(chunk), offsets))
-    del vectors, chunk
+    # Encoding is finished; release its model and cached allocations before scoring.
+    gc.collect()
+    torch.cuda.empty_cache()
+    torch.set_float32_matmul_precision("highest")
     documents = list(domains)
     document_positions = {doc_id: i for i, doc_id in enumerate(documents)}
     best = np.full((len(topics), len(documents)), -np.inf)
     print(
-        f"Scoring {len(topics):,} queries in one page scan; "
+        f"Scoring {len(topics):,} queries on {cfg.model.device} in one page scan; "
         f"paper-score buffer: {best.nbytes / 1024**2:.1f} MiB",
         flush=True,
     )
-    # Decode each page once. Batching query tokens turns small per-query dot
-    # products into larger matrix multiplications; each query still uses exact MaxSim.
-    with (target / "page-scores.jsonl").open("x", encoding="utf-8") as page_scores:
-        for position, page_vectors in iter_points(
-            location / "qdrant/collection/pages/storage.sqlite",
-            mapping,
-            dimension,
-            description="Scoring PDF pages",
-        ):
-            payload = mapping[position]
-            document = document_positions[payload["doc_id"]]
-            for start, query_vectors, offsets in query_batches:
-                token_scores = (query_vectors @ page_vectors.T).max(axis=1)
-                scores = np.array(
-                    [
-                        token_scores[first:last].sum()
-                        for first, last in zip(offsets[:-1], offsets[1:], strict=True)
-                    ]
+    with (
+        (target / "page-scores.jsonl").open("x", encoding="utf-8") as page_scores,
+        closing(
+            iter_points(
+                location / "qdrant/collection/pages/storage.sqlite",
+                mapping,
+                dimension,
+                description="Scoring PDF pages (CUDA)",
+            )
+        ) as points,
+    ):
+        while pages := list(islice(points, cfg.model.retrieval.page_batch_size)):
+            size = cfg.model.retrieval.scoring_batch_size
+            for start in range(0, len(topics), size):
+                chunk = topics[start : start + size]
+                scores = score_pages(
+                    vectors[start : start + size],
+                    [page_vectors for _, page_vectors in pages],
+                    device=cfg.model.device,
+                    chunk_elements=cfg.model.retrieval.scoring_chunk_elements,
                 )
-                current = best[start : start + len(scores), document]
-                np.maximum(current, scores, out=current)
-                for topic, score in zip(topics[start : start + len(scores)], scores, strict=True):
-                    page_scores.write(
-                        json.dumps(
-                            {"qid": topic.qid, **payload, "score": float(score)},
-                            ensure_ascii=False,
-                            allow_nan=False,
+                assert scores.shape == (len(chunk), len(pages))
+                for column, (position, _) in enumerate(pages):
+                    payload = mapping[position]
+                    document = document_positions[payload["doc_id"]]
+                    current = best[start : start + len(chunk), document]
+                    np.maximum(current, scores[:, column], out=current)
+                    for topic, score in zip(chunk, scores[:, column], strict=True):
+                        page_scores.write(
+                            json.dumps(
+                                {"qid": topic.qid, **payload, "score": float(score)},
+                                ensure_ascii=False,
+                                allow_nan=False,
+                            )
+                            + "\n"
                         )
-                        + "\n"
-                    )
-                    page_score_count += 1
+                        page_score_count += 1
     page_ids = [page_id(doc_id, 1) for doc_id in documents]
     for topic, scores in zip(topics, best, strict=True):
         batches.append(
@@ -528,6 +551,11 @@ def retrieve(cfg, target: Path) -> dict:
         "retrieval_cutoff": cfg.retrieval.top_k,
         "page_search_depth": len(mapping),
         "ranking_level": "paper",
+        "scoring": {
+            "device": cfg.model.device,
+            "dtype": "float32",
+            "library": "sentence_transformers.util.maxsim",
+        },
         "aggregation": {
             "method": "max",
             "library": "pyterrier.text.max_passage",

@@ -90,6 +90,22 @@ def encoder(monkeypatch):
         colqwen, "load_model", lambda cfg: (Model(), {"checkpoint_files": {"model": "stub"}})
     )
     monkeypatch.setattr(colqwen, "dependency_versions", lambda: {"neural_inference": "mocked"})
+
+    def score(queries, pages, *, device, chunk_elements):
+        from qdrant_client import models
+        from qdrant_client.local.multi_distances import calculate_multi_distance
+
+        assert device == "cuda"
+        assert chunk_elements > 0
+        return np.array(
+            [
+                calculate_multi_distance(query.astype(np.float64), pages, models.Distance.DOT)
+                for query in queries
+            ],
+            dtype=np.float32,
+        )
+
+    monkeypatch.setattr(colqwen, "score_pages", score)
     return calls
 
 
@@ -177,6 +193,8 @@ def test_independent_lifecycle_identity_reuse_and_integrity(
         "retrieval.top_k=10",
         "model.retrieval.batch_size=7",
         "model.retrieval.scoring_batch_size=32",
+        "model.retrieval.page_batch_size=64",
+        "model.retrieval.scoring_chunk_elements=8000000",
     )
     assert resolve_identity(changed) == identity
     default, _ = settings(tmp_path, dataset, "index")
@@ -228,9 +246,17 @@ def test_pdf_bytes_and_corruption_change_identity(tmp_path, dataset, encoder):
 
 @pytest.mark.parametrize("batch_size", [1, 2])
 @pytest.mark.parametrize("scoring_batch_size", [1, 2, 16])
+@pytest.mark.parametrize("page_batch_size", [1, 3])
 @pytest.mark.parametrize("dimension", [2, 128])
 def test_streamed_search_matches_local_qdrant(
-    tmp_path, dataset, encoder, monkeypatch, batch_size, scoring_batch_size, dimension
+    tmp_path,
+    dataset,
+    encoder,
+    monkeypatch,
+    batch_size,
+    scoring_batch_size,
+    page_batch_size,
+    dimension,
 ):
     from contextlib import closing
 
@@ -310,6 +336,15 @@ def test_streamed_search_matches_local_qdrant(
         yield from read_points(*args, **kwargs)
 
     monkeypatch.setattr(colqwen, "iter_points", counted_scan)
+    score_pages = colqwen.score_pages
+    score_batches = []
+
+    def counted_scores(queries, pages, **kwargs):
+        score_batches.append((len(queries), len(pages)))
+        assert all(vector.dtype == np.float32 for vector in [*queries, *pages])
+        return score_pages(queries, pages, **kwargs)
+
+    monkeypatch.setattr(colqwen, "score_pages", counted_scores)
     output, _, _ = execute(
         tmp_path,
         dataset,
@@ -318,24 +353,93 @@ def test_streamed_search_matches_local_qdrant(
         f"paths.index={index}",
         f"model.retrieval.batch_size={batch_size}",
         f"model.retrieval.scoring_batch_size={scoring_batch_size}",
+        f"model.retrieval.page_batch_size={page_batch_size}",
     )
     assert len(scans) == 1
     assert [text for batch in encoding_batches for text in batch] == [
         f"query {i}" for i in range(3)
     ]
     assert all(len(batch) <= batch_size for batch in encoding_batches)
+    assert all(q <= scoring_batch_size and p <= page_batch_size for q, p in score_batches)
+    assert sum(q * p for q, p in score_batches) == len(queries) * 4
+    saved = json.loads((output / "manifest.json").read_text())
+    assert saved["artifacts"]["scoring"] == {
+        "device": "cuda",
+        "dtype": "float32",
+        "library": "sentence_transformers.util.maxsim",
+    }
     scores = [json.loads(line) for line in (output / "page-scores.jsonl").read_text().splitlines()]
     assert len(scores) == len(expected_scores)
     assert {(row["qid"], row["page_id"]): row["score"] for row in scores} == pytest.approx(
-        expected_scores, rel=1e-12, abs=1e-12
+        expected_scores, rel=2e-6, abs=2e-5
     )
     run = pd.read_csv(output / "run.trec", sep=r"\s+", header=None, float_precision="round_trip")
     for qid, group in run.groupby(0, sort=False):
         assert group[2].tolist() == [doc for doc, _ in expected_rankings[qid]]
         assert group[4].tolist() == pytest.approx(
-            [score for _, score in expected_rankings[qid]], rel=1e-12, abs=1e-12
+            [score for _, score in expected_rankings[qid]], rel=2e-6, abs=2e-5
         )
     verify_index(index, cfg)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+@pytest.mark.parametrize("chunk_elements", [1, 1000000])
+@pytest.mark.parametrize("dimension", [2, 128])
+def test_official_maxsim_device_budget_and_parity(monkeypatch, device, chunk_elements, dimension):
+    import torch
+    from qdrant_client import models
+    from qdrant_client.local.multi_distances import calculate_multi_distance
+
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is unavailable; run on the GPU host to verify CUDA scoring")
+    pytest.importorskip("sentence_transformers", minversion="6.1.0")
+    queries = [
+        np.array(v, dtype=np.float32)
+        for v in (
+            [[1, 0]],
+            [[1, 0], [0, 1]],
+            [[0, 0], [-1, 1], [1, 1]],
+        )
+    ]
+    pages = [
+        np.array(v, dtype=np.float32)
+        for v in (
+            [[-1, -2], [-2, -1], [-3, -3]],
+            [[-0.5, -0.5]],
+            [[0, 0], [-2, -2]],
+        )
+    ]
+    if dimension == 128:
+        rng = np.random.default_rng(17)
+        queries = [
+            rng.standard_normal((len(v) * 17, dimension)).astype(np.float32) for v in queries
+        ]
+        pages = [rng.standard_normal((len(v) * 13, dimension)).astype(np.float32) for v in pages]
+    expected = np.array(
+        [
+            calculate_multi_distance(
+                query.astype(np.float64),
+                [page.astype(np.float64) for page in pages],
+                models.Distance.DOT,
+            )
+            for query in queries
+        ]
+    )
+    einsum = torch.einsum
+    calls = []
+
+    def inspect_einsum(equation, queries, pages):
+        assert queries.device.type == pages.device.type == device
+        assert queries.dtype == pages.dtype == torch.float32
+        assert not torch.is_grad_enabled()
+        calls.append(pages.shape[0])
+        return einsum(equation, queries, pages)
+
+    monkeypatch.setattr(torch, "einsum", inspect_einsum)
+    scores = colqwen.score_pages(queries, pages, device=device, chunk_elements=chunk_elements)
+    np.testing.assert_allclose(scores, expected, rtol=2e-6, atol=2e-5)
+    assert scores.dtype == np.float32
+    assert calls == ([1] * len(pages) if chunk_elements == 1 else [len(pages)])
 
 
 def test_index_closes_images_when_rendering_fails(tmp_path, dataset, encoder, monkeypatch):
@@ -366,6 +470,8 @@ def test_index_closes_images_when_rendering_fails(tmp_path, dataset, encoder, mo
         "model.revision=main",
         "model.batch_size=0",
         "model.retrieval.scoring_batch_size=0",
+        "model.retrieval.page_batch_size=0",
+        "model.retrieval.scoring_chunk_elements=0",
         "model.processor=custom",
     ],
 )

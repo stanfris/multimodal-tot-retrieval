@@ -72,8 +72,8 @@ CPU and MPS overrides are rejected. Indexing and query encoding fail explicitly
 before downloading weights if CUDA is unavailable; there is no CPU fallback.
 Preparation and saved-run evaluation do not initialize the model or check GPU
 availability, so they can still run on machines without GPUs. PDFium rendering
-and Qdrant's local exact search remain CPU operations; model inference always
-runs on CUDA. Pretrained CUDA inference has not been verified on this development
+and SQLite loading remain CPU operations; model inference and MaxSim scoring
+run on CUDA. Pretrained CUDA inference has not been verified on this development
 machine.
 
 Preparation resolves and opens the selected original PDFs and reads their page counts,
@@ -98,7 +98,7 @@ Indexing rasterizes and encodes at most `model.batch_size` pages at once, then
 commits each page through Qdrant's persistence API. It creates the empty local
 collection with Qdrant, then writes points without retaining a full in-memory
 collection. Qdrant
-owns vector persistence and MaxSim scoring using DOT distance and MAX_SIM;
+owns vector persistence with DOT distance and MAX_SIM collection settings;
 HNSW is disabled. The official model supplies normalized token vectors. The
 output is `results/indexes/colqwen_pages_d-ACL_c-all_<hash>/`, with `.hydra/`, both
 completion manifests, `page-mapping.jsonl` and its report sidecar, and `qdrant/`
@@ -178,11 +178,12 @@ databases. Leave the original PDFs and index files unchanged throughout.
 
 Indexing, recovery, and retrieval avoid loading the stored collection into RAM.
 Retrieval reads the sealed SQLite database once in read-only mode and computes
-DOT/MAX_SIM with batched NumPy matrix multiplication. It retains one page's vectors,
-CPU query embeddings, and a compact query-by-paper score matrix, with no temporary
-database copy. Scores are checked against the pinned Qdrant scorer in offline
-tests; batching may introduce floating-point roundoff without changing the
-exhaustive MaxSim algorithm.
+DOT/MAX_SIM with Sentence Transformers' official `maxsim` scorer, explicitly
+passing `device=cuda`. It retains a bounded page batch, CPU query embeddings and
+a compact query-by-paper score matrix, with no temporary database copy. Scoring
+uses float32 and highest float32 matmul precision. Scores are checked against
+Qdrant within float32 tolerance; rounding may differ from its float64 local
+scorer, while the exhaustive MaxSim algorithm is unchanged.
 
 Retrieval reads only a completed index and selected queries. Automatic selection
 checks saved index metadata and file presence without reopening the PDF
@@ -194,12 +195,19 @@ It encodes text in query batches with the official query encoder. It never
 renders or encodes document pages. GPU encoding uses
 `model.retrieval.batch_size` (default 2), and all query embeddings are retained
 on the CPU. Then one page scan scores every query, validating points as it reads.
-`model.retrieval.scoring_batch_size` (default 16) controls CPU matrix size
-independently of GPU encoding; lowering it reduces temporary scoring RAM.
-The progress bar is labeled `Scoring PDF pages` because it includes scoring and
+`model.retrieval.scoring_batch_size` (default 16) controls query groups and
+`model.retrieval.page_batch_size` (default 32) controls page groups for CUDA
+scoring. Both are independent of the encoding batch size.
+`model.retrieval.scoring_chunk_elements` (default 16,000,000) controls the official
+scorer's padded-page and similarity-matrix budget: approximately 61 MiB in
+float32, plus query storage, masks, reductions and CUDA workspace. The encoder
+model is released and its unused CUDA cache cleared before scoring. The library
+can split a page batch further to meet this budget, but always scores at least
+one page per chunk; a single oversized page/query group can exceed the budget.
+The progress bar is labeled `Scoring PDF pages (CUDA)` because it includes scoring and
 page-score output, not just validation. The read-only scan preserves the published
-artifact and permits concurrent independent runs. Neither query batch setting
-changes index identity; existing indexes remain usable.
+artifact and permits concurrent independent runs. None of these retrieval
+controls changes index identity; existing indexes remain usable.
 
 ## Ranking and evaluation
 
@@ -216,7 +224,8 @@ Persistent alternatives were considered: `MultiVectorEncoder.similarity` is a
 scorer, not a persistent index; FAISS's existing single-vector index cannot
 supply exact late interaction; FastPlaid/PLAID uses approximate candidate
 retrieval. [Qdrant multi-vectors](https://qdrant.tech/documentation/concepts/vectors/#multivectors)
-provide library-owned persistence and MaxSim with exact local search. This first
+provide library-owned persistence; [ST maxsim](https://www.sbert.net/docs/package_reference/util/similarity.html)
+provides chunked CUDA scoring over the saved vectors. This
 baseline exhausts the page collection for each query before aggregating. Thus
 `retrieval.top_k` counts papers even if the highest-ranked pages all belong to
 one paper. Ties are ordered by ascending canonical paper ID; fewer available
@@ -248,9 +257,9 @@ retaining Python float lists alongside float64 arrays; retrieval avoids that
 loader. It still retains the page mapping, a byte per page for validation, and
 all CPU query embeddings and a float64 query-by-paper maximum-score matrix
 (8 × queries × papers bytes). The matrix size is printed before scoring.
-For 110 queries and 30,000 papers, it uses about 25 MiB. CPU scoring materializes
-a query-token × page-token matrix for at most `scoring_batch_size` queries and
-one page at a time. Exact search still scales with all page/token vectors per
+For 110 queries and 30,000 papers, it uses about 25 MiB. GPU scoring uses the
+chunk budget described above, with at most `scoring_batch_size` queries and
+a bounded page group at a time. Exact search still scales with all page/token vectors per
 query, but each page is read and unpickled only once.
 Exhaustive page-score exports grow as queries × pages.
 Input identity checks read PDF hashes and page counts without rendering pages;
@@ -262,7 +271,8 @@ document/query batches, unusually large PDF page dimensions at the configured
 rendering scale (rasterization happens before processor resizing), and unusually
 long text queries. `model.batch_size=1` and
 `model.retrieval.batch_size=1` reduce encoding peaks;
-`model.retrieval.scoring_batch_size=1` reduces temporary CPU scoring memory.
+`model.retrieval.scoring_batch_size=1`, smaller `page_batch_size`, and a lower
+`scoring_chunk_elements` reduce scoring-memory peaks.
 The document batch setting changes index identity. Lower rendering scale also changes index
 identity and model inputs. Rendered images are closed even if a later page in
 the batch fails, and encoded document batches are released before encoding the

@@ -359,7 +359,7 @@ An existing experiment output is rejected to prevent stale indexes. Choose a new
 `experiment=colqwen_pages` uses the pinned `vidore/colqwen2.5-v0.2` checkpoint
 through Sentence Transformers 6.1's `MultiVectorEncoder`. PDFium renders original
 PDF pages; the official checkpoint processor handles model preprocessing. Qdrant
-persists page multi-vectors and performs exact MaxSim search. Maximum page-score
+persists page multi-vectors; Sentence Transformers performs batched exact MaxSim on CUDA. Maximum page-score
 aggregation produces canonical paper rankings, and `retrieval.top_k` counts
 papers. This aggregation is specific to our paper-level benchmark.
 
@@ -374,12 +374,13 @@ export TOT_DATA_ROOT=/your/restored/data
 These scripts automatically use the locked `.venv-colqwen` environment and
 select CUDA. ColQwen encoding requires an available NVIDIA GPU; CPU/MPS
 overrides and CPU fallback are rejected. Preparation and saved-run evaluation
-require no GPU. PDF rendering and Qdrant search remain CPU operations. Originals must be restored
+require no GPU. PDF rendering and SQLite reads use the CPU; encoding and MaxSim
+scoring use CUDA. Originals must be restored
 under `pdf_datasets/` with canonical extraction identity metadata. Indexes have
 content hashes and are verified before reuse across query splits/modes/depths.
 Retrieval consumes saved pages; evaluation consumes only saved rankings.
 Exact search streams saved page vectors from read-only SQLite once for all queries,
-using bounded query groups for CPU scoring. This remains an exhaustive correctness baseline.
+using bounded page and query groups for CUDA scoring. This remains an exhaustive correctness baseline.
 Pretrained CPU/GPU inference and full corpus performance have not been exercised locally. See the
 [visual retrieval guide](docs/colqwen-retrieval.md) for pinned versions, rendering,
 identity, resource requirements, and the selectable real-checkpoint test, and the
