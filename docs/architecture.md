@@ -167,6 +167,8 @@ processing/inference. Qdrant local owns multi-vector persistence and exact MaxSi
 The shared artifact lifecycle binds PDF bytes, model/base commits, rendering,
 settings and versions. Explicit page mappings preserve canonical paper identities.
 PyTerrier max_passage and canonical tie-breaking give paper-level ranks after
-exhaustive page search. Retrieval opens a disposable Qdrant copy to preserve sealed
-artifacts; automatic selection never opens originals. Shared batch serialization
-and saved-run evaluation are reused. See [the visual guide](colqwen-retrieval.md).
+exhaustive page search. Retrieval streams read-only SQLite points through Qdrant's
+MaxSim scorer, retaining one page's vectors and batch-level paper maxima instead
+of loading or copying the full collection; automatic selection never opens originals.
+Shared batch serialization and saved-run evaluation are reused.
+See [the visual guide](colqwen-retrieval.md).

@@ -378,9 +378,9 @@ require no GPU. PDF rendering and Qdrant search remain CPU operations. Originals
 under `pdf_datasets/` with canonical extraction identity metadata. Indexes have
 content hashes and are verified before reuse across query splits/modes/depths.
 Retrieval consumes saved pages; evaluation consumes only saved rankings.
-Exact local search loads vectors into RAM and scans all pages, so this is a
-resource-intensive correctness baseline. Pretrained CPU/GPU inference and full
-corpus performance have not been exercised locally. See the
+Exact search streams saved page vectors from read-only SQLite and scans all pages
+for each query batch, so this remains a resource-intensive correctness baseline.
+Pretrained CPU/GPU inference and full corpus performance have not been exercised locally. See the
 [visual retrieval guide](docs/colqwen-retrieval.md) for pinned versions, rendering,
 identity, resource requirements, and the selectable real-checkpoint test, and the
 [implementation report](docs/colqwen-implementation-report.md) for executed checks.

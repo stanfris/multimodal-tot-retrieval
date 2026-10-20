@@ -225,6 +225,103 @@ def test_pdf_bytes_and_corruption_change_identity(tmp_path, dataset, encoder):
         verify_index(index, cfg)
 
 
+@pytest.mark.parametrize("batch_size", [1, 2])
+def test_streamed_search_matches_local_qdrant(tmp_path, dataset, encoder, monkeypatch, batch_size):
+    from contextlib import closing
+
+    from qdrant_client import QdrantClient, models
+
+    query_file = next(dataset.glob("query_collections/**/queries.jsonl"))
+    query = json.loads(query_file.read_text())
+    query_file.write_text(
+        "".join(
+            json.dumps({**query, "query_id": f"q{i}", "query": f"query {i}"}) + "\n"
+            for i in range(3)
+        )
+    )
+    documents = {
+        200: [[-1.5, -0.2], [-2.0, -0.8]],
+        202: [[-1.0, -0.5]],
+        204: [[-3.0, -0.9], [-2.0, -0.1], [-1.0, -1.0]],
+        100: [[-1.0, -0.5]],  # Tied paper maxima for query 0; all scores negative.
+    }
+    queries = [np.array(v, dtype=np.float32) for v in ([[1, 0]], [[0, 1], [1, 0]], [[-1, 1]])]
+
+    class Model:
+        def get_embedding_dimension(self):
+            return 2
+
+        def encode_document(self, images, **kwargs):
+            return [np.array(documents[image.width], dtype=np.float32) for image in images]
+
+        def encode_query(self, texts, **kwargs):
+            return [queries[int(text.split()[-1])] for text in texts]
+
+    monkeypatch.setattr(colqwen, "load_model", lambda cfg: (Model(), {"checkpoint_files": {}}))
+    index, cfg, _ = execute(tmp_path, dataset, "index", "index")
+    work = tmp_path / "reference-qdrant"
+    shutil.copytree(index / "qdrant", work)
+    for path in work.rglob("*"):
+        if path.is_file():
+            path.chmod(0o600)
+    expected_scores = {}
+    expected_rankings = {}
+    with closing(QdrantClient(path=str(work))) as client:
+        for i, vector in enumerate(queries):
+            hits = client.query_points(
+                "pages",
+                query=vector.tolist(),
+                limit=4,
+                search_params=models.SearchParams(exact=True),
+            ).points
+            rows = []
+            for hit in hits:
+                expected_scores[(f"q{i}", hit.payload["page_id"])] = hit.score
+                rows.append({"qid": f"q{i}", "docno": hit.payload["page_id"], "score": hit.score})
+            ranking = colqwen.aggregate_pages(pd.DataFrame(rows), 2)
+            expected_rankings[f"q{i}"] = list(zip(ranking.docno, ranking.score, strict=True))
+
+    def blocked(*args, **kwargs):
+        raise AssertionError("Retrieval must not load or copy the full Qdrant collection")
+
+    monkeypatch.setattr("qdrant_client.QdrantClient", blocked)
+    monkeypatch.setattr(shutil, "copytree", blocked)
+    output, _, _ = execute(
+        tmp_path,
+        dataset,
+        "retrieve",
+        "run",
+        f"paths.index={index}",
+        f"model.retrieval.batch_size={batch_size}",
+    )
+    scores = [json.loads(line) for line in (output / "page-scores.jsonl").read_text().splitlines()]
+    assert len(scores) == len(expected_scores)
+    assert {(row["qid"], row["page_id"]): row["score"] for row in scores} == expected_scores
+    run = pd.read_csv(output / "run.trec", sep=r"\s+", header=None, float_precision="round_trip")
+    for qid, group in run.groupby(0, sort=False):
+        assert list(zip(group[2], group[4], strict=True)) == expected_rankings[qid]
+    verify_index(index, cfg)
+
+
+def test_index_closes_images_when_rendering_fails(tmp_path, dataset, encoder, monkeypatch):
+    render = colqwen.render_page
+    images = []
+
+    def fail_second_page(pdf, number, cfg):
+        if number == 2:
+            raise RuntimeError("Cannot render page")
+        image = render(pdf, number, cfg)
+        images.append(image)
+        return image
+
+    monkeypatch.setattr(colqwen, "render_page", fail_second_page)
+    with pytest.raises(RuntimeError, match="Cannot render page"):
+        execute(tmp_path, dataset, "index", "index")
+    assert len(images) == 1
+    with pytest.raises(ValueError, match="closed image"):
+        images[0].getpixel((0, 0))
+
+
 @pytest.mark.parametrize(
     "override",
     [

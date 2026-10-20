@@ -67,8 +67,8 @@ Qdrant supplies persistent SQLite storage and exact DOT/MAX_SIM scoring. Its loc
 mode was selected after considering ST similarity (no persistent index), the
 existing single-vector FAISS backend (no equivalent MaxSim index), and approximate
 PLAID-style candidate indexing. Qdrant has no HNSW graph in this baseline. Search
-opens a disposable writable copy so published SQLite/lock files stay unchanged.
-This requires extra temporary disk and is explicitly a local correctness baseline.
+streams read-only SQLite points through the pinned Qdrant MaxSim scorer without
+opening a local client or making a temporary index copy.
 
 Shared identities include canonical papers, PDF SHA256/source joins/page counts,
 dataset provenance, pinned adapter/base, rendering, model/index configuration,
@@ -126,11 +126,12 @@ argument, selection, or supported-value constraint; the experiment copies no set
 ## Practical limits
 
 Original PDFs must already be restored; packaged PDF TAR restoration is delegated
-to the existing upstream tool. Local Qdrant loads the entire vector collection into
-RAM, scans all pages per query, and requires a temporary disk copy for immutable
-artifact search. Preparation and content-identity checks read hashes and page counts without
-rendering pages. Pages are rendered only for document encoding; there is no
-page-image cache. Page-score exports scale with queries × pages.
+to the existing upstream tool. Retrieval scans the stored vectors once per query
+batch, retaining one page's vectors and each query's paper maxima. Exact scoring
+still visits all pages for every query. Preparation and content-identity checks
+read hashes and page counts without rendering pages. Pages are rendered only for
+document encoding; there is no page-image cache. Page-score exports scale with
+queries × pages.
 Canonical TREC identifiers retain the shared existing no-whitespace restriction.
 No real pretrained inference, GPU compatibility, full-corpus performance, numerical
 parity across devices, or large-index scalability was measured. The selectable
@@ -155,3 +156,20 @@ format the original filename directly: `ACL_2026.findings-acl.999` becomes
 paths and canonical IDs are retained. The lean-layout regression exercises real
 PDF rendering, indexing and retrieval with mocked neural inference. Textual
 source-selection behavior remains unchanged.
+
+Streaming retrieval verification (2026-10-20): offline tests compare every page
+score and paper ranking against a real local Qdrant client on ragged synthetic
+vectors, including negative scores, ties, multiple query batches and a final
+partial batch. Retrieval tests prohibit opening or copying the full collection
+and verify the source index remains sealed. A rendering-failure regression checks
+that previously rendered batch images are closed. The visual suite passed in
+both environments: **47 passed, 1 deselected** in each; neural inference is mocked.
+
+A small macOS loading-only benchmark used 128 persisted pages, each containing
+256 tokens of 128 float32 components, in separate fresh processes. Copying and
+opening the local client took 0.206 s before the first page was available and
+increased peak RSS by 202.6 MiB. Reading the first streamed page took 0.006 s;
+validating the whole stream took 0.097 s and increased peak RSS by 4.3 MiB.
+These figures exclude model loading, scoring, shared identity checks and output
+writing; they do not establish full-corpus retrieval throughput. Each query batch
+re-reads and unpickles the stored points, which trades repeated I/O for lower RAM.

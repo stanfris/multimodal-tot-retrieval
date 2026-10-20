@@ -176,18 +176,21 @@ Existing valid index completion metadata is verified and reused. Full
 validation and repeated file checksums can take substantial time for large
 databases. Leave the original PDFs and index files unchanged throughout.
 
-Indexing and recovery avoid loading the stored collection into RAM. Retrieval
-still uses local Qdrant, which loads persisted points into memory and requires enough RAM
-for the collection, and makes a temporary disk copy of the database.
+Indexing, recovery, and retrieval avoid loading the stored collection into RAM.
+Retrieval reads the sealed SQLite database in read-only mode and uses Qdrant's
+pinned DOT/MAX_SIM scoring function directly. It retains one page's vectors and
+paper maxima for the current query batch, with no temporary database copy.
 
 Retrieval reads only a completed index and selected queries. Automatic selection
 uses saved index metadata without reopening the PDF collection. If several
 compatible indexes exist, provide `paths.index=...` explicitly. This is useful
 when the same configuration has been indexed against different PDF contents.
 It encodes text in query batches with the official query encoder. It never
-renders or encodes document pages. Local Qdrant requires writable SQLite/lock
-files, so retrieval opens a disposable copy of the sealed Qdrant directory;
-this preserves the published artifact and permits concurrent independent runs.
+renders or encodes document pages. Each query batch scans the saved points once,
+validating IDs, payloads, vector dimensions and finite values as it reads.
+The read-only scan preserves the published artifact and permits concurrent
+independent runs. Increasing `model.retrieval.batch_size` reduces the number of
+database scans but increases query-encoding VRAM and paper-maxima RAM.
 
 ## Ranking and evaluation
 
@@ -215,27 +218,45 @@ was checked; real pretrained score parity remains an opt-in test.
 The existing shared writer produces `run.trec`, topics, qrels, query-ID and
 corpus-ID mappings under `results/models/colqwen_pages_c-all_q-test_<hash>/`.
 Additional `page-scores.jsonl` preserves every page score and canonical mapping;
-these rows are streamed to disk. Run manifests record exact search depth, maximum
+these rows are streamed to disk in database scan order, interleaving queries
+within a batch; consumers should use the explicit query/page IDs rather than
+rely on score ordering. Run manifests record exact search depth, maximum
 aggregation, paper cutoff, and tie-breaking. Evaluation reads only the saved batch
 and writes existing aggregate/per-query metrics; it can run after PDFs, model
 cache, and index are unavailable. No new metrics or model imports are introduced.
 
 ## Resources and verification
 
-This is a correctness baseline for collections that fit in local Qdrant's RAM.
+This is an exhaustive correctness baseline with streamed document-vector reads.
 The 3.8B base model alone needs roughly 15 GB for float32 weights or 7.6 GB for
 16-bit weights, excluding activations and framework overhead. Loading uses
 library defaults; no precision/quantization or custom GPU-memory controls are
 introduced. Budget additional RAM/VRAM for image tokens and page batches.
 At 128 dimensions, float32 token arrays need 512 bytes/token before SQLite and
 payload overhead; actual page token counts depend on the processor and page
-shape. Local Qdrant loads the entire vector collection into memory and warns
-above 20,000 points. Exact search scales with all page/token vectors per query.
-A temporary index copy needs additional disk space approximately equal to the
-persistent Qdrant directory. Exhaustive page-score exports grow as queries ×
-pages. Input identity checks read PDF hashes and page counts without rendering pages;
+shape. Qdrant's ordinary local client eagerly loads all points, temporarily
+retaining Python float lists alongside float64 arrays; retrieval avoids that
+loader. It still retains the page mapping, a byte per page for validation, and
+one winning-page record per paper per query in the current batch. The scorer
+uses float64 arrays to match the local client's scores and materializes a
+query-token × page-token similarity matrix for one page at a time. Exact search
+still scales with all page/token vectors per query. Repeated database scans and
+unpickling can make total retrieval slower than an already resident index.
+Exhaustive page-score exports grow as queries × pages.
+Input identity checks read PDF hashes and page counts without rendering pages;
 page images are rendered only during document encoding. No full-corpus timing, GPU compatibility,
-or scalability measurements have been performed.
+or full-corpus scalability measurements have been performed.
+
+Remaining OOM risks include model loading at library-default precision, large
+document/query batches, unusually large PDF page dimensions at the configured
+rendering scale (rasterization happens before processor resizing), and unusually
+long text queries. `model.batch_size=1` and
+`model.retrieval.batch_size=1` reduce batch-related peaks; the document batch
+setting changes index identity. Lower rendering scale also changes index
+identity and model inputs. Rendered images are closed even if a later page in
+the batch fails, and encoded document batches are released before encoding the
+next batch. Content-identity checks intentionally re-read PDF bytes to detect
+changes during a build; there is no persistent hash cache.
 
 Default tests use tiny synthetic PDFs, real PDFium rendering, Qdrant persistence
 and search, PyTerrier aggregation, shared serialization/evaluation, and mocked

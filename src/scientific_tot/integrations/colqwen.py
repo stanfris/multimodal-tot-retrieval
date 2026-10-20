@@ -2,10 +2,9 @@
 
 import json
 import pickle
-import shutil
 import sqlite3
 import tempfile
-from contextlib import closing
+from contextlib import ExitStack, closing
 from importlib.metadata import version
 from pathlib import Path
 from urllib.parse import quote, unquote
@@ -194,7 +193,12 @@ def load_model(cfg):
 def validate_points(
     database: Path, mapping: list[dict], dimension: int, *, allow_partial=False
 ) -> int:
-    """Read one persisted point at a time; never instantiate an in-memory Qdrant index."""
+    """Validate persisted points without instantiating an in-memory Qdrant index."""
+    return sum(1 for _ in iter_points(database, mapping, dimension, allow_partial=allow_partial))
+
+
+def iter_points(database: Path, mapping: list[dict], dimension: int, *, allow_partial=False):
+    """Yield validated page positions/vectors from read-only SQLite, one point at a time."""
     from qdrant_client.local.persistence import CollectionPersistence
     from tqdm.auto import tqdm
 
@@ -216,7 +220,8 @@ def validate_points(
                 or point.payload != mapping[position]
             ):
                 raise ValueError(f"Stored page identity/payload differs at position {position}")
-            vectors = np.asarray(point.vector, dtype=np.float32)
+            # Match LocalCollection.load_vectors: Python float lists become float64 arrays.
+            vectors = np.asarray(point.vector, dtype=np.float64)
             if (
                 vectors.ndim != 2
                 or vectors.shape[0] == 0
@@ -225,7 +230,7 @@ def validate_points(
             ):
                 raise ValueError(f"Invalid page vectors at position {position}")
             seen[position] = 1
-        return count
+            yield position, vectors
 
 
 def validate_collection(index: Path, dimension: int) -> None:
@@ -312,19 +317,16 @@ def persist_pages(corpus, cfg, model, mapping, resume_from: int) -> None:
                 with pdfium.PdfDocument(row["pdf_path"]) as pdf:
                     first = max(1, resume_from - position + 1)
                     for start in range(first, row["page_count"] + 1, cfg.model.batch_size):
-                        images = [
-                            render_page(pdf, number, cfg)
-                            for number in range(
-                                start, min(start + cfg.model.batch_size, row["page_count"] + 1)
-                            )
-                        ]
-                        try:
+                        with ExitStack() as stack:
+                            images = [
+                                stack.enter_context(closing(render_page(pdf, number, cfg)))
+                                for number in range(
+                                    start, min(start + cfg.model.batch_size, row["page_count"] + 1)
+                                )
+                            ]
                             vectors = model.encode_document(
                                 images, batch_size=cfg.model.batch_size, convert_to_numpy=True
                             )
-                        finally:
-                            for image in images:
-                                image.close()
                         assert len(vectors) == len(images)
                         for i, vector in enumerate(vectors):
                             offset = position + start - 1 + i
@@ -334,6 +336,7 @@ def persist_pages(corpus, cfg, model, mapping, resume_from: int) -> None:
                                 )
                             )
                             bar.update(1)
+                        del vectors, vector
                 position = end
         count = store.storage.execute("SELECT COUNT(*) FROM points").fetchone()[0]
         if count != len(mapping):
@@ -378,15 +381,15 @@ def aggregate_pages(pages: pd.DataFrame, cutoff: int) -> pd.DataFrame:
 
 
 def retrieve(cfg, target: Path) -> dict:
-    from qdrant_client import QdrantClient, models
+    from qdrant_client import models
+    from qdrant_client.local.multi_distances import calculate_multi_distance
     from tqdm.auto import tqdm
 
     location = Path(cfg.paths.index)
     manifest = verify_index(location, cfg)
     provenance = manifest["provenance"]
-    mapping = [
-        json.loads(line) for line in (location / "page-mapping.jsonl").read_text().splitlines()
-    ]
+    with (location / "page-mapping.jsonl").open(encoding="utf-8") as stream:
+        mapping = [json.loads(line) for line in stream]
     domains = provenance["document_domains"]
     if (
         len(mapping) != provenance["pages"]
@@ -414,62 +417,46 @@ def retrieve(cfg, target: Path) -> dict:
         raise ValueError("Checkpoint bytes differ from indexed model")
     batches = []
     page_score_count = 0
-    # Local Qdrant opens writable SQLite/lock files. Search a disposable copy to
-    # keep the published artifact immutable and allow independent concurrent runs.
-    with (
-        tempfile.TemporaryDirectory(prefix="colqwen-search-") as folder,
-        (target / "page-scores.jsonl").open("x", encoding="utf-8") as page_scores,
-    ):
-        work = Path(folder) / "qdrant"
-        shutil.copytree(location / "qdrant", work)
-        for path in work.rglob("*"):
-            if path.is_file():
-                path.chmod(0o600)
-        client = QdrantClient(path=str(work))
-        try:
-            if client.count("pages", exact=True).count != len(mapping):
-                raise ValueError("Qdrant page count differs from saved mapping")
-            size = cfg.model.retrieval.batch_size
-            topics = list(inputs.topics.itertuples())
-            for start in tqdm(range(0, len(topics), size), desc="Retrieving queries", unit="batch"):
-                chunk = topics[start : start + size]
-                vectors = model.encode_query(
-                    [topic.query for topic in chunk], batch_size=size, convert_to_numpy=True
-                )
-                assert len(vectors) == len(chunk)
-                for topic, vector in zip(chunk, vectors, strict=True):
-                    hits = client.query_points(
-                        "pages",
-                        query=vector.tolist(),
-                        limit=len(mapping),
-                        search_params=models.SearchParams(exact=cfg.model.indexing.exact),
-                        with_payload=True,
-                    ).points
-                    if len(hits) != len(mapping) or len({hit.id for hit in hits}) != len(mapping):
-                        raise ValueError("Exact page search did not exhaust the indexed collection")
-                    rows = []
-                    for hit in hits:
-                        if (
-                            type(hit.id) is not int
-                            or not 0 <= hit.id < len(mapping)
-                            or hit.payload != mapping[hit.id]
-                        ):
-                            raise ValueError("Qdrant result differs from canonical mapping")
-                        rows.append(
-                            {"qid": topic.qid, "docno": hit.payload["page_id"], "score": hit.score}
+    dimension = model.get_embedding_dimension()
+    validate_collection(location, dimension)
+    # Reuse Qdrant's exact scorer without its eager full-collection loader or disk copy.
+    with (target / "page-scores.jsonl").open("x", encoding="utf-8") as page_scores:
+        size = cfg.model.retrieval.batch_size
+        topics = list(inputs.topics.itertuples())
+        for start in tqdm(range(0, len(topics), size), desc="Retrieving queries", unit="batch"):
+            chunk = topics[start : start + size]
+            vectors = model.encode_query(
+                [topic.query for topic in chunk], batch_size=size, convert_to_numpy=True
+            )
+            assert len(vectors) == len(chunk)
+            vectors = [np.asarray(vector, dtype=np.float64) for vector in vectors]
+            best = [{} for _ in chunk]
+            for position, page_vectors in iter_points(
+                location / "qdrant/collection/pages/storage.sqlite", mapping, dimension
+            ):
+                payload = mapping[position]
+                for topic, vector, papers in zip(chunk, vectors, best, strict=True):
+                    score = float(
+                        calculate_multi_distance(vector, [page_vectors], models.Distance.DOT)[0]
+                    )
+                    doc_id = payload["doc_id"]
+                    if doc_id not in papers or score > papers[doc_id]["score"]:
+                        papers[doc_id] = {
+                            "qid": topic.qid,
+                            "docno": payload["page_id"],
+                            "score": score,
+                        }
+                    page_scores.write(
+                        json.dumps(
+                            {"qid": topic.qid, **payload, "score": score},
+                            ensure_ascii=False,
+                            allow_nan=False,
                         )
-                        page_scores.write(
-                            json.dumps(
-                                {"qid": topic.qid, **hit.payload, "score": hit.score},
-                                ensure_ascii=False,
-                                allow_nan=False,
-                            )
-                            + "\n"
-                        )
-                        page_score_count += 1
-                    batches.append(aggregate_pages(pd.DataFrame(rows), cfg.retrieval.top_k))
-        finally:
-            client.close()
+                        + "\n"
+                    )
+                    page_score_count += 1
+            for papers in best:
+                batches.append(aggregate_pages(pd.DataFrame(papers.values()), cfg.retrieval.top_k))
     run = pd.concat(batches, ignore_index=True)
     query_mapping = inputs.query_ids.copy()
     query_mapping["domain"] = query_mapping.query_key.map(
