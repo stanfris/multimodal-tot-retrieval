@@ -383,9 +383,11 @@ locked separate environment, source restoration, and resource limits.
 `config/model/colqwen.yaml` owns the official adapter and base identifiers/full
 commit revisions, `processor=checkpoint`, model device, document `batch_size`,
 and Qdrant settings. `distance=dot` and `comparator=max_sim` bind the external
-VectorParams; `exact=true` binds SearchParams and is mandatory. Query
-`model.retrieval.batch_size` binds `encode_query` independently and is excluded
-from index identity. Document batch size binds `encode_document` and PDF image
+VectorParams; `exact=true` requires exhaustive MaxSim search. Query
+`model.retrieval.batch_size` binds GPU `encode_query` batches independently.
+`model.retrieval.scoring_batch_size` controls how many encoded queries share a CPU
+matrix multiplication (default 16). Both are excluded from index identity.
+All queries share a single read-only page scan, regardless of either batch size. Document batch size binds `encode_document` and PDF image
 batching. The checkpoint processor supplies all image/text preprocessing;
 custom processors and other checkpoints are rejected. ColQwen defaults to
 `launcher=local_gpu` and requires `device=cuda`; CPU/MPS overrides are rejected.

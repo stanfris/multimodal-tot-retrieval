@@ -197,7 +197,14 @@ def validate_points(
     return sum(1 for _ in iter_points(database, mapping, dimension, allow_partial=allow_partial))
 
 
-def iter_points(database: Path, mapping: list[dict], dimension: int, *, allow_partial=False):
+def iter_points(
+    database: Path,
+    mapping: list[dict],
+    dimension: int,
+    *,
+    allow_partial=False,
+    description="Validating stored pages",
+):
     """Yield validated page positions/vectors from read-only SQLite, one point at a time."""
     from qdrant_client.local.persistence import CollectionPersistence
     from tqdm.auto import tqdm
@@ -209,7 +216,7 @@ def iter_points(database: Path, mapping: list[dict], dimension: int, *, allow_pa
             raise ValueError("Stored page count differs from corpus; cannot finalize this index")
         seen = bytearray(count)
         for key, blob in tqdm(
-            db.execute("SELECT id, point FROM points"), total=count, desc="Validating stored pages"
+            db.execute("SELECT id, point FROM points"), total=count, desc=description
         ):
             point = pickle.loads(blob)
             position = point.id
@@ -381,8 +388,6 @@ def aggregate_pages(pages: pd.DataFrame, cutoff: int) -> pd.DataFrame:
 
 
 def retrieve(cfg, target: Path) -> dict:
-    from qdrant_client import models
-    from qdrant_client.local.multi_distances import calculate_multi_distance
     from tqdm.auto import tqdm
 
     location = Path(cfg.paths.index)
@@ -419,44 +424,77 @@ def retrieve(cfg, target: Path) -> dict:
     page_score_count = 0
     dimension = model.get_embedding_dimension()
     validate_collection(location, dimension)
-    # Reuse Qdrant's exact scorer without its eager full-collection loader or disk copy.
+    topics = list(inputs.topics.itertuples())
+    size = cfg.model.retrieval.batch_size
+    vectors = []
+    for start in tqdm(range(0, len(topics), size), desc="Encoding queries", unit="batch"):
+        chunk = topics[start : start + size]
+        encoded = model.encode_query(
+            [topic.query for topic in chunk], batch_size=size, convert_to_numpy=True
+        )
+        assert len(encoded) == len(chunk)
+        vectors.extend(np.asarray(vector, dtype=np.float64) for vector in encoded)
+    del model, encoded
+    query_batches = []
+    size = cfg.model.retrieval.scoring_batch_size
+    for start in range(0, len(topics), size):
+        chunk = vectors[start : start + size]
+        offsets = np.cumsum([0, *(len(vector) for vector in chunk)])
+        query_batches.append((start, np.concatenate(chunk), offsets))
+    del vectors, chunk
+    documents = list(domains)
+    document_positions = {doc_id: i for i, doc_id in enumerate(documents)}
+    best = np.full((len(topics), len(documents)), -np.inf)
+    print(
+        f"Scoring {len(topics):,} queries in one page scan; "
+        f"paper-score buffer: {best.nbytes / 1024**2:.1f} MiB",
+        flush=True,
+    )
+    # Decode each page once. Batching query tokens turns small per-query dot
+    # products into larger matrix multiplications; each query still uses exact MaxSim.
     with (target / "page-scores.jsonl").open("x", encoding="utf-8") as page_scores:
-        size = cfg.model.retrieval.batch_size
-        topics = list(inputs.topics.itertuples())
-        for start in tqdm(range(0, len(topics), size), desc="Retrieving queries", unit="batch"):
-            chunk = topics[start : start + size]
-            vectors = model.encode_query(
-                [topic.query for topic in chunk], batch_size=size, convert_to_numpy=True
-            )
-            assert len(vectors) == len(chunk)
-            vectors = [np.asarray(vector, dtype=np.float64) for vector in vectors]
-            best = [{} for _ in chunk]
-            for position, page_vectors in iter_points(
-                location / "qdrant/collection/pages/storage.sqlite", mapping, dimension
-            ):
-                payload = mapping[position]
-                for topic, vector, papers in zip(chunk, vectors, best, strict=True):
-                    score = float(
-                        calculate_multi_distance(vector, [page_vectors], models.Distance.DOT)[0]
-                    )
-                    doc_id = payload["doc_id"]
-                    if doc_id not in papers or score > papers[doc_id]["score"]:
-                        papers[doc_id] = {
-                            "qid": topic.qid,
-                            "docno": payload["page_id"],
-                            "score": score,
-                        }
+        for position, page_vectors in iter_points(
+            location / "qdrant/collection/pages/storage.sqlite",
+            mapping,
+            dimension,
+            description="Scoring PDF pages",
+        ):
+            payload = mapping[position]
+            document = document_positions[payload["doc_id"]]
+            for start, query_vectors, offsets in query_batches:
+                token_scores = (query_vectors @ page_vectors.T).max(axis=1)
+                scores = np.array(
+                    [
+                        token_scores[first:last].sum()
+                        for first, last in zip(offsets[:-1], offsets[1:], strict=True)
+                    ]
+                )
+                current = best[start : start + len(scores), document]
+                np.maximum(current, scores, out=current)
+                for topic, score in zip(topics[start : start + len(scores)], scores, strict=True):
                     page_scores.write(
                         json.dumps(
-                            {"qid": topic.qid, **payload, "score": score},
+                            {"qid": topic.qid, **payload, "score": float(score)},
                             ensure_ascii=False,
                             allow_nan=False,
                         )
                         + "\n"
                     )
                     page_score_count += 1
-            for papers in best:
-                batches.append(aggregate_pages(pd.DataFrame(papers.values()), cfg.retrieval.top_k))
+    page_ids = [page_id(doc_id, 1) for doc_id in documents]
+    for topic, scores in zip(topics, best, strict=True):
+        batches.append(
+            aggregate_pages(
+                pd.DataFrame(
+                    {
+                        "qid": topic.qid,
+                        "docno": page_ids,
+                        "score": scores,
+                    }
+                ),
+                cfg.retrieval.top_k,
+            )
+        )
     run = pd.concat(batches, ignore_index=True)
     query_mapping = inputs.query_ids.copy()
     query_mapping["domain"] = query_mapping.query_key.map(

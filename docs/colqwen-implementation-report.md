@@ -67,8 +67,9 @@ Qdrant supplies persistent SQLite storage and exact DOT/MAX_SIM scoring. Its loc
 mode was selected after considering ST similarity (no persistent index), the
 existing single-vector FAISS backend (no equivalent MaxSim index), and approximate
 PLAID-style candidate indexing. Qdrant has no HNSW graph in this baseline. Search
-streams read-only SQLite points through the pinned Qdrant MaxSim scorer without
-opening a local client or making a temporary index copy.
+streams read-only SQLite points once for all queries without opening a local
+client or making a temporary index copy. Batched NumPy DOT/MaxSim is checked
+against the pinned Qdrant scorer.
 
 Shared identities include canonical papers, PDF SHA256/source joins/page counts,
 dataset provenance, pinned adapter/base, rendering, model/index configuration,
@@ -126,8 +127,8 @@ argument, selection, or supported-value constraint; the experiment copies no set
 ## Practical limits
 
 Original PDFs must already be restored; packaged PDF TAR restoration is delegated
-to the existing upstream tool. Retrieval scans the stored vectors once per query
-batch, retaining one page's vectors and each query's paper maxima. Exact scoring
+to the existing upstream tool. Retrieval scans the stored vectors once for all
+queries, retaining one page's vectors and compact query-by-paper maxima. Exact scoring
 still visits all pages for every query. Preparation and content-identity checks
 read hashes and page counts without rendering pages. Pages are rendered only for
 document encoding; there is no page-image cache. Page-score exports scale with
@@ -171,5 +172,26 @@ opening the local client took 0.206 s before the first page was available and
 increased peak RSS by 202.6 MiB. Reading the first streamed page took 0.006 s;
 validating the whole stream took 0.097 s and increased peak RSS by 4.3 MiB.
 These figures exclude model loading, scoring, shared identity checks and output
-writing; they do not establish full-corpus retrieval throughput. Each query batch
-re-reads and unpickles the stored points, which trades repeated I/O for lower RAM.
+writing; they do not establish full-corpus retrieval throughput. This initial
+streaming version re-read stored points per query batch and is superseded below.
+
+Single-pass retrieval now encodes queries in GPU batches of two, retains CPU
+query embeddings, and scans each stored page once for all queries. CPU scoring
+concatenates the token matrices of up to `model.retrieval.scoring_batch_size`
+queries (default 16), computes one DOT product, and applies the usual per-query
+MaxSim reduction. Float64 query-by-paper maxima use 8 × queries × papers bytes;
+the buffer size is reported before scoring. Query batch controls are excluded
+from index identity, so existing indexes remain compatible. The page progress bar
+now says `Scoring PDF pages`, including validation, scoring and JSON output.
+
+Offline parity tests cover 2- and 128-dimensional ragged vectors, negative scores,
+ties, GPU encoding batch sizes 1/2, and CPU scoring group sizes 1/2/16. They
+require exactly one database scan and matching paper rankings, with page scores
+matching Qdrant at 1e-12 relative/absolute tolerance. Floating-point batching can
+change final rounding; this remains exhaustive MaxSim rather than approximation.
+
+A synthetic single-BLAS-thread comparison used 110 ragged queries (16–19 tokens),
+32 pages (256 tokens each), and 128 dimensions. Repeated decoding and individual
+Qdrant scoring took 1.256 s; single-pass decoding and batched scoring took 0.037 s
+(33.6×), with zero score difference in that sample. This excludes SQLite I/O,
+GPU encoding and JSON output, and does not predict DGX03 end-to-end throughput.

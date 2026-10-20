@@ -176,6 +176,7 @@ def test_independent_lifecycle_identity_reuse_and_integrity(
         "split.queries=train",
         "retrieval.top_k=10",
         "model.retrieval.batch_size=7",
+        "model.retrieval.scoring_batch_size=32",
     )
     assert resolve_identity(changed) == identity
     default, _ = settings(tmp_path, dataset, "index")
@@ -226,7 +227,11 @@ def test_pdf_bytes_and_corruption_change_identity(tmp_path, dataset, encoder):
 
 
 @pytest.mark.parametrize("batch_size", [1, 2])
-def test_streamed_search_matches_local_qdrant(tmp_path, dataset, encoder, monkeypatch, batch_size):
+@pytest.mark.parametrize("scoring_batch_size", [1, 2, 16])
+@pytest.mark.parametrize("dimension", [2, 128])
+def test_streamed_search_matches_local_qdrant(
+    tmp_path, dataset, encoder, monkeypatch, batch_size, scoring_batch_size, dimension
+):
     from contextlib import closing
 
     from qdrant_client import QdrantClient, models
@@ -246,15 +251,26 @@ def test_streamed_search_matches_local_qdrant(tmp_path, dataset, encoder, monkey
         100: [[-1.0, -0.5]],  # Tied paper maxima for query 0; all scores negative.
     }
     queries = [np.array(v, dtype=np.float32) for v in ([[1, 0]], [[0, 1], [1, 0]], [[-1, 1]])]
+    if dimension == 128:
+        rng = np.random.default_rng(17)
+        documents = {
+            width: rng.standard_normal((len(vectors) * 11, dimension)).astype(np.float32)
+            for width, vectors in documents.items()
+        }
+        queries = [
+            rng.standard_normal((len(v) * 17, dimension)).astype(np.float32) for v in queries
+        ]
+    encoding_batches = []
 
     class Model:
         def get_embedding_dimension(self):
-            return 2
+            return dimension
 
         def encode_document(self, images, **kwargs):
             return [np.array(documents[image.width], dtype=np.float32) for image in images]
 
         def encode_query(self, texts, **kwargs):
+            encoding_batches.append(list(texts))
             return [queries[int(text.split()[-1])] for text in texts]
 
     monkeypatch.setattr(colqwen, "load_model", lambda cfg: (Model(), {"checkpoint_files": {}}))
@@ -286,6 +302,14 @@ def test_streamed_search_matches_local_qdrant(tmp_path, dataset, encoder, monkey
 
     monkeypatch.setattr("qdrant_client.QdrantClient", blocked)
     monkeypatch.setattr(shutil, "copytree", blocked)
+    read_points = colqwen.iter_points
+    scans = []
+
+    def counted_scan(*args, **kwargs):
+        scans.append(args[0])
+        yield from read_points(*args, **kwargs)
+
+    monkeypatch.setattr(colqwen, "iter_points", counted_scan)
     output, _, _ = execute(
         tmp_path,
         dataset,
@@ -293,13 +317,24 @@ def test_streamed_search_matches_local_qdrant(tmp_path, dataset, encoder, monkey
         "run",
         f"paths.index={index}",
         f"model.retrieval.batch_size={batch_size}",
+        f"model.retrieval.scoring_batch_size={scoring_batch_size}",
     )
+    assert len(scans) == 1
+    assert [text for batch in encoding_batches for text in batch] == [
+        f"query {i}" for i in range(3)
+    ]
+    assert all(len(batch) <= batch_size for batch in encoding_batches)
     scores = [json.loads(line) for line in (output / "page-scores.jsonl").read_text().splitlines()]
     assert len(scores) == len(expected_scores)
-    assert {(row["qid"], row["page_id"]): row["score"] for row in scores} == expected_scores
+    assert {(row["qid"], row["page_id"]): row["score"] for row in scores} == pytest.approx(
+        expected_scores, rel=1e-12, abs=1e-12
+    )
     run = pd.read_csv(output / "run.trec", sep=r"\s+", header=None, float_precision="round_trip")
     for qid, group in run.groupby(0, sort=False):
-        assert list(zip(group[2], group[4], strict=True)) == expected_rankings[qid]
+        assert group[2].tolist() == [doc for doc, _ in expected_rankings[qid]]
+        assert group[4].tolist() == pytest.approx(
+            [score for _, score in expected_rankings[qid]], rel=1e-12, abs=1e-12
+        )
     verify_index(index, cfg)
 
 
@@ -330,6 +365,7 @@ def test_index_closes_images_when_rendering_fails(tmp_path, dataset, encoder, mo
         "model.indexing.exact=false",
         "model.revision=main",
         "model.batch_size=0",
+        "model.retrieval.scoring_batch_size=0",
         "model.processor=custom",
     ],
 )

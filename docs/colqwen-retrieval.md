@@ -177,9 +177,12 @@ validation and repeated file checksums can take substantial time for large
 databases. Leave the original PDFs and index files unchanged throughout.
 
 Indexing, recovery, and retrieval avoid loading the stored collection into RAM.
-Retrieval reads the sealed SQLite database in read-only mode and uses Qdrant's
-pinned DOT/MAX_SIM scoring function directly. It retains one page's vectors and
-paper maxima for the current query batch, with no temporary database copy.
+Retrieval reads the sealed SQLite database once in read-only mode and computes
+DOT/MAX_SIM with batched NumPy matrix multiplication. It retains one page's vectors,
+CPU query embeddings, and a compact query-by-paper score matrix, with no temporary
+database copy. Scores are checked against the pinned Qdrant scorer in offline
+tests; batching may introduce floating-point roundoff without changing the
+exhaustive MaxSim algorithm.
 
 Retrieval reads only a completed index and selected queries. Automatic selection
 checks saved index metadata and file presence without reopening the PDF
@@ -188,11 +191,15 @@ do not detect changed index-file bytes. If several
 compatible indexes exist, provide `paths.index=...` explicitly. This is useful
 when the same configuration has been indexed against different PDF contents.
 It encodes text in query batches with the official query encoder. It never
-renders or encodes document pages. Each query batch scans the saved points once,
-validating IDs, payloads, vector dimensions and finite values as it reads.
-The read-only scan preserves the published artifact and permits concurrent
-independent runs. Increasing `model.retrieval.batch_size` reduces the number of
-database scans but increases query-encoding VRAM and paper-maxima RAM.
+renders or encodes document pages. GPU encoding uses
+`model.retrieval.batch_size` (default 2), and all query embeddings are retained
+on the CPU. Then one page scan scores every query, validating points as it reads.
+`model.retrieval.scoring_batch_size` (default 16) controls CPU matrix size
+independently of GPU encoding; lowering it reduces temporary scoring RAM.
+The progress bar is labeled `Scoring PDF pages` because it includes scoring and
+page-score output, not just validation. The read-only scan preserves the published
+artifact and permits concurrent independent runs. Neither query batch setting
+changes index identity; existing indexes remain usable.
 
 ## Ranking and evaluation
 
@@ -239,11 +246,12 @@ payload overhead; actual page token counts depend on the processor and page
 shape. Qdrant's ordinary local client eagerly loads all points, temporarily
 retaining Python float lists alongside float64 arrays; retrieval avoids that
 loader. It still retains the page mapping, a byte per page for validation, and
-one winning-page record per paper per query in the current batch. The scorer
-uses float64 arrays to match the local client's scores and materializes a
-query-token × page-token similarity matrix for one page at a time. Exact search
-still scales with all page/token vectors per query. Repeated database scans and
-unpickling can make total retrieval slower than an already resident index.
+all CPU query embeddings and a float64 query-by-paper maximum-score matrix
+(8 × queries × papers bytes). The matrix size is printed before scoring.
+For 110 queries and 30,000 papers, it uses about 25 MiB. CPU scoring materializes
+a query-token × page-token matrix for at most `scoring_batch_size` queries and
+one page at a time. Exact search still scales with all page/token vectors per
+query, but each page is read and unpickled only once.
 Exhaustive page-score exports grow as queries × pages.
 Input identity checks read PDF hashes and page counts without rendering pages;
 page images are rendered only during document encoding. No full-corpus timing, GPU compatibility,
@@ -253,8 +261,9 @@ Remaining OOM risks include model loading at library-default precision, large
 document/query batches, unusually large PDF page dimensions at the configured
 rendering scale (rasterization happens before processor resizing), and unusually
 long text queries. `model.batch_size=1` and
-`model.retrieval.batch_size=1` reduce batch-related peaks; the document batch
-setting changes index identity. Lower rendering scale also changes index
+`model.retrieval.batch_size=1` reduce encoding peaks;
+`model.retrieval.scoring_batch_size=1` reduces temporary CPU scoring memory.
+The document batch setting changes index identity. Lower rendering scale also changes index
 identity and model inputs. Rendered images are closed even if a later page in
 the batch fails, and encoded document batches are released before encoding the
 next batch. Content-identity checks intentionally re-read PDF bytes to detect
