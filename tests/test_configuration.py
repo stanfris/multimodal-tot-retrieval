@@ -469,6 +469,29 @@ def test_index_contract_and_integrity(tmp_path):
         verify_index(index, cfg)
 
 
+def test_index_verification_does_not_hash_index_data(tmp_path, monkeypatch):
+    from scientific_tot.config_artifacts import verify_index, write_index_manifest
+
+    index = tmp_path / "index"
+    index.mkdir()
+    data = index / "data.properties"
+    data.write_text("offline index")
+    built = resolve_config(config("stage=index"), tmp_path)
+    provenance = {"dataset_revision": None, "model_revision": None, "corpus_sha256": "a" * 64}
+    write_index_manifest(index, built, provenance=provenance)
+    cfg = resolve_config(config("stage=retrieve", "paths.index=index"), tmp_path)
+
+    def blocked(*args, **kwargs):
+        raise AssertionError("Index selection and preflight must not hash index files")
+
+    monkeypatch.setattr("scientific_tot.config_artifacts.artifact_reference", blocked)
+    data.write_text("changed bytes are deliberately not checked during retrieval")
+    assert verify_index(index, cfg)["provenance"] == provenance
+    data.unlink()
+    with pytest.raises(FileNotFoundError, match="Incomplete persistent index"):
+        verify_index(index, cfg)
+
+
 def test_consumer_preflight_prevents_dispatch(tmp_path, monkeypatch):
     cfg = resolve_config(config("stage=retrieve", "paths.index=legacy-index"), tmp_path)
     calls = []

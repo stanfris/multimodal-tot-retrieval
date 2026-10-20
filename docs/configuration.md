@@ -255,6 +255,9 @@ resolved dataset/model revisions, and corpus SHA256. It uses exclusive creation.
 `verify_index` is wired into retrieve/search preflight before backend dispatch.
 It rejects missing/unsupported manifests, incomplete artifacts, changed configuration,
 model/corpus/representation mismatch, and mismatched pinned revision provenance.
+It checks metadata and file presence without rehashing index data. Automatic
+index selection uses the same lightweight checks; changing index-file bytes is
+not detected by this preflight.
 Query split, metric selection, ranking depth, BM25 retrieval controls, and dense
 query prompt may change without rebuilding the corpus index. Other model build
 settings and original dataset locations are conservatively required to match.

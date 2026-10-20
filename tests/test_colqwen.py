@@ -221,8 +221,8 @@ def test_pdf_bytes_and_corruption_change_identity(tmp_path, dataset, encoder):
     manifest = index / "page-mapping.jsonl"
     manifest.chmod(0o644)
     manifest.write_text("{}\n")
-    with pytest.raises(ValueError, match="checksum"):
-        verify_index(index, cfg)
+    with pytest.raises(FileExistsError, match="checksum"):
+        verify_completed(index, cfg, identity)
 
 
 @pytest.mark.parametrize("batch_size", [1, 2])

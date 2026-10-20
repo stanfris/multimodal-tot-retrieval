@@ -217,7 +217,7 @@ def test_unsupported_configuration(tmp_path, override):
         settings(tmp_path, "index", tmp_path / "index", override)
 
 
-def test_corrupt_and_incompatible_indexes_fail_before_search(tmp_path, backend):
+def test_missing_and_incompatible_indexes_fail_before_search(tmp_path, backend):
     index, cfg, hydra = execute(tmp_path, "index", "index")
     with pytest.raises(ValueError, match="differs"):
         execute(
@@ -233,8 +233,10 @@ def test_corrupt_and_incompatible_indexes_fail_before_search(tmp_path, backend):
         )
     path = index / "colbert/0.residuals.pt"
     path.write_bytes(b"corrupt")
-    with pytest.raises(ValueError, match="corrupt"):
-        execute(tmp_path, "retrieve", "corrupt", f"paths.index={index}")
+    assert verify_index(index, cfg)  # Preflight deliberately does not checksum data.
+    path.unlink()
+    with pytest.raises(FileNotFoundError, match="Incomplete persistent index"):
+        execute(tmp_path, "retrieve", "missing", f"paths.index={index}")
     with pytest.raises(FileExistsError, match="invalid artifact"):
         run_stage(cfg, index, hydra, ROOT)
     assert len(backend) == 2

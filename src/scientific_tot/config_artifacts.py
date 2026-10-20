@@ -108,7 +108,7 @@ def write_index_manifest(index: Path, cfg: DictConfig, *, provenance: dict) -> N
 
 
 def verify_index(index: Path, cfg: DictConfig, *, allow_building: bool = False) -> dict:
-    """Fail closed before a backend opens an index built with incompatible settings."""
+    """Check completion, compatible metadata, and file presence without hashing index data."""
     manifest = json.loads((index / "index-manifest.json").read_text())
     if manifest.get("schema_version") != 2 or manifest.get("status") != "completed":
         raise ValueError("Index manifest is not a completed supported artifact")
@@ -150,13 +150,9 @@ def verify_index(index: Path, cfg: DictConfig, *, allow_building: bool = False) 
         "artifact_sha256"
     ):
         raise ValueError("Index identity checksum differs")
-    for name, reference in manifest.get("index_files", {}).items():
+    for name in manifest["index_files"]:
         if not (index / name).is_file():
             raise FileNotFoundError(f"Incomplete persistent index: {index / name}")
-        if artifact_reference(index / name) != reference:
-            raise ValueError(
-                f"Incomplete/corrupt index artifact reference/checksum differs: {name}"
-            )
     return manifest
 
 

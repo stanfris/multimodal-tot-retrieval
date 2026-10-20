@@ -184,7 +184,6 @@ def hydra_directory(*, _root_) -> str:
         # Hydra creates the directory before dispatch; remember whether it already existed.
         INDEX_EXISTENCE.setdefault(directory, directory.exists())
         return str(directory)
-    print(f"Planning {cfg.stage.name}: resolving selected inputs...", flush=True)
     identity = resolve_identity(cfg)
     directory = artifact_directory(cfg, identity)
     if directory in PLANNED_IDENTITIES and PLANNED_IDENTITIES[directory] != identity:

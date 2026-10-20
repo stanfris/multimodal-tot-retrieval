@@ -182,7 +182,9 @@ pinned DOT/MAX_SIM scoring function directly. It retains one page's vectors and
 paper maxima for the current query batch, with no temporary database copy.
 
 Retrieval reads only a completed index and selected queries. Automatic selection
-uses saved index metadata without reopening the PDF collection. If several
+checks saved index metadata and file presence without reopening the PDF
+collection or hashing the SQLite database and other index files. These checks
+do not detect changed index-file bytes. If several
 compatible indexes exist, provide `paths.index=...` explicitly. This is useful
 when the same configuration has been indexed against different PDF contents.
 It encodes text in query batches with the official query encoder. It never
