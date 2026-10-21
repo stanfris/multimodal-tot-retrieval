@@ -75,8 +75,6 @@ def visual_corpus_digest(corpus, cfg) -> str:
 
 def load_visual_corpus(adapter, cfg) -> Records:
     """Use original PDFs or supplied images, with explicit MinerU alignment for mixed input."""
-    from PIL import Image
-
     from scientific_tot.reporting import tqdm
 
     strategy = cfg.model.document_input
@@ -105,13 +103,13 @@ def load_visual_corpus(adapter, cfg) -> Records:
         issues=list(selected.report.issues),
     )
     rows = []
-    for paper in tqdm(selected, desc="Reading supplied images", unit="paper"):
+    for paper in tqdm(
+        selected, desc="Fingerprinting figure inputs for cache identity", unit="paper"
+    ):
         figures = []
         for figure in paper["figures"]:
             try:
                 data = store.read_bytes(figure["image"]["path"])
-                with Image.open(BytesIO(data)) as image:
-                    image.verify()
                 figure["image_sha256"] = hashlib.sha256(data).hexdigest()
             except DatasetFormatError:
                 raise
@@ -288,8 +286,6 @@ def _load_batch(rows, cfg, task, store):
             for row in rows:
                 if cfg.model.get("document_input") == "figures":
                     data = store.read_bytes(row["image_path"])
-                    if hashlib.sha256(data).hexdigest() != row["image_sha256"]:
-                        raise ValueError(f"Image changed during encoding: {row['image_path']}")
                     with Image.open(BytesIO(data)) as source:
                         image = source.convert("RGB")
                 else:
