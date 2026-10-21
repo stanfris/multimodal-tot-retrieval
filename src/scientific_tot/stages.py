@@ -10,6 +10,7 @@ from scientific_tot.config_arguments import (
     corpus_arguments,
     query_arguments,
 )
+from scientific_tot.configuration import VISUAL_DENSE_MODELS
 
 
 def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
@@ -26,7 +27,7 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
             from scientific_tot.integrations.colbert import retrieve_colbert
 
             return retrieve_colbert(cfg, run_dir)
-        if cfg.model.name == "dense":
+        if cfg.model.name in {"dense"} | VISUAL_DENSE_MODELS:
             from scientific_tot.integrations.dense_batch import retrieve_dense
 
             return retrieve_dense(cfg, run_dir)
@@ -61,7 +62,12 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
         f"representation={cfg.representation.name}",
         flush=True,
     )
-    corpus = adapter.load_corpus(**corpus_arguments(cfg))
+    if cfg.model.name in VISUAL_DENSE_MODELS:
+        from scientific_tot.integrations.visual_dense import load_visual_corpus
+
+        corpus = load_visual_corpus(adapter, cfg)
+    else:
+        corpus = adapter.load_corpus(**corpus_arguments(cfg))
     print(f"Selected corpus: {len(corpus):,} documents", flush=True)
     if cfg.stage.name == "index":
         from types import SimpleNamespace
@@ -72,19 +78,22 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
             f"output={cfg.paths.index}",
             flush=True,
         )
-        documents = tuple({"docno": row["doc_id"], "text": row["text"]} for row in corpus)
-        if not documents or any(
-            not row["text"].strip() or any(c.isspace() for c in row["docno"]) for row in documents
-        ):
-            raise ValueError("Index requires nonempty text and canonical document IDs")
-        inputs = SimpleNamespace(documents=documents)
+        inputs = None
+        if cfg.model.name not in VISUAL_DENSE_MODELS:
+            documents = tuple({"docno": row["doc_id"], "text": row["text"]} for row in corpus)
+            if not documents or any(
+                not row["text"].strip() or any(c.isspace() for c in row["docno"])
+                for row in documents
+            ):
+                raise ValueError("Index requires nonempty text and canonical document IDs")
+            inputs = SimpleNamespace(documents=documents)
         if cfg.model.name == "colbert":
             from scientific_tot.integrations.colbert import build_colbert_index
 
             provenance = build_colbert_index(
                 corpus, inputs, cfg, reserved=Path(cfg.paths.index) == run_dir
             )
-        elif cfg.model.name == "dense":
+        elif cfg.model.name in {"dense"} | VISUAL_DENSE_MODELS:
             from scientific_tot.integrations.dense_batch import build_dense_index
 
             provenance = build_dense_index(
@@ -114,6 +123,15 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
     for records in (corpus, queries, qrels):
         records.write_jsonl(run_dir / f"{records.kind}.jsonl")
     result["output_dir"] = str(run_dir)
+    if cfg.model.name in VISUAL_DENSE_MODELS:
+        from scientific_tot.integrations.visual_dense import document_mapping
+        from scientific_tot.records import Records, Report
+
+        units = document_mapping(corpus, cfg)
+        Records("unit_mapping", units, Report(emitted=len(units)), corpus.provenance).write_jsonl(
+            run_dir / "unit-mapping.jsonl"
+        )
+        result["units"] = len(units)
     if cfg.representation.name == "passages":
         from scientific_tot.integrations.dense_batch import project_passages
 

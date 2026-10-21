@@ -16,6 +16,9 @@ resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 conflicts = [[
+    { package = "scientific-tot-retrieval", extra = "colqwen" },
+    { package = "scientific-tot-retrieval", extra = "visual" },
+], [
     { package = "scientific-tot-retrieval", extra = "colbert" },
     { package = "scientific-tot-retrieval", extra = "colqwen" },
 ], [
@@ -32,8 +35,8 @@ version = "1.15.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub", version = "1.33.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "packaging" },
     { name = "psutil" },
     { name = "pyyaml" },
@@ -257,7 +260,7 @@ version = "4.15.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "idna" },
-    { name = "typing-extensions", marker = "python_full_version < '3.15' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.15' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a9/d2/f4d173e22df740bc37b1db102b386ba719b66e95b0f0d751f556b387e6d2/anyio-4.15.1.tar.gz", hash = "sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94", size = 276966, upload-time = "2026-09-05T10:42:39.44Z" }
 wheels = [
@@ -370,6 +373,74 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9a/8e/82a0fe20a541c03148528be8cac2408564a6c9a0cc7e9171802bc1d26985/attrs-26.1.0.tar.gz", hash = "sha256:d03ceb89cb322a8fd706d4fb91940737b6642aa36998fe130a9bc96c985eff32", size = 952055, upload-time = "2026-03-19T14:22:25.026Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl", hash = "sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309", size = 67548, upload-time = "2026-03-19T14:22:23.645Z" },
+]
+
+[[package]]
+name = "av"
+version = "18.1.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.12' and sys_platform == 'win32'",
+    "python_full_version < '3.12' and sys_platform == 'emscripten'",
+    "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8d/f4/f22114d30d3435e38c6af2b4870f37b864403dca6ae7af747a289ce0a18e/av-18.1.0.tar.gz", hash = "sha256:47bfc286e1bc9de7ab4681fc2b575cd2460a66919d31ffe1bd5aa54fae531a28", size = 4451061, upload-time = "2026-08-12T22:28:18.761Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/05/d4/d7cdc8bff143c17a6d35924375ae28dd692cacde38700a7d419fde54f44a/av-18.1.0-cp311-abi3-macosx_11_0_x86_64.whl", hash = "sha256:ae75d8bb6467895ed1f8572ededf7ffa49eac07f6e483222f5d7d62a41d12f04", size = 22546147, upload-time = "2026-08-12T22:27:11.851Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/c9/37a619297492256b77d5ed906e7d8166c10a26ed251dccf1ae03ab19bff6/av-18.1.0-cp311-abi3-macosx_14_0_arm64.whl", hash = "sha256:b30a4e8d934558e19602b68998a4d9ac9f250fa0dacef216f7e8e40153b13316", size = 18217603, upload-time = "2026-08-12T22:27:14.713Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/84/2464ffb64c08c5ce8b522c8e74594714414e3b0575267652c5c51c0574b9/av-18.1.0-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:6fc837cc51adf80331ac850779cd53b5d4c4460b0ebe9057a02a921c6736f19d", size = 33640142, upload-time = "2026-08-12T22:27:17.835Z" },
+    { url = "https://files.pythonhosted.org/packages/27/3a/204dbfc3e08eb4cdc6e6ff57be02150bc44523ebdb50182d10025792ebd9/av-18.1.0-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:8a032e8d8ebc73dec079364b9b4a6837638a2d106e8472314e685ffbf163e700", size = 35786210, upload-time = "2026-08-12T22:27:20.984Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/99/b0d04ec553ff9a7e00455458dfa3a39c8a8f627b273056b4e5fe57d590de/av-18.1.0-cp311-abi3-manylinux_2_31_armv7l.whl", hash = "sha256:3c8b1f8b46f99d52e2d8b0ed5d0cdadf172d24794d46e2077b16e44ed08e26ff", size = 39379798, upload-time = "2026-08-12T22:27:24.432Z" },
+    { url = "https://files.pythonhosted.org/packages/56/b1/e00d4feae59160149df6126585e726fdc6300798fd40c5dd324879e81f68/av-18.1.0-cp311-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:ab5ac081bc9eaf54109120d4e56284674fecfbe520d9aa1707c7fa911ec5f4d2", size = 34690321, upload-time = "2026-08-12T22:27:27.769Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/94/836fa987e3084d11a21489f11357fb24843ef3aa8faf74ddddfc603d5062/av-18.1.0-cp311-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:191224788d87af06c31784a395bb73f14b72f33d7f4871ace0157de2abdc6276", size = 36859932, upload-time = "2026-08-12T22:27:31.403Z" },
+    { url = "https://files.pythonhosted.org/packages/33/b4/76ba21e46704f632004276b85289a1582e95f5eff760436d6149875a1881/av-18.1.0-cp311-abi3-win_amd64.whl", hash = "sha256:ea1480b7a8d5405cb5f382b344731bf125fd2c1c6fae3964f6c48595628387ff", size = 27595679, upload-time = "2026-08-12T22:27:35.177Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/ad/a3135884c5753b09773176b97201ae602f67ad14206c395ff838d66bf9b0/av-18.1.0-cp311-abi3-win_arm64.whl", hash = "sha256:5509ec12aaa19fd6601de13cfa6f4cdad450da07982118510592875d970454d6", size = 20257584, upload-time = "2026-08-12T22:27:38.472Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/5b/4a756265d7fb164336c8d377bca21c39cfa2c178be23cedee840a69b59c5/av-18.1.0-cp314-cp314t-macosx_11_0_x86_64.whl", hash = "sha256:b36b0bae9e4c62f9487c99481ec15e4e3870fcc868522cd6d18fc2d6bfa04f01", size = 22795654, upload-time = "2026-08-12T22:27:42.016Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/cc/1bc841462114a1adf4f7d87456ab78a6972e23271e71865fcd2bbd0e7360/av-18.1.0-cp314-cp314t-macosx_14_0_arm64.whl", hash = "sha256:025f84494cb23278498f03b0d8117d3e47a1cbc9c44b97eb31875cf02251e46b", size = 18435735, upload-time = "2026-08-12T22:27:45.787Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/20/005500ed17a2e62a5e4bb94aa3786942560ec2f55ec1895ebf174c87abef/av-18.1.0-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:08a9ae288299cfcbf739dba4ad0c53b9b71f45184303dd45947920d022fed695", size = 37090807, upload-time = "2026-08-12T22:27:50.14Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/f7/11e7f6d848d3690c31ca4f8578167393e619177f1493ccc93b9400852d4e/av-18.1.0-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:cf8a17466bef07765dbdecc9e66ed9b25d20b4e14f654fbf35345a58ac45fa0c", size = 38976836, upload-time = "2026-08-12T22:27:54.565Z" },
+    { url = "https://files.pythonhosted.org/packages/c3/63/b271473b24e806062d31191e40c6d65545e9cf59f80f044eba56dcbba0f4/av-18.1.0-cp314-cp314t-manylinux_2_31_armv7l.whl", hash = "sha256:d49a5c542dfdc00f43c6cdb6cc41dac1781ee206fe180b56aa7433dfa816dfae", size = 40896630, upload-time = "2026-08-12T22:27:59.118Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/9f/2ab7fa292a947ad3466ed8e655eefa3b82f535d7ea598c297b4471a937c4/av-18.1.0-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:5548b79e2bf1f59b3e9aedc918a72d9dc45b9adaac10ff9470d5dbdda0002e47", size = 37895673, upload-time = "2026-08-12T22:28:03.98Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/d8/04507c57249b399c3e4f23f01d221532f357338b5316fd2858fbd343127d/av-18.1.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:e7ea063f6690193ea335a1d592d6e0274350d45e2ed6af83ee107cb90cbfd84f", size = 39992431, upload-time = "2026-08-12T22:28:08.736Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/d6/bc4b95bea9c2353a7e4d62a3fcfad9adcf0f881741c6ce01ee179d539ce3/av-18.1.0-cp314-cp314t-win_amd64.whl", hash = "sha256:e4d48b9f12cad009cc72fe4f4099107de5e819c95f82767f4fd01a01481c0661", size = 28497798, upload-time = "2026-08-12T22:28:13.003Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/d2/0c277a46f12647c1833f40496e132fb6001e0d19e6144b5ea30896461feb/av-18.1.0-cp314-cp314t-win_arm64.whl", hash = "sha256:5cd9085028902c9880622bd37a12fd4b33060f06a52311f6f4867ca9f29a2c3b", size = 21421979, upload-time = "2026-08-12T22:28:16.48Z" },
+]
+
+[[package]]
+name = "av"
+version = "19.0.2"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
+    "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32'",
+    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
+    "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/23/01/76b6bf563fe907597cf58f10d10168e93fe588b6db9f2658db87e87efa7e/av-19.0.2.tar.gz", hash = "sha256:bebbc52598886480f4d861c575dc2b020785d6c04e1308680ddcc545e1b94c66", size = 4277157, upload-time = "2026-10-21T03:45:30.799Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4a/2f/f51f37820741134516e841053d5ecebf6350fbd451adcbff9ead96aa1244/av-19.0.2-cp312-abi3-macosx_11_0_x86_64.whl", hash = "sha256:f5f7bcf987567cd3f9b01f1c375c59bf59d8a5b98c9c5c154aeda7a11e0c5dce", size = 22627374, upload-time = "2026-10-21T03:44:28.296Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/42/067d0bcd2c07103f18cc23b510a8289dd80330e984c49d51ce0bafcee017/av-19.0.2-cp312-abi3-macosx_14_0_arm64.whl", hash = "sha256:b0dff6dfcc6ff9944fbbff15bc4ee2d90a2c1695d493bdea96e86f48823e9feb", size = 18556422, upload-time = "2026-10-21T03:44:31.267Z" },
+    { url = "https://files.pythonhosted.org/packages/de/0c/448f89f76cf5e4da35dd6294a1e8155b75daa8839f2f2fa353775855d152/av-19.0.2-cp312-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:04c8e412642c652cb2b1997a9cb2114546ee7d894600c631f4be8ceb26a0d0d2", size = 32683287, upload-time = "2026-10-21T03:44:34.588Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/7f/9f1237feb894afa472ef834aa1fbfe4d6398f28dc7e86a1b418650204c36/av-19.0.2-cp312-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:9c1da7aad0fa6c13b4a5c1e7985be0d13f8526a96284573acaf3d55ead6d3fe8", size = 34990159, upload-time = "2026-10-21T03:44:37.637Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/b5/1bde0e54e525d88ad8f5becae657f8142543fd3be9d10b72141f041ca868/av-19.0.2-cp312-abi3-manylinux_2_31_armv7l.whl", hash = "sha256:9d4f9f78c0ce1f20deb72626fdb3c723757f61a8cd6fbb7dd44d9401884a91fd", size = 44422922, upload-time = "2026-10-21T03:44:41.847Z" },
+    { url = "https://files.pythonhosted.org/packages/08/21/65997929fa4dd7c20f64e742aa87205a8d65485718a2ab51633756078e83/av-19.0.2-cp312-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:dfe7af5aa8243afd5d4778f85ad1a7c948e37fad272869da1f8f93f8d57fa7ad", size = 33754699, upload-time = "2026-10-21T03:44:45.772Z" },
+    { url = "https://files.pythonhosted.org/packages/30/44/4de8c0ff5a5e25ceb0841efc0a4a7530a22d61800bc0cc19a1d03aa04358/av-19.0.2-cp312-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:44d3faae747cf04a33f39db8ae983ff3d93adc864ee663bc186b25b686803c3e", size = 36014845, upload-time = "2026-10-21T03:44:49.64Z" },
+    { url = "https://files.pythonhosted.org/packages/32/5a/743a83666ded197df8b9957e2800bef9a39d52b23be2ca211bbd14b5fb22/av-19.0.2-cp312-abi3-win_amd64.whl", hash = "sha256:3ce5a1d7b916d13c16ac58f1756f0fee4af2d53f02bc1403e18550b50d375a22", size = 28150949, upload-time = "2026-10-21T03:44:53.434Z" },
+    { url = "https://files.pythonhosted.org/packages/42/fe/e79d786628d9c0428f72214dbe4b90ee0c625e04d552a604d5235ff35515/av-19.0.2-cp312-abi3-win_arm64.whl", hash = "sha256:79a277b077e3768a0ea9f881ca0b3bc96d4135a8d3a7a579938adb58718d0dfd", size = 20708023, upload-time = "2026-10-21T03:44:56.435Z" },
+    { url = "https://files.pythonhosted.org/packages/08/f5/e7988f64d3debf50748f1c4372a3dac70cfe53720563056cb57bd77771a6/av-19.0.2-cp314-cp314t-macosx_11_0_x86_64.whl", hash = "sha256:b632e026f4375037438a6b2b5d6a489e55bc9504fad22078991ef96211bec2a9", size = 22911715, upload-time = "2026-10-21T03:44:59.378Z" },
+    { url = "https://files.pythonhosted.org/packages/76/86/dbe91321e6b233970c7fdfdb82cb1750a745e5779ab9ee69a6ce2589b1cb/av-19.0.2-cp314-cp314t-macosx_14_0_arm64.whl", hash = "sha256:32a8d37bde9e24ad0cc855140cbeecde17a363d7dc7928dcfc71a34b5f3ed387", size = 18864540, upload-time = "2026-10-21T03:45:02.227Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/c7/afca86772d825f5eb5fd8d1a193b206ed9a4a0d74ffbe5bbe0a19521ed7d/av-19.0.2-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:1e7cb7b66a832bce8996af5b94f1cf4014a05ff51e0005feac4cb2566d711020", size = 36479296, upload-time = "2026-10-21T03:45:05.955Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/71/6c6fc7e80dd5aa71109cb9324638620c40b7de8f677a6446d2f744295587/av-19.0.2-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:b559ff381bd800c46fee6a17d7e22a3443708cdd58d0901ae91d27cf5dd0578c", size = 38467551, upload-time = "2026-10-21T03:45:09.493Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/93/fa67f5d4180e57e7f740053fd855a6d312f4848f1e5582b8d3ab131184dd/av-19.0.2-cp314-cp314t-manylinux_2_31_armv7l.whl", hash = "sha256:91924f5c836b1cbf89fe1522c642f98e89a733124908561fd49dc7a70e9b6d10", size = 46223361, upload-time = "2026-10-21T03:45:13.396Z" },
+    { url = "https://files.pythonhosted.org/packages/25/f9/f98627770ccb4761e8cb87edd8b4bcf91549288bca95130c1a91ea7cdcb8/av-19.0.2-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:ae4618eab172f8135596972252f39c7399291c921e661c1771ba26b9254b800f", size = 37349208, upload-time = "2026-10-21T03:45:17.213Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/3a/183b4f96a604a8544180e256d16f9a6c0534d6b7db22dc22fb0842aa96fc/av-19.0.2-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:8596fad2017d380708de35ddf9d34f808b8488c912cdc3f361691d866d9dc32d", size = 39475989, upload-time = "2026-10-21T03:45:20.658Z" },
+    { url = "https://files.pythonhosted.org/packages/22/6e/84b65c58171a6d75a5d129a9cf856ca730843f8c476f08033e7f9d4a1af6/av-19.0.2-cp314-cp314t-win_amd64.whl", hash = "sha256:9db27c2248112a8eed3edd3ca83cf4405f52a402cda2eb1956035e646e6b99c6", size = 29064804, upload-time = "2026-10-21T03:45:24.24Z" },
+    { url = "https://files.pythonhosted.org/packages/60/4e/d96cc9fff457069c52754f63151a0340cb4886330d58e09061f203696b60/av-19.0.2-cp314-cp314t-win_arm64.whl", hash = "sha256:0e425d631510ca21e47c58f3837a9dceae0453c24e926408c8a12b95239cbbd6", size = 21916888, upload-time = "2026-10-21T03:45:27.298Z" },
 ]
 
 [[package]]
@@ -533,7 +604,7 @@ name = "cffi"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9e/ef/008a1939e372c06329a3fce4279c02f328488f3526744906eeec3da7ad5f/cffi-2.1.1.tar.gz", hash = "sha256:dd31f52ea1086513bb9df30f8fcee9b8918323ae067a3d5b78bc826a000712be", size = 530807, upload-time = "2026-08-03T21:21:18.939Z" }
 wheels = [
@@ -802,8 +873,8 @@ dependencies = [
     { name = "gitpython" },
     { name = "ninja" },
     { name = "python-dotenv" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "tqdm" },
     { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" } },
     { name = "ujson" },
@@ -925,12 +996,12 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dill" },
     { name = "filelock" },
-    { name = "fsspec", extra = ["http"], marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "fsspec", extra = ["http"], marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "httpx" },
     { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" } },
     { name = "multiprocess" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "packaging" },
     { name = "pandas" },
     { name = "pyarrow" },
@@ -992,7 +1063,7 @@ resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "wrapt", marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "wrapt", marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/49/85/12f0a49a7c4ffb70572b6c2ef13c90c88fd190debda93b23f026b25f9634/deprecated-1.3.1.tar.gz", hash = "sha256:b1b50e0ff0c1fddaa5708a2c6b0a6588bb09b892825ab2b214ac9ea9d92a5223", size = 2932523, upload-time = "2025-10-30T08:19:02.757Z" }
 wheels = [
@@ -1015,7 +1086,7 @@ resolution-markers = [
     "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "wrapt", marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "wrapt", marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f7/9c/16649913bf14c73e0a9453782e148362ff2657067deff6aa9c7ebcddcc31/deprecated-3.0.0.tar.gz", hash = "sha256:16850204d3a1e6bb0acd06bff48d96e8b0a0d25d1c52f71705405a0f4894192d", size = 166912, upload-time = "2026-09-26T13:58:10.675Z" }
 wheels = [
@@ -1054,8 +1125,8 @@ name = "faiss-cpu"
 version = "1.15.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "packaging" },
 ]
 wheels = [
@@ -1117,11 +1188,11 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "interface-meta" },
     { name = "narwhals" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "pandas" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "typing-extensions" },
     { name = "wrapt" },
 ]
@@ -1256,6 +1327,18 @@ wheels = [
 [package.optional-dependencies]
 http = [
     { name = "aiohttp" },
+]
+
+[[package]]
+name = "ftfy"
+version = "6.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "wcwidth" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a5/d3/8650919bc3c7c6e90ee3fa7fd618bf373cbbe55dff043bd67353dbb20cd8/ftfy-6.3.1.tar.gz", hash = "sha256:9b3c3d90f84fb267fe64d375a07b7f8912d817cf86009ae134aa03e1819506ec", size = 308927, upload-time = "2024-10-26T00:50:35.149Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/6e/81d47999aebc1b155f81eca4477a616a70f238a2549848c38983f3c22a82/ftfy-6.3.1-py3-none-any.whl", hash = "sha256:7c70eb532015cd2f9adb53f101fb6c7945988d023a085d127d1573dc49dd0083", size = 44821, upload-time = "2024-10-26T00:50:33.425Z" },
 ]
 
 [[package]]
@@ -1489,14 +1572,14 @@ resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "filelock", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "fsspec", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "hf-xet", marker = "(platform_machine == 'aarch64' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (platform_machine == 'aarch64' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'amd64' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (platform_machine == 'amd64' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'arm64' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (platform_machine == 'arm64' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'x86_64' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (platform_machine == 'x86_64' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "packaging", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "pyyaml", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "requests", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "tqdm", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "typing-extensions", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "filelock", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "fsspec", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "hf-xet", marker = "(platform_machine == 'aarch64' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (platform_machine == 'aarch64' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'amd64' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (platform_machine == 'amd64' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'arm64' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (platform_machine == 'arm64' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'x86_64' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (platform_machine == 'x86_64' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "packaging", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "pyyaml", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "requests", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "tqdm", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "typing-extensions", marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7c/b7/8cb61d2eece5fb05a83271da168186721c450eb74e3c31f7ef3169fa475b/huggingface_hub-0.36.2.tar.gz", hash = "sha256:1934304d2fb224f8afa3b87007d58501acfda9215b334eed53072dd5e815ff7a", size = 649782, upload-time = "2026-02-06T09:24:13.098Z" }
 wheels = [
@@ -1525,7 +1608,7 @@ dependencies = [
     { name = "click", marker = "extra == 'extra-24-scientific-tot-retrieval-colqwen'" },
     { name = "filelock", marker = "extra == 'extra-24-scientific-tot-retrieval-colqwen'" },
     { name = "fsspec", marker = "extra == 'extra-24-scientific-tot-retrieval-colqwen'" },
-    { name = "hf-xet", marker = "(platform_machine == 'AMD64' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'aarch64' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'amd64' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'arm64' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'x86_64' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "hf-xet", marker = "(platform_machine == 'AMD64' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'aarch64' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'amd64' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'arm64' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (platform_machine == 'x86_64' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "httpx", marker = "extra == 'extra-24-scientific-tot-retrieval-colqwen'" },
     { name = "packaging", marker = "extra == 'extra-24-scientific-tot-retrieval-colqwen'" },
     { name = "pyyaml", marker = "extra == 'extra-24-scientific-tot-retrieval-colqwen'" },
@@ -1592,7 +1675,7 @@ name = "ipykernel"
 version = "7.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "appnope", marker = "sys_platform == 'darwin' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "appnope", marker = "sys_platform == 'darwin' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "comm" },
     { name = "debugpy" },
     { name = "ipython" },
@@ -1615,17 +1698,17 @@ name = "ipython"
 version = "9.17.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "ipython-pygments-lexers" },
     { name = "jedi" },
     { name = "matplotlib-inline" },
-    { name = "pexpect", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "pexpect", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "prompt-toolkit" },
-    { name = "psutil", marker = "(sys_platform != 'cygwin' and sys_platform != 'emscripten') or (sys_platform == 'cygwin' and extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (sys_platform == 'cygwin' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (sys_platform == 'cygwin' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "psutil", marker = "(sys_platform != 'cygwin' and sys_platform != 'emscripten') or (sys_platform == 'cygwin' and extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (sys_platform == 'cygwin' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (sys_platform == 'cygwin' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (sys_platform == 'cygwin' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "pygments" },
     { name = "stack-data" },
     { name = "traitlets" },
-    { name = "typing-extensions", marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b9/32/99451b1283ec5d92ad77073f12e1c667dc10775384d8f15c2914207149dd/ipython-9.17.1.tar.gz", hash = "sha256:8919be8c27f20a6f4423145028063f6637b42a03ce57665bb12015ee1f073529", size = 4539289, upload-time = "2026-09-01T08:29:32.6Z" }
 wheels = [
@@ -1651,8 +1734,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lxml" },
     { name = "lz4" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "pyyaml" },
     { name = "requests" },
     { name = "tqdm" },
@@ -1861,7 +1944,7 @@ name = "jupyter-events"
 version = "0.12.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "jsonschema", extra = ["format-nongpl"], marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "jsonschema", extra = ["format-nongpl"], marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "packaging" },
     { name = "python-json-logger" },
     { name = "pyyaml" },
@@ -2637,7 +2720,7 @@ version = "7.17.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
-    { name = "bleach", extra = ["css"], marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "bleach", extra = ["css"], marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "defusedxml" },
     { name = "jinja2" },
     { name = "jupyter-core" },
@@ -3099,6 +3182,25 @@ wheels = [
 ]
 
 [[package]]
+name = "open-clip-torch"
+version = "3.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "ftfy" },
+    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "regex" },
+    { name = "safetensors" },
+    { name = "timm" },
+    { name = "torch" },
+    { name = "torchvision" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4a/1f/2bc9795047fa2c1ad2567ef78ce6dfc9a7b763fa534acee09a94da2a5b8f/open_clip_torch-3.3.0.tar.gz", hash = "sha256:904b1a9f909df8281bb3de60ab95491cd2994a509177ea4f9d6292a84fe24d6d", size = 1503380, upload-time = "2026-02-27T00:32:46.74Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/b5/41c315ccd94ca332ead3e832e83eee343ab245005c3e43d9d3e75eae34eb/open_clip_torch-3.3.0-py3-none-any.whl", hash = "sha256:c549ad5ed6bfc119cc11105033c0a2b9d7a2a4afeb40a58a09aab3da1a0043ce", size = 1547268, upload-time = "2026-02-27T00:32:44.902Z" },
+]
+
+[[package]]
 name = "orjson"
 version = "3.13.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3179,10 +3281,10 @@ name = "pandas"
 version = "3.0.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "python-dateutil" },
-    { name = "tzdata", marker = "sys_platform == 'emscripten' or sys_platform == 'win32' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "tzdata", marker = "sys_platform == 'emscripten' or sys_platform == 'win32' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e2/17/d7b106e05bfa642e8694451e7d3d759c6a241c5386a5d962e4f66c047e06/pandas-3.0.6.tar.gz", hash = "sha256:66b07ef7315a31bfe1089cd3d71a7de781c9dca986762d0b4fe7c0ef17465d10", size = 4667686, upload-time = "2026-09-17T23:23:18.345Z" }
 wheels = [
@@ -3268,8 +3370,8 @@ name = "patsy"
 version = "1.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "packaging" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/08/e3/950e513affdfe1c1864397b4f40d6ed06ec1b54f608e462c27f151dd72df/patsy-1.0.3.tar.gz", hash = "sha256:79ebf4c93ff4d296e58a9d5be2b2ee31bd49d737cf11d70ffbd8a44b2de42e65", size = 399992, upload-time = "2026-08-29T21:35:32.258Z" }
@@ -3284,8 +3386,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
     { name = "huggingface-hub", version = "1.33.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "packaging" },
     { name = "psutil" },
     { name = "pyyaml" },
@@ -3304,7 +3406,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "ptyprocess", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (sys_platform == 'emscripten' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (sys_platform == 'win32' and extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
@@ -3923,21 +4025,21 @@ version = "1.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
-    { name = "deprecated", version = "1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "deprecated", version = "3.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "deprecated", version = "1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "deprecated", version = "3.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "dill" },
     { name = "ir-datasets" },
     { name = "ir-measures" },
     { name = "jinja2" },
     { name = "lz4" },
     { name = "more-itertools" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "pandas" },
     { name = "pytrec-eval-terrier" },
     { name = "requests" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "statsmodels" },
     { name = "tqdm" },
 ]
@@ -3956,7 +4058,7 @@ name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "iniconfig" },
     { name = "packaging" },
     { name = "pluggy" },
@@ -4002,10 +4104,10 @@ name = "pytrec-eval-terrier"
 version = "0.5.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/04/96/4925a95e4865a647bc74d3bb052243d12a3c8e8a34909d7d097b5a4d08c5/pytrec_eval_terrier-0.5.10.tar.gz", hash = "sha256:eaaf20580d17b5575a233e04dab8a4cbcc01a7e45be8cf547c07f0a2bb3e7eb9", size = 18634, upload-time = "2025-10-20T16:50:18.098Z" }
 wheels = [
@@ -4131,7 +4233,7 @@ name = "pyzmq"
 version = "27.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "implementation_name == 'pypy' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "cffi", marker = "implementation_name == 'pypy' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e7/8d/5b3d5631c2f4b4b8862f64cd0c9eb777b5710eeb5125b4be8dd0a200a4c0/pyzmq-27.2.0.tar.gz", hash = "sha256:54d4259d1bfae24ecdb5ca79f7acc2eac6c286a02d6a0ae617797cb45f0726d3", size = 292316, upload-time = "2026-08-20T19:08:21.19Z" }
 wheels = [
@@ -4197,8 +4299,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "grpcio" },
     { name = "httpx", extra = ["http2"] },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "portalocker" },
     { name = "protobuf" },
     { name = "pydantic" },
@@ -4210,13 +4312,29 @@ wheels = [
 ]
 
 [[package]]
+name = "qwen-vl-utils"
+version = "0.0.14"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "av", version = "18.1.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "av", version = "19.0.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "packaging" },
+    { name = "pillow" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b6/b1/ad4fc2260a3badd278b38d642f3b987412f1f6682f0ef2b31b0572d5caa8/qwen_vl_utils-0.0.14.tar.gz", hash = "sha256:9c7cad5ae803b3a10f8bb7194deb12aeacdd032f92f4224e880c73587a7346ad", size = 8453, upload-time = "2025-09-23T09:38:57.532Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c4/43/80f67e0336cb2fc725f8e06f7fe35c1d0fe946f4d2b8b2175e797e07349e/qwen_vl_utils-0.0.14-py3-none-any.whl", hash = "sha256:5e28657bfd031e56bd447c5901b58ddfc3835285ed100f4c56580e0ade054e96", size = 8120, upload-time = "2025-09-23T09:38:56.297Z" },
+]
+
+[[package]]
 name = "referencing"
 version = "0.37.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
     { name = "rpds-py" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/22/f5/df4e9027acead3ecc63e50fe1e36aca1523e1719559c499951bb4b53188f/referencing-0.37.0.tar.gz", hash = "sha256:44aefc3142c5b842538163acb373e24cce6632bd54bdb01b21ad5863489f50d8", size = 78036, upload-time = "2025-10-13T15:30:48.871Z" }
 wheels = [
@@ -4605,7 +4723,7 @@ name = "scientific-tot-retrieval"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "huggingface-hub", version = "1.33.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-24-scientific-tot-retrieval-colqwen'" },
     { name = "hydra-core" },
     { name = "omegaconf" },
@@ -4616,8 +4734,8 @@ colbert = [
     { name = "colbert-ai" },
     { name = "faiss-cpu" },
     { name = "ir-measures" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "pandas" },
     { name = "pyterrier" },
     { name = "torch" },
@@ -4638,8 +4756,8 @@ dense = [
     { name = "faiss-cpu" },
     { name = "ir-measures" },
     { name = "langchain-text-splitters" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "pandas" },
     { name = "pyterrier" },
     { name = "sentence-transformers", version = "5.7.0", source = { registry = "https://pypi.org/simple" } },
@@ -4660,6 +4778,20 @@ pyterrier = [
     { name = "pyarrow" },
     { name = "pyterrier", extra = ["java"] },
 ]
+visual = [
+    { name = "faiss-cpu" },
+    { name = "ir-measures" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "open-clip-torch" },
+    { name = "pandas" },
+    { name = "pillow" },
+    { name = "pypdfium2" },
+    { name = "pyterrier" },
+    { name = "qwen-vl-utils" },
+    { name = "torch" },
+    { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" } },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -4676,14 +4808,16 @@ examples = [
     { name = "langchain-text-splitters" },
     { name = "nbclient" },
     { name = "nbformat" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "open-clip-torch" },
     { name = "pandas" },
     { name = "pillow" },
     { name = "pyarrow" },
     { name = "pypdfium2" },
-    { name = "pyterrier", extra = ["java"], marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "pyterrier", extra = ["java"], marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "qdrant-client" },
+    { name = "qwen-vl-utils" },
     { name = "sentence-transformers", version = "5.7.0", source = { registry = "https://pypi.org/simple" } },
     { name = "torch" },
     { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" } },
@@ -4694,6 +4828,7 @@ requires-dist = [
     { name = "colbert-ai", marker = "extra == 'colbert'", specifier = "==0.2.22" },
     { name = "faiss-cpu", marker = "extra == 'colbert'", specifier = ">=1.10,<2" },
     { name = "faiss-cpu", marker = "extra == 'dense'", specifier = ">=1.10,<2" },
+    { name = "faiss-cpu", marker = "extra == 'visual'", specifier = ">=1.10,<2" },
     { name = "huggingface-hub", specifier = ">=0.34,<2" },
     { name = "hydra-core", specifier = ">=1.3.2,<1.4" },
     { name = "ipykernel", marker = "extra == 'notebook'", specifier = ">=6,<8" },
@@ -4701,35 +4836,45 @@ requires-dist = [
     { name = "ir-measures", marker = "extra == 'colqwen'", specifier = ">=0.4,<1" },
     { name = "ir-measures", marker = "extra == 'dense'", specifier = ">=0.4,<1" },
     { name = "ir-measures", marker = "extra == 'pyterrier'", specifier = ">=0.4,<1" },
+    { name = "ir-measures", marker = "extra == 'visual'", specifier = ">=0.4,<1" },
     { name = "jdk4py", marker = "extra == 'pyterrier'", specifier = "==25.0.2.1" },
     { name = "langchain-text-splitters", marker = "extra == 'dense'", specifier = ">=0.3,<2" },
     { name = "nbclient", marker = "extra == 'notebook'", specifier = ">=0.10,<1" },
     { name = "nbformat", marker = "extra == 'notebook'", specifier = ">=5,<6" },
     { name = "numpy", marker = "extra == 'colbert'", specifier = ">=1.26,<3" },
     { name = "numpy", marker = "extra == 'dense'", specifier = ">=1.26,<3" },
+    { name = "numpy", marker = "extra == 'visual'", specifier = ">=1.26,<3" },
     { name = "omegaconf", specifier = ">=2.3,<2.4" },
+    { name = "open-clip-torch", marker = "extra == 'visual'", specifier = ">=3.2,<4" },
     { name = "pandas", marker = "extra == 'colbert'", specifier = ">=2.2,<4" },
     { name = "pandas", marker = "extra == 'colqwen'", specifier = ">=2.2,<4" },
     { name = "pandas", marker = "extra == 'dense'", specifier = ">=2.2,<4" },
     { name = "pandas", marker = "extra == 'pyterrier'", specifier = ">=2.2,<4" },
+    { name = "pandas", marker = "extra == 'visual'", specifier = ">=2.2,<4" },
     { name = "peft", marker = "extra == 'colqwen'", specifier = "==0.19.1" },
+    { name = "pillow", marker = "extra == 'visual'", specifier = "==12.3.0" },
     { name = "pyarrow", marker = "extra == 'colqwen'", specifier = ">=18,<24" },
     { name = "pyarrow", marker = "extra == 'parquet'", specifier = ">=18,<24" },
     { name = "pyarrow", marker = "extra == 'pyterrier'", specifier = ">=18,<24" },
     { name = "pypdfium2", marker = "extra == 'colqwen'", specifier = "==5.9.0" },
+    { name = "pypdfium2", marker = "extra == 'visual'", specifier = "==5.9.0" },
     { name = "pyterrier", marker = "extra == 'colbert'", specifier = ">=1.1.2,<2" },
     { name = "pyterrier", marker = "extra == 'colqwen'", specifier = ">=1.1.2,<2" },
     { name = "pyterrier", marker = "extra == 'dense'", specifier = ">=1.1.2,<2" },
+    { name = "pyterrier", marker = "extra == 'visual'", specifier = ">=1.1.2,<2" },
     { name = "pyterrier", extras = ["java"], marker = "extra == 'pyterrier'", specifier = ">=1.1.2,<2" },
     { name = "qdrant-client", marker = "extra == 'colqwen'", specifier = "==1.17.1" },
+    { name = "qwen-vl-utils", marker = "extra == 'visual'", specifier = ">=0.0.14,<0.1" },
     { name = "sentence-transformers", marker = "extra == 'dense'", specifier = ">=5.1,<6" },
     { name = "sentence-transformers", extras = ["image"], marker = "extra == 'colqwen'", specifier = "==6.1.0" },
     { name = "torch", marker = "extra == 'colbert'", specifier = ">=2.6,<3" },
     { name = "torch", marker = "extra == 'dense'", specifier = ">=2.6,<3" },
+    { name = "torch", marker = "extra == 'visual'", specifier = ">=2.6,<3" },
     { name = "transformers", marker = "extra == 'colbert'", specifier = "==4.57.6" },
     { name = "transformers", marker = "extra == 'colqwen'", specifier = "==5.15.0" },
+    { name = "transformers", marker = "extra == 'visual'", specifier = "==4.57.6" },
 ]
-provides-extras = ["colqwen", "colbert", "dense", "parquet", "notebook", "pyterrier"]
+provides-extras = ["visual", "colqwen", "colbert", "dense", "parquet", "notebook", "pyterrier"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -4747,12 +4892,14 @@ examples = [
     { name = "nbclient", specifier = ">=0.10,<1" },
     { name = "nbformat", specifier = ">=5,<6" },
     { name = "numpy", specifier = ">=1.26,<3" },
+    { name = "open-clip-torch", specifier = ">=3.2,<4" },
     { name = "pandas", specifier = ">=2.2,<4" },
     { name = "pillow", specifier = "==12.3.0" },
     { name = "pyarrow", specifier = ">=18,<24" },
     { name = "pypdfium2", specifier = "==5.9.0" },
     { name = "pyterrier", extras = ["java"], specifier = ">=1.1.2,<2" },
     { name = "qdrant-client", specifier = "==1.17.1" },
+    { name = "qwen-vl-utils", specifier = ">=0.0.14,<0.1" },
     { name = "sentence-transformers", specifier = ">=5.1,<6" },
     { name = "torch", specifier = ">=2.6,<3" },
     { name = "transformers", specifier = "==4.57.6" },
@@ -4765,10 +4912,10 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "joblib" },
     { name = "narwhals" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "threadpoolctl" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d2/eb/eaf5e07fcc0da7149b0e084f24e54edd7441b9a89ce7e034032ae97fe3a0/scikit_learn-1.9.1.tar.gz", hash = "sha256:629cada3e33e2b9bf376cdc7614a47a4140b8aedc1d836579e359736fbd82977", size = 7786908, upload-time = "2026-09-10T18:34:04.679Z" }
@@ -4827,7 +4974,7 @@ resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7a/97/5a3609c4f8d58b039179648e62dd220f89864f56f7357f5d4f45c29eb2cc/scipy-1.17.1.tar.gz", hash = "sha256:95d8e012d8cb8816c226aef832200b1d45109ed4464303e997c5b13122b297c0", size = 30573822, upload-time = "2026-02-23T00:26:24.851Z" }
 wheels = [
@@ -4909,7 +5056,7 @@ resolution-markers = [
     "python_full_version == '3.12.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7e/74/66de6258867beb2ef08f35f9f2ac017a52cacd5081714d239ff1a442d458/scipy-1.18.1.tar.gz", hash = "sha256:52c4b7422442aba924d03ad4019852b08a92e64ea187b933135687bfe2747307", size = 30781235, upload-time = "2026-08-21T23:28:50.599Z" }
 wheels = [
@@ -5004,11 +5151,11 @@ resolution-markers = [
 ]
 dependencies = [
     { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" } },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "scikit-learn" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "tokenizers" },
     { name = "torch" },
     { name = "tqdm" },
@@ -5040,11 +5187,11 @@ resolution-markers = [
 ]
 dependencies = [
     { name = "huggingface-hub", version = "1.33.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "scikit-learn" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "tokenizers" },
     { name = "torch" },
     { name = "tqdm" },
@@ -5135,13 +5282,13 @@ version = "0.15.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "formulaic" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "packaging" },
     { name = "pandas" },
     { name = "patsy" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a8/1f/a3cbf6ed7cf6286afec694bfef561f3e51483197716717fb8476f1f0c50e/statsmodels-0.15.0.tar.gz", hash = "sha256:5d257fe58d0772bc46a557880ca78e2a8e07fec7bfd9d11074aef8e33e1aecbc", size = 15736853, upload-time = "2026-08-27T10:45:21.988Z" }
 wheels = [
@@ -5240,6 +5387,22 @@ wheels = [
 ]
 
 [[package]]
+name = "timm"
+version = "1.0.30"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "pyyaml" },
+    { name = "safetensors" },
+    { name = "torch" },
+    { name = "torchvision" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0e/ab/49041213990e48edcb6013463b18ef86d8d3c5d6ac5b408802c480443025/timm-1.0.30.tar.gz", hash = "sha256:1444a3af7e17fdba5440ac2bcf6e4b728da96dd62289ed9e1bcba31a545f5935", size = 2534738, upload-time = "2026-09-22T20:46:13.9Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/85/b897716d0fa016af23b11e6526f5ef76d2013e8bc36b9c7ce15d9200e456/timm-1.0.30-py3-none-any.whl", hash = "sha256:c8e27adf6801a2fdfb570dbbdd171f2f084756eefc673df8cfaab06bd14864f3", size = 2668917, upload-time = "2026-09-22T20:46:12.11Z" },
+]
+
+[[package]]
 name = "tinycss2"
 version = "1.5.1"
 source = { registry = "https://pypi.org/simple" }
@@ -5256,7 +5419,7 @@ name = "tokenizers"
 version = "0.22.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-24-scientific-tot-retrieval-colbert' or extra != 'extra-24-scientific-tot-retrieval-colqwen' or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "huggingface-hub", version = "1.33.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-24-scientific-tot-retrieval-colqwen'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/73/6f/f80cfef4a312e1fb34baf7d85c72d4411afde10978d4657f8cdd811d3ccc/tokenizers-0.22.2.tar.gz", hash = "sha256:473b83b915e547aa366d1eee11806deaf419e17be16310ac0a14077f1e28f917", size = 372115, upload-time = "2026-01-05T10:45:15.988Z" }
@@ -5284,12 +5447,12 @@ version = "2.14.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cuda-bindings", marker = "python_full_version < '3.15' and sys_platform == 'linux'" },
-    { name = "cuda-toolkit", extra = ["cublas", "cudart", "cufft", "cufile", "cupti", "curand", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "sys_platform == 'linux' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "cuda-toolkit", extra = ["cublas", "cudart", "cufft", "cufile", "cupti", "curand", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "sys_platform == 'linux' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "filelock" },
     { name = "fsspec" },
     { name = "jinja2" },
-    { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "networkx", version = "3.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "networkx", version = "3.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "nvidia-cudnn-cu13", marker = "sys_platform == 'linux'" },
     { name = "nvidia-cusparselt-cu13", marker = "sys_platform == 'linux'" },
     { name = "nvidia-nccl-cu13", marker = "sys_platform == 'linux'" },
@@ -5327,8 +5490,8 @@ name = "torchvision"
 version = "0.29.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "pillow" },
     { name = "torch" },
 ]
@@ -5377,7 +5540,7 @@ name = "tqdm"
 version = "4.70.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0d/ea/b2a5bd54b28a324dae8211928b2d730b6547500342c7e6c6dea08bd0a485/tqdm-4.70.1.tar.gz", hash = "sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4", size = 171846, upload-time = "2026-09-11T07:25:16.601Z" }
 wheels = [
@@ -5414,8 +5577,8 @@ resolution-markers = [
 dependencies = [
     { name = "filelock" },
     { name = "huggingface-hub", version = "0.36.2", source = { registry = "https://pypi.org/simple" } },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version < '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colbert') or (python_full_version >= '3.12' and extra != 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "packaging" },
     { name = "pyyaml" },
     { name = "regex" },
@@ -5449,8 +5612,8 @@ resolution-markers = [
 ]
 dependencies = [
     { name = "huggingface-hub", version = "1.33.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colbert' and extra == 'extra-24-scientific-tot-retrieval-colqwen') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-dense') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'extra-24-scientific-tot-retrieval-visual') or (extra == 'extra-24-scientific-tot-retrieval-colqwen' and extra == 'group-24-scientific-tot-retrieval-examples')" },
     { name = "packaging" },
     { name = "pyyaml" },
     { name = "regex" },

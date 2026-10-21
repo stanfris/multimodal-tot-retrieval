@@ -23,7 +23,7 @@ from scientific_tot.config_artifacts import (
     verify_index,
     verify_retrieval,
 )
-from scientific_tot.configuration import resolve_config
+from scientific_tot.configuration import VISUAL_DENSE_MODELS, resolve_config
 from scientific_tot.records import records_digest
 
 PLANNED_IDENTITIES: dict[Path, dict] = {}
@@ -48,6 +48,11 @@ def index_identity(cfg, provenance: dict) -> dict:
         if cfg.representation.name == "passages":
             names.append("langchain-text-splitters")
         settings["versions"] = {name: version(name) for name in names}
+    elif cfg.model.name in VISUAL_DENSE_MODELS:
+        from scientific_tot.integrations.visual_dense import dependency_versions
+
+        settings["encoding_threads"] = cfg.launcher.threads.encoding
+        settings["versions"] = dependency_versions(cfg)
     elif cfg.model.name == "colqwen":
         from scientific_tot.integrations.colqwen import dependency_versions
 
@@ -100,7 +105,11 @@ def _resolve_identity(cfg) -> dict:
             "run_name": cfg.run.name,
         }
     adapter = configured_adapter(cfg)
-    if cfg.model.name == "colqwen":
+    if cfg.model.name in VISUAL_DENSE_MODELS:
+        from scientific_tot.integrations.visual_dense import load_visual_corpus
+
+        corpus = load_visual_corpus(adapter, cfg)
+    elif cfg.model.name == "colqwen":
         from scientific_tot.integrations.colqwen import load_pdf_corpus
 
         corpus = load_pdf_corpus(adapter, cfg)
@@ -125,19 +134,25 @@ def _resolve_identity(cfg) -> dict:
         from scientific_tot.integrations.dense import EncodingConfig, resolve_model_revision
 
         revision = resolve_model_revision(EncodingConfig(**dense_arguments(cfg)))
-    if cfg.model.name in {"colbert", "colqwen"}:
+    if cfg.model.name in {"colbert", "colqwen"} | VISUAL_DENSE_MODELS:
         revision = cfg.model.revision
     provenance = {
         "dataset_revision": corpus.provenance["revision"],
         "model_revision": revision,
-        "corpus_sha256": records_digest(
-            {"docno": row["doc_id"], "text": row["text"]} for row in corpus
-        ),
+        "corpus_sha256": None,
     }
-    if cfg.model.name == "colqwen":
+    if cfg.model.name in VISUAL_DENSE_MODELS:
+        from scientific_tot.integrations.visual_dense import visual_corpus_digest
+
+        provenance["corpus_sha256"] = visual_corpus_digest(corpus, cfg)
+    elif cfg.model.name == "colqwen":
         from scientific_tot.integrations.colqwen import pdf_corpus_digest
 
         provenance["corpus_sha256"] = pdf_corpus_digest(corpus)
+    else:
+        provenance["corpus_sha256"] = records_digest(
+            {"docno": row["doc_id"], "text": row["text"]} for row in corpus
+        )
     return {"stage": stage, "index": index_identity(cfg, provenance)}
 
 
@@ -151,9 +166,10 @@ def artifact_name(cfg, identity: dict) -> str:
     if cfg.stage.name == "index":
         stem += f"_d-{cfg.dataset.domains[0]}"
     stem += f"_c-{cfg.split.corpus}"
-    if cfg.stage.name == "index" and not cfg.dry_run and cfg.model.name != "colqwen":
+    visual = cfg.model.name in {"colqwen"} | VISUAL_DENSE_MODELS
+    if cfg.stage.name == "index" and not cfg.dry_run and not visual:
         return stem
-    if cfg.stage.name != "index" or cfg.model.name != "colqwen":
+    if cfg.stage.name != "index" or not visual:
         stem += f"_q-{cfg.split.queries}"
     return f"{stem}_{digest(identity)[:16]}"
 
@@ -179,7 +195,8 @@ def hydra_directory(*, _root_) -> str:
         return str(Path(cfg.launcher.output_root) / "dry-runs" / artifact_name(cfg, identity))
     if cfg.stage.name == "index":
         directory = artifact_directory(
-            cfg, resolve_identity(cfg) if cfg.model.name == "colqwen" else {}
+            cfg,
+            resolve_identity(cfg) if cfg.model.name in {"colqwen"} | VISUAL_DENSE_MODELS else {},
         )
         # Hydra creates the directory before dispatch; remember whether it already existed.
         INDEX_EXISTENCE.setdefault(directory, directory.exists())

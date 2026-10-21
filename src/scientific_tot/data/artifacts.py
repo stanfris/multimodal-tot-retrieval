@@ -81,20 +81,23 @@ class Artifacts:
         except tarfile.TarError as exc:
             raise DatasetFormatError(f"{name}: invalid uncompressed TAR: {exc}") from exc
 
-    def read_text(self, name: str) -> str:
+    def read_bytes(self, name: str) -> bytes:
         artifact = self.files.get(name)
         if artifact is None:
             raise MissingComponentError(f"Missing extracted artifact: {name}")
         local = self._local(artifact.file)
+        if artifact.member is None:
+            return local.read_bytes()
+        with local.open("rb") as stream:
+            stream.seek(artifact.offset)
+            data = stream.read(artifact.size)
+            if len(data) != artifact.size:
+                raise DatasetFormatError(f"{name}: truncated TAR member")
+            return data
+
+    def read_text(self, name: str) -> str:
         try:
-            if artifact.member is None:
-                return local.read_bytes().decode("utf-8")
-            with local.open("rb") as stream:
-                stream.seek(artifact.offset)
-                data = stream.read(artifact.size)
-                if len(data) != artifact.size:
-                    raise DatasetFormatError(f"{name}: truncated TAR member")
-                return data.decode("utf-8")
+            return self.read_bytes(name).decode("utf-8")
         except UnicodeDecodeError as exc:
             raise DatasetFormatError(f"{name}: invalid UTF-8") from exc
 

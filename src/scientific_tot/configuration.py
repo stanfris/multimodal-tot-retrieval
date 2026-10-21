@@ -17,12 +17,19 @@ if not CONFIG_DIR.is_dir():
 
 STAGES = {"prepare", "index", "retrieve", "evaluate", "search", "export"}
 SPLITS = {"train", "test", "train+test", "all"}
+OPENCLIP_MODELS = {"openclip", "openclip_figures"}
+VISUAL_DENSE_MODELS = OPENCLIP_MODELS | {"qwen3_vl_page", "qwen3_vl_multimodal", "qwen3_vl_figures"}
 BACKENDS = {
     "bm25": "pyterrier",
     "dense": "sentence_transformers_faiss",
     "colbert": "colbert",
     "visual": "byaldi",
     "colqwen": "sentence_transformers_qdrant",
+    "openclip": "visual_faiss",
+    "openclip_figures": "visual_faiss",
+    "qwen3_vl_page": "visual_faiss",
+    "qwen3_vl_multimodal": "visual_faiss",
+    "qwen3_vl_figures": "visual_faiss",
 }
 REPRESENTATIONS = {
     "title_abstract": ("text", "original_metadata"),
@@ -194,7 +201,7 @@ def _validate(cfg: DictConfig) -> None:
     )
     _require(model.name in BACKENDS, f"Unsupported model: {model.name}")
     _require(model.backend == BACKENDS[model.name], f"Incorrect backend for model {model.name}")
-    expected = "image" if model.name in {"visual", "colqwen"} else "text"
+    expected = "image" if model.name in {"visual", "colqwen"} | VISUAL_DENSE_MODELS else "text"
     _require(
         rep.modality == expected,
         f"model={model.name} is incompatible with representation={rep.name}; needs {expected}",
@@ -237,10 +244,52 @@ def _validate(cfg: DictConfig) -> None:
             and rep.rendering.scale > 0,
             "rendering.scale must be positive",
         )
-    if model.name in {"dense", "visual", "colqwen"}:
+    if model.name in {"dense", "visual", "colqwen"} | VISUAL_DENSE_MODELS:
         _require(_text(model.model_id), f"model.model_id is required for {model.name}")
         _require(model.device == cfg.launcher.device, "model.device must match launcher.device")
-    if model.name == "dense":
+    if model.name in VISUAL_DENSE_MODELS:
+        strategies = {
+            "openclip": "pages",
+            "openclip_figures": "figures",
+            "qwen3_vl_page": "pages",
+            "qwen3_vl_multimodal": "multimodal",
+            "qwen3_vl_figures": "figures",
+        }
+        _require(
+            model.document_input == strategies[model.name], "Incorrect document input strategy"
+        )
+        expected_rep = "figures" if model.document_input == "figures" else "pages"
+        _require(rep.name == expected_rep, f"This strategy requires representation={expected_rep}")
+        if rep.name == "figures":
+            _require(not rep.include_captions, "Figure encoding must not include captions")
+        _require(model.device in {"cpu", "cuda"}, "Visual FAISS supports CPU or CUDA")
+        _require(_positive(model.batch_size), "model.batch_size must be positive")
+        _require(model.precision in {"fp32", "fp16", "bf16"}, "Unsupported model.precision")
+        _require(
+            model.device != "cpu" or model.precision == "fp32",
+            "CPU inference requires model.precision=fp32",
+        )
+        _require(
+            isinstance(model.revision, str) and re.fullmatch(r"[0-9a-f]{40}", model.revision),
+            "Visual FAISS requires model.revision pinned to an immutable commit",
+        )
+        _require(
+            model.indexing.factory == "Flat" and model.indexing.metric == "inner_product",
+            "Visual FAISS requires IndexFlatIP",
+        )
+        if model.name in OPENCLIP_MODELS:
+            _require(model.architecture == "ViT-B-32", "OpenCLIP requires ViT-B-32")
+            _require(model.pretrained == "laion2b_s34b_b79k", "Incorrect OpenCLIP weights")
+            _require(model.dimension == 512, "OpenCLIP ViT-B-32 has dimension 512")
+        else:
+            _require(model.model_id == "Qwen/Qwen3-VL-Embedding-2B", "Incorrect Qwen checkpoint")
+            _require(model.dimension == 2048, "Use Qwen's default 2048 dimensions")
+            _require(
+                _positive(model.max_length) and model.max_length <= 32768,
+                "Qwen max_length must be positive and at most 32768",
+            )
+            _require(_text(model.query_instruction), "Qwen query instruction is required")
+    elif model.name == "dense":
         _require(
             model.revision is None or _text(model.revision), "model.revision must be null or text"
         )

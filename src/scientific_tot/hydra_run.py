@@ -15,7 +15,7 @@ from scientific_tot.config_artifacts import (
     verify_index,
     verify_retrieval,
 )
-from scientific_tot.configuration import absolute, overlaps, resolve_config
+from scientific_tot.configuration import VISUAL_DENSE_MODELS, absolute, overlaps, resolve_config
 
 
 class FreshOutput(Callback):
@@ -145,7 +145,7 @@ class FreshOutput(Callback):
 def execute_stage(cfg: DictConfig, *, run_dir: Path | None = None) -> dict | None:
     """Dispatch one operation using the already resolved application settings."""
     name = cfg.stage.name
-    if cfg.model.name in {"bm25", "dense", "colbert", "colqwen"} and name in {
+    if cfg.model.name in {"bm25", "dense", "colbert", "colqwen"} | VISUAL_DENSE_MODELS and name in {
         "prepare",
         "index",
         "retrieve",
@@ -212,7 +212,7 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
                 else:
                     recover_index(location, requested=cfg)
                 return
-        if cfg.model.name in {"colbert", "colqwen"}:
+        if cfg.model.name in {"colbert", "colqwen"} | VISUAL_DENSE_MODELS:
             from scientific_tot.artifact_identity import resolve_identity
 
             verify_completed(Path(cfg.paths.index), cfg, resolve_identity(cfg))

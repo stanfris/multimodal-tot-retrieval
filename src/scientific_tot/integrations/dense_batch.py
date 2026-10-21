@@ -5,6 +5,7 @@ import shutil
 from dataclasses import asdict
 from importlib.metadata import version
 from pathlib import Path
+from time import perf_counter
 from urllib.parse import quote, unquote
 
 import numpy as np
@@ -18,6 +19,7 @@ from scientific_tot.config_arguments import (
     require_corpus_settings,
 )
 from scientific_tot.config_artifacts import artifact_reference, verify_index, write_index_manifest
+from scientific_tot.configuration import VISUAL_DENSE_MODELS
 from scientific_tot.integrations.bm25_batch import _read_jsonl, save_batch
 from scientific_tot.integrations.dense import (
     EncodingConfig,
@@ -71,7 +73,16 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
     require_corpus_settings(cfg, corpus)
     representation = OmegaConf.to_container(cfg.representation, resolve=True)
     representation.pop("aggregation", None)  # Aggregation affects ranking, not document embeddings.
-    if cfg.representation.name == "passages":
+    visual = cfg.model.name in VISUAL_DENSE_MODELS
+    if visual:
+        from scientific_tot.integrations.visual_dense import document_mapping
+
+        documents = document_mapping(corpus, cfg)
+        mapping = [
+            {"vector_id": row["docno"], "doc_id": row["doc_id"], "domain": row["domain"]}
+            for row in documents
+        ]
+    elif cfg.representation.name == "passages":
         passages = project_passages(corpus, cfg)
         documents = [{"docno": row["passage_id"], "text": row["text"]} for row in passages]
         mapping = [
@@ -84,12 +95,12 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
             {"vector_id": row["doc_id"], "doc_id": row["doc_id"], "domain": row["domain"]}
             for row in corpus
         ]
-    config = EncodingConfig(**dense_arguments(cfg))
-    revision = resolve_model_revision(config)
+    config = None if visual else EncodingConfig(**dense_arguments(cfg))
+    revision = cfg.model.revision if visual else resolve_model_revision(config)
     print(
         f"Building FAISS IndexFlatIP: {len(corpus):,} papers, {len(documents):,} vectors; "
-        f"model={config.model_id}@{revision}, normalized={config.similarity == 'cosine'}, "
-        f"encoding_device={config.device}, index_device=cpu",
+        f"model={cfg.model.model_id}@{revision}, "
+        f"encoding_device={cfg.model.device}, index_device=cpu",
         flush=True,
     )
     target = Path(cfg.paths.index)
@@ -99,15 +110,25 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         require_index_reservation(target)
     else:
         target.mkdir(parents=True, exist_ok=False)
-    vectors, cached, entry, hit = cached_encoding(
-        config,
-        revision,
-        Path(cfg.launcher.cache_root) / "embeddings",
-        task="document",
-        rows=documents,
-        dataset_revision=corpus.provenance["revision"],
-        representation=representation,
-    )
+    if visual:
+        from scientific_tot.integrations.visual_dense import cached_encoding as visual_encoding
+
+        vectors, cached, entry, hit = visual_encoding(
+            cfg,
+            task="document",
+            rows=documents,
+            dataset_revision=corpus.provenance["revision"],
+        )
+    else:
+        vectors, cached, entry, hit = cached_encoding(
+            config,
+            revision,
+            Path(cfg.launcher.cache_root) / "embeddings",
+            task="document",
+            rows=documents,
+            dataset_revision=corpus.provenance["revision"],
+            representation=representation,
+        )
     index = faiss.read_index(str(entry / "index.faiss"))
     ids = json.loads((entry / "ids.json").read_text())
     if (
@@ -130,11 +151,23 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
     }
     for name in files:
         (target / name).chmod(0o444)
+    if visual:
+        from scientific_tot.integrations.visual_dense import visual_corpus_digest
+
+        corpus_sha256 = visual_corpus_digest(corpus, cfg)
+        Records(
+            "unit_mapping", documents, Report(emitted=len(documents)), corpus.provenance
+        ).write_jsonl(target / "unit-mapping.jsonl")
+        for name in ("unit-mapping.jsonl", "unit-mapping.jsonl.manifest.json"):
+            files[name] = artifact_reference(target / name)
+            (target / name).chmod(0o444)
+    else:
+        corpus_sha256 = records_digest(inputs.documents)
     provenance = {
         "dataset_revision": corpus.provenance["revision"],
         "model_revision": revision,
         "local_revision_verified": corpus.provenance["local_revision_verified"],
-        "corpus_sha256": records_digest(inputs.documents),
+        "corpus_sha256": corpus_sha256,
         "vector_input_sha256": records_digest(documents),
         "corpus_provenance": corpus.provenance,
         "documents": len(corpus),
@@ -145,7 +178,9 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         "index_location": str(target / "index.faiss"),
         "output_dir": str(target),
         "index_device": "cpu",
-        "encoding_config": {**asdict(config), "resolved_revision": revision},
+        "encoding_config": OmegaConf.to_container(cfg.model, resolve=True)
+        if visual
+        else {**asdict(config), "resolved_revision": revision},
         "encoding": cached["encoding"],
         "versions": cached["configuration"]["versions"],
         "cache": {"documents": str(entry), "document_hit": hit},
@@ -155,6 +190,14 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
     }
     if cfg.representation.name == "passages":
         provenance["versions"]["langchain-text-splitters"] = version("langchain-text-splitters")
+    if visual:
+        provenance["efficiency"] = {
+            "indexed_units": index.ntotal,
+            "retrievable_documents": len({row["doc_id"] for row in mapping}),
+            "documents_without_units": len(corpus) - len({row["doc_id"] for row in mapping}),
+            "index_bytes": (target / "index.faiss").stat().st_size,
+            "embedding_generation_seconds": cached["encoding"]["generation_seconds"],
+        }
     write_index_manifest(target, cfg, provenance=provenance)
     print(
         f"Index ready: {index.ntotal:,} vectors, dimension={index.d}, "
@@ -173,11 +216,15 @@ def retrieve_dense(cfg, target: Path) -> dict:
     print(f"Verifying FAISS index: {location}", flush=True)
     manifest = verify_index(location, cfg)
     provenance = manifest["provenance"]
+    figures = cfg.model.name in VISUAL_DENSE_MODELS and cfg.model.document_input == "figures"
     names = ("index.faiss", "ids.json", "vectors.jsonl", "vectors.jsonl.manifest.json")
     for name in names:
         if provenance.get("index_files", {}).get(name) != artifact_reference(location / name):
             raise ValueError(f"Incomplete/corrupt persistent dense index: {name}")
-    mapping = _read_jsonl(location / "vectors.jsonl")
+    if figures and provenance["vectors"] == 0 and (location / "vectors.jsonl").stat().st_size == 0:
+        mapping = pd.DataFrame(columns=["vector_id", "doc_id", "domain"])
+    else:
+        mapping = _read_jsonl(location / "vectors.jsonl")
     if (
         set(mapping.columns) != {"vector_id", "doc_id", "domain"}
         or mapping.vector_id.duplicated().any()
@@ -191,7 +238,8 @@ def retrieve_dense(cfg, target: Path) -> dict:
         raise ValueError("Persistent FAISS dimension/count differs from index manifest")
     domains = provenance["document_domains"]
     if (
-        set(mapping.doc_id) != set(domains)
+        (set(mapping.doc_id) - set(domains))
+        or (not figures and set(mapping.doc_id) != set(domains))
         or len(domains) != provenance["documents"]
         or any(row.domain != domains[row.doc_id] for row in mapping.itertuples())
     ):
@@ -211,19 +259,33 @@ def retrieve_dense(cfg, target: Path) -> dict:
         f"query_split={cfg.split.queries}, top_k={cfg.retrieval.top_k}",
         flush=True,
     )
-    config = EncodingConfig(**dense_arguments(cfg))
-    vectors, cached, entry, hit = cached_encoding(
-        config,
-        provenance["model_revision"],
-        Path(cfg.launcher.cache_root) / "embeddings",
-        task="query",
-        rows=inputs.topics.to_dict("records"),
-        dataset_revision=queries.provenance["revision"],
-    )
+    visual = cfg.model.name in VISUAL_DENSE_MODELS
+    config = None if visual else EncodingConfig(**dense_arguments(cfg))
+    if visual:
+        from scientific_tot.integrations.visual_dense import cached_encoding as visual_encoding
+
+        vectors, cached, entry, hit = visual_encoding(
+            cfg,
+            task="query",
+            rows=inputs.topics.to_dict("records"),
+            dataset_revision=queries.provenance["revision"],
+        )
+    else:
+        vectors, cached, entry, hit = cached_encoding(
+            config,
+            provenance["model_revision"],
+            Path(cfg.launcher.cache_root) / "embeddings",
+            task="query",
+            rows=inputs.topics.to_dict("records"),
+            dataset_revision=queries.provenance["revision"],
+        )
     if vectors.shape[1] != index.d:
         raise ValueError("Query embedding dimension differs from the saved FAISS index")
     passage_mode = cfg.representation.name == "passages"
     depth = len(ids) if passage_mode else min(cfg.retrieval.top_k, len(ids))
+    target_documents = min(cfg.retrieval.top_k, mapping.doc_id.nunique())
+    max_depth = depth
+    started = perf_counter()
     batches = []
     for qid, vector in tqdm(
         zip(inputs.topics.qid, vectors, strict=True),
@@ -233,13 +295,33 @@ def retrieve_dense(cfg, target: Path) -> dict:
     ):
         # Scoring/ranking belong to FAISS. All passages are considered before aggregation,
         # so top_k always counts papers and mean/max have their full-corpus semantics.
-        scores, positions = index.search(np.asarray([vector]), depth)
-        rows = [
-            {"qid": qid, "docno": ids[int(position)], "rank": rank, "score": float(score)}
-            for rank, (position, score) in enumerate(zip(positions[0], scores[0], strict=True))
-            if position >= 0
-        ]
-        result = pd.DataFrame(rows, columns=["qid", "docno", "rank", "score"])
+        search_depth = depth
+        while True:
+            rows = []
+            if search_depth:
+                scores, positions = index.search(np.asarray([vector]), search_depth)
+                rows = [
+                    {"qid": qid, "docno": ids[int(position)], "rank": rank, "score": float(score)}
+                    for rank, (position, score) in enumerate(
+                        zip(positions[0], scores[0], strict=True)
+                    )
+                    if position >= 0
+                ]
+            result = pd.DataFrame(rows, columns=["qid", "docno", "rank", "score"])
+            if not visual or result.empty:
+                break
+            from scientific_tot.integrations.colqwen import aggregate_pages
+
+            result = aggregate_pages(result, cfg.retrieval.top_k)
+            result["rank"] -= 1  # The shared writer converts zero-based ranks to TREC.
+            # Increase exact FAISS depth until enough unique papers are seen. Include
+            # the whole score tie at the cutoff before applying canonical-ID tie breaks.
+            if search_depth == len(ids) or (
+                len(result) >= target_documents and result.score.iloc[-1] > scores[0, -1]
+            ):
+                break
+            search_depth = min(2 * search_depth, len(ids))
+        max_depth = max(max_depth, search_depth)
         if passage_mode:
             import pyterrier as pt
 
@@ -250,6 +332,7 @@ def retrieve_dense(cfg, target: Path) -> dict:
             result = result[result["rank"] < cfg.retrieval.top_k]
         batches.append(result)
     run = pd.concat(batches, ignore_index=True)
+    search_seconds = perf_counter() - started
     run["rank"] += 1
     query_mapping = inputs.query_ids.copy()
     query_mapping["domain"] = query_mapping.query_key.map(
@@ -274,12 +357,26 @@ def retrieve_dense(cfg, target: Path) -> dict:
         "query_provenance": queries.provenance,
         "model_revision": provenance["model_revision"],
         "dataset_revision": provenance["dataset_revision"],
-        "encoding_config": asdict(config),
+        "encoding_config": OmegaConf.to_container(cfg.model, resolve=True)
+        if visual
+        else asdict(config),
         "encoding": cached["encoding"],
         "cache": {"queries": str(entry), "query_hit": hit},
         "retrieval_cutoff": cfg.retrieval.top_k,
-        "vector_search_depth": depth,
-        "aggregation": {
+        "vector_search_depth": max_depth,
+        **(
+            {
+                "efficiency": {
+                    "search_seconds": search_seconds,
+                    "seconds_per_query": search_seconds / len(inputs.topics),
+                }
+            }
+            if visual
+            else {}
+        ),
+        "aggregation": {"method": "max", "scope": "all_indexed_units"}
+        if visual
+        else {
             "method": cfg.representation.aggregation.method,
             "library": f"pyterrier.text.{cfg.representation.aggregation.method}_passage",
             "scope": "all_indexed_passages",

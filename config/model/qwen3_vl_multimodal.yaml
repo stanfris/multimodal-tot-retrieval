@@ -1,0 +1,7 @@
+defaults:
+  - qwen3_vl_page
+  - override /representation@_global_.representation: pages
+  - _self_
+
+name: qwen3_vl_multimodal
+document_input: multimodal

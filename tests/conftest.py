@@ -11,7 +11,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 def no_network(request, monkeypatch):
     if any(
         request.node.get_closest_marker(name)
-        for name in ("live", "terrier", "dense_live", "colbert_live", "colqwen_live")
+        for name in ("live", "terrier", "dense_live", "colbert_live", "colqwen_live", "visual_live")
     ):
         return
 

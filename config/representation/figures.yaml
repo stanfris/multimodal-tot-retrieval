@@ -1,4 +1,3 @@
-# Configuration contract only: execution is not implemented.
 name: figures
 modality: image
 source: original_extracted_figures

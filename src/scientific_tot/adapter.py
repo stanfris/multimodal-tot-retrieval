@@ -23,7 +23,7 @@ from scientific_tot.records import (
 
 Domain = str
 Split = Literal["train", "test", "train+test", "all"]
-Representation = Literal["fulltext", "title_abstract", "pages"]
+Representation = Literal["fulltext", "title_abstract", "pages", "figures"]
 MissingPolicy = Literal["error", "skip"]
 MODES = {"visual-and-text": "visual_and_text", "visual-only": "visual_only"}
 
@@ -258,8 +258,8 @@ class DatasetAdapter:
         missing='skip' returns an explicit coverage report, never placeholder text.
         """
         domains, splits = _domains(domain), _splits(split)
-        if representation not in {"fulltext", "title_abstract", "pages"}:
-            raise ValueError("representation must be fulltext, title_abstract, or pages")
+        if representation not in {"fulltext", "title_abstract", "pages", "figures"}:
+            raise ValueError("representation must be fulltext, title_abstract, pages, or figures")
         if missing not in {"error", "skip"}:
             raise ValueError("missing must be error or skip")
         inventory = self.dataset.discover()
@@ -382,7 +382,7 @@ class DatasetAdapter:
                 if checksum is not None and hashlib.sha256(text.encode()).hexdigest() != checksum:
                     _skip(report, "markdown_checksum_mismatch", markdown, paper_id)
                     continue
-            elif representation == "pages":
+            elif representation in {"pages", "figures"}:
                 text = ""
             else:
                 text = "\n\n".join(value for value in (title, abstract) if value)
@@ -428,6 +428,8 @@ class DatasetAdapter:
                         "paper_metadata": store.locator(meta_path) if full else None,
                         "content": store.locator(markdown)
                         if representation == "fulltext"
+                        else {"images": [figure["image"] for figure in figures]}
+                        if representation == "figures"
                         else {"source_pdf_relpath": source_path}
                         if representation == "pages"
                         else {

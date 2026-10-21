@@ -1,0 +1,19 @@
+defaults:
+  - override /launcher@_global_.launcher: local_gpu
+  - override /representation@_global_.representation: pages
+  - _self_
+
+name: qwen3_vl_page
+backend: visual_faiss
+model_id: Qwen/Qwen3-VL-Embedding-2B
+revision: 9f2f7e710d6d81056aa5c0a4f04764fec6bb7bda
+document_input: pages
+dimension: 2048
+batch_size: 2
+device: ${launcher.device}
+precision: bf16
+max_length: 32768
+query_instruction: Retrieve images or text relevant to the user's query.
+indexing:
+  factory: Flat
+  metric: inner_product

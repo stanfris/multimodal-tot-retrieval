@@ -1,0 +1,7 @@
+defaults:
+  - openclip
+  - override /representation@_global_.representation: figures
+  - _self_
+
+name: openclip_figures
+document_input: figures

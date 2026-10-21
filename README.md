@@ -223,7 +223,9 @@ and explicit document-domain identities. Rebuild older artifacts from original i
 reuse and limitations. BM25 and dense `prepare`, `index`, `retrieve`, and `evaluate`
 execute for text corpora. Dense passages preserve the configured LangChain splitter
 and PyTerrier max/mean aggregation. ColBERT executes all four stages with fulltext.
-`search`, `export`, and visual/page/figure profiles remain configuration-only. Standalone tutorial examples below retain
+ColQwen and the single-vector visual profiles execute the same four stages.
+`search`, `export`, and the legacy `model=visual` profile remain configuration-only.
+Standalone tutorial examples below retain
 their established output layouts and APIs.
 
 ## ColBERTv2 textual baseline
@@ -385,6 +387,28 @@ Pretrained CPU/GPU inference and full corpus performance have not been exercised
 [visual retrieval guide](docs/colqwen-retrieval.md) for pinned versions, rendering,
 identity, resource requirements, and the selectable real-checkpoint test, and the
 [implementation report](docs/colqwen-implementation-report.md) for executed checks.
+
+## OpenCLIP and Qwen3-VL-Embedding baselines
+
+Five experiments use single-vector FAISS retrieval with maximum-score document
+aggregation: `openclip_pages`, `openclip_figures`, `qwen3_vl_page`, `qwen3_vl_multimodal` (page plus
+aligned MinerU text), and `qwen3_vl_figures` (supplied figures/table images).
+They share the existing stage scripts and document-level evaluation, reporting
+MRR@10 and Recall@1/10/100. Qwen query embeddings are shared across its three
+strategies; document embeddings and indexes remain separate.
+
+```sh
+for experiment in openclip_pages openclip_figures qwen3_vl_page qwen3_vl_multimodal qwen3_vl_figures; do
+  ./scripts/02_index.sh "experiment=$experiment"
+  ./scripts/03_retrieve.sh "experiment=$experiment"
+  ./scripts/04_evaluate.sh "experiment=$experiment"
+done
+```
+
+All run in the default locked environment. Multimodal page-text alignment
+requires original MinerU content-list JSON, which lean Markdown/image staging
+omits. The [visual dense retrieval guide](docs/visual-dense-retrieval.md) documents
+inputs, dimensions, per-domain commands, preprocessing, efficiency and smoke tests.
 
 ## Discovery and Hub use
 

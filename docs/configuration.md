@@ -9,10 +9,11 @@ all differences from the existing implementations.
 
 BM25 and dense `prepare`, `index`, `retrieve`, and `evaluate` execute with
 `fulltext` or `title_abstract`; dense also supports `passages`. `search`, `export`,
-and other models remain unimplemented. Existing BM25/dense
+and the legacy Byaldi profile remain unimplemented. Existing BM25/dense
 tutorial functions and scripts remain executable with their established defaults.
 ColBERT executes the same four stages with `fulltext`. ColQwen executes them with
-original PDF `pages`. Byaldi and figure retrieval remain configuration-only profiles.
+original PDF `pages`. OpenCLIP and Qwen support page, page-plus-text and extracted
+figure strategies through the same stages; see the [visual dense guide](visual-dense-retrieval.md).
 
 ## Ownership and consumers
 
@@ -21,16 +22,17 @@ original PDF `pages`. Byaldi and figure retrieval remain configuration-only prof
 | `dataset` | `default`, `hub` | `configured_adapter` → existing `Dataset` / `DatasetAdapter`; configured Hub downloads supported; artifact relocation unsupported |
 | `split` | `all`, `train`, `test`, `train+test` | `corpus_arguments` / `query_arguments` → adapter selection |
 | `representation` | `fulltext`, `title_abstract` | `corpus_arguments` → `DatasetAdapter.load_corpus`; original content is preserved |
-| `representation` | `passages`, `figures`, `pages` | Dense passages execute through LangChain/PyTerrier; ColQwen pages execute through PDFium; figures remain configuration-only |
+| `representation` | `passages`, `figures`, `pages` | Dense passages use LangChain/PyTerrier; page rendering uses PDFium; Qwen figures use supplied extracted images |
 | `model` | `bm25`, `dense` | `bm25_arguments` / `dense_arguments` → existing optional integration functions when passed `settings=cfg` |
 | `model` | `colbert` | Stanford Indexer/Searcher; fulltext with token truncation |
 | `model` | `visual` | Configuration-only compatibility validation |
 | `model` | `colqwen` | ST 6 MultiVectorEncoder with pinned adapter/base and official processor; persistent Qdrant DOT/MAX_SIM |
+| `model` | `openclip`, `openclip_figures`, `qwen3_vl_page`, `qwen3_vl_multimodal`, `qwen3_vl_figures` | Official single-vector encoders, shared dense FAISS stages and maximum-score document aggregation |
 | `retrieval` | `default` | PyTerrier `Retriever.num_results` / FAISS `Index.search` depth in the existing functions; BM25/dense retrieve; search remains unimplemented |
 | `evaluation` | `default` | `evaluate_run` → `ir_measures.parse_measure` and PyTerrier `Experiment.eval_metrics` |
 | `launcher` | `local_cpu`, `local_gpu` | Path normalization, output guards, model device, PyTorch/FAISS/Terrier threads and Terrier version |
 | `stage` | `prepare`, `index`, `retrieve`, `evaluate`, `search`, `export` | `run_stage` artifact preflight / provenance, then BM25/dense prepare/index/retrieve/evaluate dispatch |
-| `experiment` | `bm25_fulltext`, `dense_passages`, `colbert_fulltext`, `visual_pages`, `colqwen_pages` | Hydra defaults-list composition; no duplicated model settings or runtime dispatcher |
+| `experiment` | `bm25_fulltext`, `dense_passages`, `colbert_fulltext`, `visual_pages`, `colqwen_pages`, `openclip_pages`, `openclip_figures`, `qwen3_vl_page`, `qwen3_vl_multimodal`, `qwen3_vl_figures` | Hydra defaults-list composition; Qwen strategies share checkpoint/query settings |
 
 `model` owns algorithm/library parameters. `representation` owns source content
 and prospective transformations. `retrieval.top_k` owns ranking depth;

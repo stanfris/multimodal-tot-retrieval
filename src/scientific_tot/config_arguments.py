@@ -105,14 +105,14 @@ def corpus_arguments(cfg: DictConfig) -> dict:
     representation = cfg.representation.name
     if representation == "passages" and cfg.model.name == "dense":
         representation = "fulltext"
-    if representation not in {"fulltext", "title_abstract", "pages"}:
+    if representation not in {"fulltext", "title_abstract", "pages", "figures"}:
         raise NotImplementedError(f"representation={cfg.representation.name} is not implemented")
     return {
         "domain": cfg.dataset.domains[0],
         "split": cfg.split.corpus,
         "representation": representation,
         "missing": cfg.dataset.missing,
-        "include_figures": False,
+        "include_figures": representation == "figures",
         "include_metadata": cfg.representation.name in {"title_abstract", "pages"},
     }
 

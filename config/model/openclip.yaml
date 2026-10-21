@@ -1,0 +1,19 @@
+defaults:
+  - override /launcher@_global_.launcher: local_gpu
+  - override /representation@_global_.representation: pages
+  - _self_
+
+name: openclip
+backend: visual_faiss
+model_id: laion/CLIP-ViT-B-32-laion2B-s34B-b79K
+revision: 1a25a446712ba5ee05982a381eed697ef9b435cf
+architecture: ViT-B-32
+pretrained: laion2b_s34b_b79k
+document_input: pages
+dimension: 512
+batch_size: 16
+device: ${launcher.device}
+precision: fp32
+indexing:
+  factory: Flat
+  metric: inner_product

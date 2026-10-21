@@ -9,6 +9,8 @@ from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
 
+from scientific_tot.configuration import OPENCLIP_MODELS, VISUAL_DENSE_MODELS
+
 BATCH_FILES = ("run.trec", "topics.jsonl", "qrels.tsv", "query-ids.jsonl", "corpus-ids.jsonl")
 
 
@@ -39,6 +41,8 @@ def index_settings(cfg: DictConfig, provenance: dict | None = None) -> dict:
     model.pop("retrieval", None)
     if model["name"] == "dense":
         model["encoding"].pop("query_prompt")
+    if model["name"] in VISUAL_DENSE_MODELS - OPENCLIP_MODELS:
+        model.pop("query_instruction")
     representation = data["representation"]
     if representation["name"] == "passages":
         representation.pop("aggregation")
@@ -182,7 +186,7 @@ def verify_retrieval(directory: Path, cfg: DictConfig | None = None) -> dict:
     from scientific_tot.configuration import resolve_config
 
     built = resolve_config(OmegaConf.create(snapshot), directory.parent)
-    if built.stage.name != "retrieve" or built.model.name not in {
+    if built.stage.name != "retrieve" or built.model.name not in VISUAL_DENSE_MODELS | {
         "bm25",
         "dense",
         "colbert",
@@ -198,6 +202,8 @@ def verify_retrieval(directory: Path, cfg: DictConfig | None = None) -> dict:
             or built.representation != cfg.representation
             or built.model.name == "dense"
             and built.model.encoding != cfg.model.encoding
+            or built.model.name in VISUAL_DENSE_MODELS - OPENCLIP_MODELS
+            and built.model.query_instruction != cfg.model.query_instruction
         ):
             raise ValueError("Retrieval experiment differs from requested evaluation configuration")
         if any(int(m.split("@")[1]) > built.retrieval.top_k for m in cfg.evaluation.metrics):
@@ -221,7 +227,10 @@ def _validate_provenance(cfg: DictConfig, provenance: dict) -> None:
             raise ValueError(f"Resolved {field} must be an immutable commit SHA or null")
     if cfg.dataset.source == "hub" and provenance["dataset_revision"] is None:
         raise ValueError("Hub index requires a resolved dataset revision")
-    if cfg.model.name in {"dense", "colbert", "colqwen"} and provenance["model_revision"] is None:
+    if (
+        cfg.model.name in {"dense", "colbert", "colqwen"} | VISUAL_DENSE_MODELS
+        and provenance["model_revision"] is None
+    ):
         raise ValueError(f"{cfg.model.name} index requires a resolved model revision")
     for field, requested in (
         ("dataset_revision", cfg.dataset.revision),

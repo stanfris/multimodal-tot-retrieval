@@ -11,12 +11,12 @@ from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
 from scientific_tot.config_artifacts import verify_index, verify_retrieval
-from scientific_tot.configuration import CONFIG_DIR, resolve_config
+from scientific_tot.configuration import CONFIG_DIR, VISUAL_DENSE_MODELS, resolve_config
 
 
 def find_artifact(cfg, stage: str) -> Path | None:
     """Select exact indexes by current corpus identity; saved runs by verified settings."""
-    if stage == "index" and cfg.model.name == "colqwen":
+    if stage == "index" and cfg.model.name in {"colqwen"} | VISUAL_DENSE_MODELS:
         # Visual retrieval selects completed metadata; originals and rendering are
         # unavailable by contract. Multiple content versions require an explicit path.
         candidates = []

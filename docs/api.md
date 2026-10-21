@@ -138,6 +138,11 @@ bulk downloader's default is not a pinned or lightweight download workflow.
 `markdown_relpath`) and checks `markdown_sha256` when present. It never indexes
 prompts, generated clues, or interpretations.
 
+`representation="figures"` selects the same canonical papers without requiring
+Markdown or PDFs; text is empty and supplied figure/image locators are retained
+when `include_figures=True`. The Qwen figures integration validates those images,
+while preserving papers with no eligible images for document-level evaluation.
+
 `representation="title_abstract"` joins available title and abstract with a blank
 line. Either original field can be present alone; the other stays `null` and a
 `partial_title_abstract` issue is reported. Missing both triggers the content
