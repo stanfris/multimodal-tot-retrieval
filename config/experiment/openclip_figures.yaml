@@ -4,6 +4,3 @@ defaults:
   - override /representation: figures
   - override /stage: index
   - _self_
-
-evaluation:
-  metrics: [RR@10, R@1, R@10, R@100]

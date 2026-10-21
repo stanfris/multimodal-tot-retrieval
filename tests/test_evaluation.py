@@ -30,6 +30,7 @@ def test_default_metrics_and_cutoffs(empty):
         "RR@10": 0.5,
         "R@1": 0.0,
         "R@10": 0.5,
+        "R@100": 1.0,
         "nDCG@10": (1 / math.log2(3)) / (1 + 1 / math.log2(3)),
     }
     assert set(metrics.columns) == {"name", *expected}

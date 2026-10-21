@@ -83,8 +83,13 @@ def backend(monkeypatch, tmp_path):
         def __init__(self, **kwargs):
             calls.append(("searcher", kwargs))
 
-        def search(self, text, k):
-            calls.append(("search", text, k))
+        def encode(self, texts):
+            calls.append(("encode", texts))
+            return texts
+
+        def dense_search(self, vectors, k):
+            assert len(vectors) == 1
+            calls.append(("search", vectors[0], k))
             # Exercise the actual library's surplus-ranks behavior for k > corpus size.
             return [0, 1][:k], list(range(1, k + 1)), [2.0, 1.0][:k]
 
@@ -170,7 +175,8 @@ def test_independent_lifecycle_and_parameter_propagation(tmp_path, backend, monk
         "retrieval.top_k=10",
     )
     assert backend[2][1]["config"].query_maxlen == 24
-    assert backend[3][2] == 10
+    assert backend[3][0] == "encode"
+    assert backend[4][2] == 10
     assert len((output / "run.trec").read_text().splitlines()) == 2
     assert (output / "run.trec").read_text().splitlines()[0].split()[2] == mapping[0]["doc_id"]
     # A different query selection and depth reuse the same index.

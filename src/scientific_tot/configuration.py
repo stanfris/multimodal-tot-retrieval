@@ -327,6 +327,10 @@ def _validate(cfg: DictConfig) -> None:
                 f"model.{key} requires an immutable commit",
             )
         _require(_positive(model.batch_size), "model.batch_size must be positive")
+        _require(
+            model.retrieval.matmul_precision in {"highest", "high", "medium"},
+            "ColQwen matmul_precision must be highest, high or medium",
+        )
         _require(_positive(model.retrieval.batch_size), "query batch_size must be positive")
         for key in ("scoring_batch_size", "page_batch_size", "scoring_chunk_elements"):
             _require(_positive(model.retrieval[key]), f"model.retrieval.{key} must be positive")
@@ -378,6 +382,13 @@ def _validate(cfg: DictConfig) -> None:
             )
         _require(model.retrieval.controls["bm25.b"] <= 1, "BM25 b must be at most 1")
     _require(cfg.evaluation.backend == "ir_measures", "Unsupported evaluation backend")
+    _require(_positive(cfg.retrieval.batch_size), "retrieval.batch_size must be positive")
+    _require(
+        cfg.retrieval.search_device in {"auto", "cpu", "cuda"},
+        "retrieval.search_device must be auto, cpu or cuda",
+    )
+    if model.name == "dense":
+        _require(model.precision in {"fp32", "fp16", "bf16"}, "Unsupported model.precision")
     _require(_positive(cfg.retrieval.top_k), "retrieval.top_k must be positive")
     _require(
         OmegaConf.is_list(cfg.evaluation.metrics)

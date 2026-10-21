@@ -8,7 +8,6 @@ from pathlib import Path
 from time import perf_counter
 from urllib.parse import quote, unquote
 
-import numpy as np
 import pandas as pd
 from omegaconf import OmegaConf
 
@@ -26,14 +25,17 @@ from scientific_tot.integrations.dense import (
     cached_encoding,
     resolve_model_revision,
 )
+from scientific_tot.integrations.faiss_search import FaissSearch
 from scientific_tot.integrations.pyterrier import to_pyterrier_queries
 from scientific_tot.records import Records, Report, records_digest
+from scientific_tot.reporting import phase
 
 
 def project_passages(corpus: Records, cfg) -> Records:
     """Use the YAML-selected LangChain splitter; canonical paper IDs remain separate."""
     from langchain_text_splitters import RecursiveCharacterTextSplitter
-    from pyterrier import tqdm
+
+    from scientific_tot.reporting import tqdm
 
     splitter = RecursiveCharacterTextSplitter(
         **OmegaConf.to_container(cfg.representation.chunking, resolve=True),
@@ -170,6 +172,7 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         "corpus_sha256": corpus_sha256,
         "vector_input_sha256": records_digest(documents),
         "corpus_provenance": corpus.provenance,
+        "corpus_report": corpus.report.to_dict(),
         "documents": len(corpus),
         "vectors": len(mapping),
         "dimension": index.d,
@@ -190,14 +193,13 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
     }
     if cfg.representation.name == "passages":
         provenance["versions"]["langchain-text-splitters"] = version("langchain-text-splitters")
-    if visual:
-        provenance["efficiency"] = {
-            "indexed_units": index.ntotal,
-            "retrievable_documents": len({row["doc_id"] for row in mapping}),
-            "documents_without_units": len(corpus) - len({row["doc_id"] for row in mapping}),
-            "index_bytes": (target / "index.faiss").stat().st_size,
-            "embedding_generation_seconds": cached["encoding"]["generation_seconds"],
-        }
+    provenance["efficiency"] = {
+        "indexed_units": index.ntotal,
+        "retrievable_documents": len({row["doc_id"] for row in mapping}),
+        "documents_without_units": len(corpus) - len({row["doc_id"] for row in mapping}),
+        "faiss_index_bytes": (target / "index.faiss").stat().st_size,
+        "cached_embedding_generation_seconds": cached["encoding"].get("generation_seconds"),
+    }
     write_index_manifest(target, cfg, provenance=provenance)
     print(
         f"Index ready: {index.ntotal:,} vectors, dimension={index.d}, "
@@ -210,7 +212,8 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
 def retrieve_dense(cfg, target: Path) -> dict:
     """Encode queries independently and search the saved FAISS index at paper level."""
     import faiss
-    from pyterrier import tqdm
+
+    from scientific_tot.reporting import tqdm
 
     location = Path(cfg.paths.index)
     print(f"Verifying FAISS index: {location}", flush=True)
@@ -287,50 +290,73 @@ def retrieve_dense(cfg, target: Path) -> dict:
     max_depth = depth
     started = perf_counter()
     batches = []
-    for qid, vector in tqdm(
-        zip(inputs.topics.qid, vectors, strict=True),
-        total=len(inputs.topics),
-        desc="Retrieving queries",
-        unit="q",
+    search = FaissSearch(
+        index, device=cfg.retrieval.search_device, threads=cfg.launcher.threads.faiss, depth=depth
+    )
+    with (
+        phase("Search exact vectors and aggregate paper rankings"),
+        tqdm(
+            total=len(inputs.topics), desc=f"Retrieving queries ({search.device})", unit="query"
+        ) as progress,
     ):
-        # Scoring/ranking belong to FAISS. All passages are considered before aggregation,
-        # so top_k always counts papers and mean/max have their full-corpus semantics.
-        search_depth = depth
-        while True:
-            rows = []
-            if search_depth:
-                scores, positions = index.search(np.asarray([vector]), search_depth)
-                rows = [
-                    {"qid": qid, "docno": ids[int(position)], "rank": rank, "score": float(score)}
-                    for rank, (position, score) in enumerate(
-                        zip(positions[0], scores[0], strict=True)
+        for start, initial_scores, initial_positions in search.initial_batches(
+            vectors, depth, cfg.retrieval.batch_size
+        ):
+            for offset in range(len(initial_scores)):
+                number = start + offset
+                qid = inputs.topics.qid.iloc[number]
+                # Scoring/ranking belong to FAISS. All passages are considered before aggregation,
+                # so top_k always counts papers and mean/max have their full-corpus semantics.
+                search_depth = depth
+                while True:
+                    rows = []
+                    if search_depth:
+                        if search_depth == depth:
+                            scores, positions = initial_scores[offset], initial_positions[offset]
+                        else:
+                            values, matches = search.search(
+                                vectors[number : number + 1], search_depth
+                            )
+                            scores, positions = values[0], matches[0]
+                        rows = [
+                            {
+                                "qid": qid,
+                                "docno": ids[int(position)],
+                                "rank": rank,
+                                "score": float(score),
+                            }
+                            for rank, (position, score) in enumerate(
+                                zip(positions, scores, strict=True)
+                            )
+                            if position >= 0
+                        ]
+                    result = pd.DataFrame(rows, columns=["qid", "docno", "rank", "score"])
+                    if not visual or result.empty:
+                        break
+                    from scientific_tot.integrations.colqwen import aggregate_pages
+
+                    result = aggregate_pages(result, cfg.retrieval.top_k)
+                    result["rank"] -= 1  # The shared writer converts zero-based ranks to TREC.
+                    # Increase exact FAISS depth until enough unique papers are seen. Include
+                    # the whole score tie at the cutoff before applying canonical-ID tie breaks.
+                    if search_depth == len(ids) or (
+                        len(result) >= target_documents and result.score.iloc[-1] > scores[-1]
+                    ):
+                        break
+                    search_depth = min(2 * search_depth, len(ids))
+                max_depth = max(max_depth, search_depth)
+                if passage_mode:
+                    import pyterrier as pt
+
+                    method = cfg.representation.aggregation.method
+                    aggregator = (
+                        pt.text.max_passage() if method == "max" else pt.text.mean_passage()
                     )
-                    if position >= 0
-                ]
-            result = pd.DataFrame(rows, columns=["qid", "docno", "rank", "score"])
-            if not visual or result.empty:
-                break
-            from scientific_tot.integrations.colqwen import aggregate_pages
-
-            result = aggregate_pages(result, cfg.retrieval.top_k)
-            result["rank"] -= 1  # The shared writer converts zero-based ranks to TREC.
-            # Increase exact FAISS depth until enough unique papers are seen. Include
-            # the whole score tie at the cutoff before applying canonical-ID tie breaks.
-            if search_depth == len(ids) or (
-                len(result) >= target_documents and result.score.iloc[-1] > scores[0, -1]
-            ):
-                break
-            search_depth = min(2 * search_depth, len(ids))
-        max_depth = max(max_depth, search_depth)
-        if passage_mode:
-            import pyterrier as pt
-
-            method = cfg.representation.aggregation.method
-            aggregator = pt.text.max_passage() if method == "max" else pt.text.mean_passage()
-            result = aggregator.transform(result)
-            result["docno"] = result.docno.map(unquote)
-            result = result[result["rank"] < cfg.retrieval.top_k]
-        batches.append(result)
+                    result = aggregator.transform(result)
+                    result["docno"] = result.docno.map(unquote)
+                    result = result[result["rank"] < cfg.retrieval.top_k]
+                batches.append(result)
+                progress.update(1)
     run = pd.concat(batches, ignore_index=True)
     search_seconds = perf_counter() - started
     run["rank"] += 1
@@ -364,16 +390,14 @@ def retrieve_dense(cfg, target: Path) -> dict:
         "cache": {"queries": str(entry), "query_hit": hit},
         "retrieval_cutoff": cfg.retrieval.top_k,
         "vector_search_depth": max_depth,
-        **(
-            {
-                "efficiency": {
-                    "search_seconds": search_seconds,
-                    "seconds_per_query": search_seconds / len(inputs.topics),
-                }
-            }
-            if visual
-            else {}
-        ),
+        "search": search.report(),
+        "efficiency": {
+            "search_seconds": search_seconds,
+            "seconds_per_query": search_seconds / len(inputs.topics),
+            "timing_scope": (
+                "index transfer, vector search and paper aggregation; excludes query encoding"
+            ),
+        },
         "aggregation": {"method": "max", "scope": "all_indexed_units"}
         if visual
         else {

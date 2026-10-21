@@ -84,6 +84,7 @@ def build_bm25_index(corpus: Records, inputs: TerrierInputs, cfg, *, reserved=Fa
         "local_revision_verified": corpus.provenance["local_revision_verified"],
         "corpus_sha256": records_digest(inputs.documents),
         "corpus_provenance": corpus.provenance,
+        "corpus_report": corpus.report.to_dict(),
         "documents": len(inputs.documents),
         "document_domains": {row["doc_id"]: row["domain"] for row in corpus},
         "doc_ids_verified_against_index": True,

@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from scientific_tot.reporting import phase, tqdm
+
 
 def evaluate_run(
     run, topics, qrels, query_ids, target: Path, *, name: str, evaluation=None
@@ -37,40 +39,33 @@ def evaluate_metrics(run, topics, qrels, *, name: str, evaluation=None) -> tuple
         f"metrics={','.join(str(m) for m in measures)}",
         flush=True,
     )
-    if run.empty:
-        # Experiment rejects an entirely empty DataFrame. ir_measures still
-        # evaluates every judged query correctly without inventing dummy hits.
-        judgments = pt.model.to_ir_measures(qrels)
-        aggregate = ir_measures.calc_aggregate(measures, judgments, [])
-        metrics = pd.DataFrame(
-            [{"name": name, **{str(m): value for m, value in aggregate.items()}}]
-        )
-        per_query = pd.DataFrame(
-            [
-                {"name": name, "qid": row.query_id, "measure": str(row.measure), "value": row.value}
-                for row in ir_measures.iter_calc(measures, judgments, [])
-            ],
-            columns=["name", "qid", "measure", "value"],
-        )
-        return metrics, per_query
-    metrics = pt.Experiment(
-        [run],
-        topics,
-        qrels,
-        eval_metrics=measures,
-        names=[name],
-        validate="error",
-        filter_by_qrels=False,
+    if not run.empty:
+        pt.validate.result_frame(run)
+    judgments = pt.model.to_ir_measures(qrels)
+    results = [] if run.empty else pt.model.to_ir_measures(run)
+    aggregators = {measure: measure.aggregator() for measure in measures}
+    rows = []
+    with (
+        phase("Calculate aggregate and per-query retrieval metrics"),
+        tqdm(
+            ir_measures.iter_calc(measures, judgments, results),
+            total=qrels.qid.nunique() * len(measures),
+            desc="Evaluating query metrics",
+            unit="query-metric",
+        ) as progress,
+    ):
+        for metric in progress:
+            aggregators[metric.measure].add(metric.value)
+            rows.append(
+                {
+                    "name": name,
+                    "qid": metric.query_id,
+                    "measure": str(metric.measure),
+                    "value": metric.value,
+                }
+            )
+    metrics = pd.DataFrame(
+        [{"name": name, **{str(m): aggregator.result() for m, aggregator in aggregators.items()}}]
     )
-    # ir_measures owns both aggregate and per-query metric calculations.
-    per_query = pt.Experiment(
-        [run],
-        topics,
-        qrels,
-        eval_metrics=measures,
-        names=[name],
-        perquery=True,
-        validate="error",
-        filter_by_qrels=False,
-    )
+    per_query = pd.DataFrame(rows, columns=["name", "qid", "measure", "value"])
     return metrics, per_query

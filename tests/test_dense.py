@@ -128,7 +128,7 @@ def test_faiss_search_standard_metrics_and_cache_reuse(data, encoder, tmp_path):
     docs, queries = data
     metrics = dense_experiment(docs, queries, tmp_path / "first", cache=tmp_path / "cache")
     assert metrics.iloc[0]["RR@10"] == pytest.approx(1)
-    assert set(metrics.columns) == {"name", "RR@10", "R@1", "R@10", "nDCG@10"}
+    assert set(metrics.columns) == {"name", "RR@10", "R@1", "R@10", "R@100", "nDCG@10"}
     for measure in ["R@1", "R@10", "nDCG@10"]:
         assert metrics.iloc[0][measure] == pytest.approx(1)
     assert [c[0] for c in encoder] == ["load", "document", "load", "query"]
@@ -278,6 +278,9 @@ def test_sentence_transformer_external_arguments(monkeypatch, tmp_path):
         SimpleNamespace(
             set_num_threads=lambda n: calls.append(("threads", n)),
             get_num_threads=lambda: 2,
+            float32="float32",
+            bfloat16="bfloat16",
+            float16="float16",
         ),
     )
     cfg = EncodingConfig(batch_size=7, encoding_threads=2, similarity="dot", device="cuda")
@@ -290,6 +293,7 @@ def test_sentence_transformer_external_arguments(monkeypatch, tmp_path):
             "device": "cuda",
             "cache_folder": str(tmp_path),
             "trust_remote_code": False,
+            "model_kwargs": {"torch_dtype": "float32"},
         },
     )
     assert calls[2] == (

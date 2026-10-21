@@ -16,6 +16,7 @@ from scientific_tot.config_artifacts import (
     verify_retrieval,
 )
 from scientific_tot.configuration import VISUAL_DENSE_MODELS, absolute, overlaps, resolve_config
+from scientific_tot.reporting import StageMonitor, phase
 
 
 class FreshOutput(Callback):
@@ -261,11 +262,13 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
     manifest_path = run_dir / "manifest.json"
     with manifest_path.open("x", encoding="utf-8") as stream:
         json.dump(manifest, stream, indent=2)
+    monitor = None
     try:
+        monitor = StageMonitor(cfg)
         from scientific_tot.artifact_identity import PLANNED_IDENTITIES, resolve_identity
 
-        print("Resolving and verifying input identity...", flush=True)
-        identity = resolve_identity(cfg)
+        with phase("1/4 Resolve and verify source identity"):
+            identity = resolve_identity(cfg)
         if run_dir in PLANNED_IDENTITIES and PLANNED_IDENTITIES[run_dir] != identity:
             raise ValueError("Source inputs differ from the reserved artifact identity")
         manifest.update(artifact_identity=identity, artifact_sha256=digest(identity))
@@ -282,22 +285,26 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
             manifest["index_provenance"] = verify_index(Path(cfg.paths.index), cfg)
         if cfg.stage.name == "evaluate":
             manifest["retrieval_provenance"] = verify_retrieval(Path(cfg.paths.run), cfg)
-        result = execute_stage(cfg, run_dir=run_dir)
+        with phase(
+            f"2/4 {cfg.stage.name.capitalize()} — {cfg.model.name}/{cfg.representation.name}"
+        ):
+            result = execute_stage(cfg, run_dir=run_dir)
         if result is not None:
             manifest["artifacts"] = result
-        print("Verifying and sealing outputs...", flush=True)
-        if resolve_identity(cfg) != identity:
-            raise ValueError("Source inputs changed during artifact construction")
-        if cfg.stage.name == "index":
-            built = verify_index(Path(cfg.paths.index), cfg, allow_building=True)
-            if built.get("artifact_identity") != identity:
-                raise ValueError("Built index differs from reserved artifact identity")
+        with phase("3/4 Verify completed outputs and unchanged sources"):
+            if resolve_identity(cfg) != identity:
+                raise ValueError("Source inputs changed during artifact construction")
+            if cfg.stage.name == "index":
+                built = verify_index(Path(cfg.paths.index), cfg, allow_building=True)
+                if built.get("artifact_identity") != identity:
+                    raise ValueError("Built index differs from reserved artifact identity")
         # Seal every stage output, including preparation sidecars and index bytes.
-        manifest["output_files"] = {
-            str(path.relative_to(run_dir)): artifact_reference(path)
-            for path in sorted(run_dir.rglob("*"))
-            if path.is_file() and path.name not in {"manifest.json", ".run.lock"}
-        }
+        with phase("4/4 Checksum and seal artifact files"):
+            manifest["output_files"] = {
+                str(path.relative_to(run_dir)): artifact_reference(path)
+                for path in sorted(run_dir.rglob("*"))
+                if path.is_file() and path.name not in {"manifest.json", ".run.lock"}
+            }
     except Exception as exc:
         manifest.update(status="failed", error=f"{type(exc).__name__}: {exc}")
         raise
@@ -305,6 +312,46 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
         manifest["status"] = "completed"
         print(f"Completed {cfg.stage.name} artifact: {run_dir}", flush=True)
     finally:
+        if monitor is not None:
+            performance = monitor.finish()
+            performance["output_bytes"] = sum(
+                path.stat().st_size
+                for path in run_dir.rglob("*")
+                if path.is_file() and path.name not in {"manifest.json", ".run.lock"}
+            )
+            if cfg.stage.name == "index":
+                performance["index_bytes"] = sum(
+                    path.stat().st_size
+                    for path in Path(cfg.paths.index).rglob("*")
+                    if path.is_file()
+                    and path.name not in {"manifest.json", ".run.lock"}
+                    and ".hydra" not in path.parts
+                )
+            artifacts = manifest.get("artifacts", {})
+            provenance = artifacts.get("index_provenance", artifacts)
+            performance["embedding_cache_bytes"] = sum(
+                path.stat().st_size
+                for key, value in provenance.get("cache", {}).items()
+                if key in {"documents", "queries"}
+                for path in Path(value).rglob("*")
+                if path.is_file()
+            )
+            count = (
+                artifacts.get("queries")
+                if cfg.stage.name in {"retrieve", "evaluate"}
+                else (artifacts.get("documents") if cfg.stage.name == "index" else None)
+            )
+            performance["items"] = count
+            performance["items_per_second"] = (
+                count / performance["wall_seconds"] if count is not None else None
+            )
+            performance["throughput_scope"] = "entire stage including verification and output I/O"
+            manifest["performance"] = performance
+            print(
+                f"Stage {manifest['status']}: {performance['wall_seconds']:.1f}s; "
+                f"output={performance['output_bytes']:,} bytes; resource report=manifest.json",
+                flush=True,
+            )
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         manifest_path.chmod(0o444)
 

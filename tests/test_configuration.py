@@ -44,7 +44,7 @@ def test_default_composition(tmp_path):
     assert cfg.split.corpus == "all"
     assert cfg.split.queries == "test"
     assert cfg.stage.name == "prepare"
-    assert list(cfg.evaluation.metrics) == ["RR@10", "R@1", "R@10", "nDCG@10"]
+    assert list(cfg.evaluation.metrics) == ["RR@10", "R@1", "R@10", "R@100", "nDCG@10"]
     assert cfg.dataset.root == str(tmp_path / "data")
     assert OmegaConf.is_readonly(cfg)
 

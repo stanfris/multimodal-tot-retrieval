@@ -19,6 +19,7 @@ from scientific_tot.config_artifacts import (
 from scientific_tot.integrations.evaluation import evaluate_metrics
 from scientific_tot.integrations.pyterrier import _start_terrier, to_pyterrier_queries
 from scientific_tot.records import Records, Report
+from scientific_tot.reporting import phase
 
 
 def _indexed_corpus(index, manifest, cfg) -> Records:
@@ -159,7 +160,8 @@ def retrieve_bm25(cfg, target: Path) -> dict:
         _, arguments = bm25_arguments(
             cfg, docno_bytes=max(len(row["doc_id"].encode("utf-8")) for row in corpus)
         )
-        run = pt.terrier.Retriever(index, verbose=True, **arguments).transform(inputs.topics)
+        with phase("Retrieve BM25 queries on CPU"):
+            run = pt.terrier.Retriever(index, verbose=True, **arguments).transform(inputs.topics)
     finally:
         index.close()
     # PyTerrier uses zero-based ranks internally; the exported TREC ranks start at one.

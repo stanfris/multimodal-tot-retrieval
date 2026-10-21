@@ -25,6 +25,7 @@ from scientific_tot.config_artifacts import (
 )
 from scientific_tot.configuration import VISUAL_DENSE_MODELS, resolve_config
 from scientific_tot.records import records_digest
+from scientific_tot.reporting import package_version
 
 PLANNED_IDENTITIES: dict[Path, dict] = {}
 INDEX_EXISTENCE: dict[Path, bool] = {}
@@ -44,10 +45,10 @@ def index_identity(cfg, provenance: dict) -> dict:
     elif cfg.model.name == "dense":
         settings["encoding_threads"] = cfg.launcher.threads.encoding
         settings["faiss_threads"] = cfg.launcher.threads.faiss
-        names = ["sentence-transformers", "torch", "faiss-cpu", "numpy"]
+        names = ["sentence-transformers", "torch", "faiss", "numpy"]
         if cfg.representation.name == "passages":
             names.append("langchain-text-splitters")
-        settings["versions"] = {name: version(name) for name in names}
+        settings["versions"] = {name: package_version(name) for name in names}
     elif cfg.model.name in VISUAL_DENSE_MODELS:
         from scientific_tot.integrations.visual_dense import dependency_versions
 
@@ -63,8 +64,8 @@ def index_identity(cfg, provenance: dict) -> dict:
         settings["faiss_threads"] = cfg.launcher.threads.faiss
         settings["device"] = cfg.launcher.device
         settings["versions"] = {
-            name: version(name)
-            for name in ("colbert-ai", "transformers", "torch", "faiss-cpu", "numpy")
+            name: package_version(name)
+            for name in ("colbert-ai", "transformers", "torch", "faiss", "numpy")
         }
         if Path(cfg.model.checkpoint).is_absolute():
             from scientific_tot.integrations.colbert import local_checkpoint_digest

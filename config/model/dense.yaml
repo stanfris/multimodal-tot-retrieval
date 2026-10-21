@@ -8,6 +8,7 @@ model_id: intfloat/e5-small-v2
 revision: ffb93f3bd4047442299a41ebb6fa998a38507c52
 batch_size: 16
 device: ${launcher.device}
+precision: fp32  # fp16/bf16 opt in to reduced-precision model inference.
 encoding:
   normalize_embeddings: true
   query_prompt: "query: "

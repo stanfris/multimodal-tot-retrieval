@@ -5,7 +5,7 @@ import json
 import pickle
 import sqlite3
 import tempfile
-from contextlib import ExitStack, closing
+from contextlib import closing
 from importlib.metadata import version
 from itertools import islice
 from pathlib import Path
@@ -28,6 +28,7 @@ from scientific_tot.data.validation import DatasetFormatError
 from scientific_tot.integrations.bm25_batch import save_batch
 from scientific_tot.integrations.pyterrier import to_pyterrier_queries
 from scientific_tot.records import IncompleteCorpusError, Issue, Records, Report, records_digest
+from scientific_tot.reporting import phase
 
 
 def dependency_versions() -> dict:
@@ -66,7 +67,8 @@ def render_page(pdf, number: int, cfg):
 def load_pdf_corpus(adapter, cfg) -> Records:
     """Resolve original PDFs, fingerprint their bytes, and read page counts."""
     import pypdfium2 as pdfium
-    from tqdm.auto import tqdm
+
+    from scientific_tot.reporting import tqdm
 
     selected = adapter.load_corpus(**corpus_arguments(cfg))
     report = Report(
@@ -209,7 +211,8 @@ def iter_points(
 ):
     """Yield validated page positions/vectors from read-only SQLite, one point at a time."""
     from qdrant_client.local.persistence import CollectionPersistence
-    from tqdm.auto import tqdm
+
+    from scientific_tot.reporting import tqdm
 
     with closing(sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)) as db:
         count = db.execute("SELECT COUNT(*) FROM points").fetchone()[0]
@@ -306,46 +309,41 @@ def build_index(corpus, cfg, *, reserved=False, existing=None) -> dict:
 
 def persist_pages(corpus, cfg, model, mapping, resume_from: int) -> None:
     """Append new PointStructs through Qdrant's persistence API without a full RAM index."""
-    import pypdfium2 as pdfium
     from qdrant_client import models
     from qdrant_client.local.persistence import CollectionPersistence
-    from tqdm.auto import tqdm
+
+    from scientific_tot.integrations.visual_dense import prefetched_batches
+    from scientific_tot.reporting import tqdm
 
     target = Path(cfg.paths.index)
+    paths = {row["doc_id"]: row["pdf_path"] for row in corpus}
+    remaining = [{**row, "pdf_path": paths[row["doc_id"]]} for row in mapping[resume_from:]]
     with closing(CollectionPersistence(str(target / "qdrant/collection/pages"))) as store:
-        position = 0
-        with tqdm(
-            total=len(mapping), initial=resume_from, desc="Encoding PDF pages", unit="page"
-        ) as bar:
-            for row in corpus:
-                end = position + row["page_count"]
-                if end <= resume_from:
-                    position = end
-                    continue
-                with pdfium.PdfDocument(row["pdf_path"]) as pdf:
-                    first = max(1, resume_from - position + 1)
-                    for start in range(first, row["page_count"] + 1, cfg.model.batch_size):
-                        with ExitStack() as stack:
-                            images = [
-                                stack.enter_context(closing(render_page(pdf, number, cfg)))
-                                for number in range(
-                                    start, min(start + cfg.model.batch_size, row["page_count"] + 1)
-                                )
-                            ]
-                            vectors = model.encode_document(
-                                images, batch_size=cfg.model.batch_size, convert_to_numpy=True
-                            )
-                        assert len(vectors) == len(images)
-                        for i, vector in enumerate(vectors):
-                            offset = position + start - 1 + i
-                            store.persist(
-                                models.PointStruct(
-                                    id=offset, vector=vector.tolist(), payload=mapping[offset]
-                                )
-                            )
-                            bar.update(1)
-                        del vectors, vector
-                position = end
+        with (
+            phase("Encode and persist ColQwen PDF pages on CUDA"),
+            closing(prefetched_batches(remaining, cfg)) as batches,
+            tqdm(
+                total=len(mapping),
+                initial=resume_from,
+                desc="Encoding PDF pages (CUDA)",
+                unit="page",
+            ) as bar,
+        ):
+            for start, values in batches:
+                vectors = model.encode_document(
+                    [value["image"] for value in values],
+                    batch_size=cfg.model.batch_size,
+                    convert_to_numpy=True,
+                )
+                assert len(vectors) == len(values)
+                for i, vector in enumerate(vectors):
+                    offset = resume_from + start + i
+                    store.persist(
+                        models.PointStruct(
+                            id=offset, vector=vector.tolist(), payload=mapping[offset]
+                        )
+                    )
+                    bar.update(1)
         count = store.storage.execute("SELECT COUNT(*) FROM points").fetchone()[0]
         if count != len(mapping):
             raise ValueError("Persistent page count differs from mapping")
@@ -408,7 +406,8 @@ def score_pages(queries, pages, *, device, chunk_elements) -> np.ndarray:
 
 def retrieve(cfg, target: Path) -> dict:
     import torch
-    from tqdm.auto import tqdm
+
+    from scientific_tot.reporting import tqdm
 
     location = Path(cfg.paths.index)
     manifest = verify_index(location, cfg)
@@ -447,18 +446,19 @@ def retrieve(cfg, target: Path) -> dict:
     topics = list(inputs.topics.itertuples())
     size = cfg.model.retrieval.batch_size
     vectors = []
-    for start in tqdm(range(0, len(topics), size), desc="Encoding queries", unit="batch"):
-        chunk = topics[start : start + size]
-        encoded = model.encode_query(
-            [topic.query for topic in chunk], batch_size=size, convert_to_numpy=True
-        )
-        assert len(encoded) == len(chunk)
-        vectors.extend(np.asarray(vector, dtype=np.float32) for vector in encoded)
+    with phase("Encode ColQwen queries on CUDA"):
+        for start in tqdm(range(0, len(topics), size), desc="Encoding queries", unit="batch"):
+            chunk = topics[start : start + size]
+            encoded = model.encode_query(
+                [topic.query for topic in chunk], batch_size=size, convert_to_numpy=True
+            )
+            assert len(encoded) == len(chunk)
+            vectors.extend(np.asarray(vector, dtype=np.float32) for vector in encoded)
     del model, encoded
     # Encoding is finished; release its model and cached allocations before scoring.
     gc.collect()
     torch.cuda.empty_cache()
-    torch.set_float32_matmul_precision("highest")
+    torch.set_float32_matmul_precision(cfg.model.retrieval.matmul_precision)
     documents = list(domains)
     document_positions = {doc_id: i for i, doc_id in enumerate(documents)}
     best = np.full((len(topics), len(documents)), -np.inf)
@@ -468,6 +468,7 @@ def retrieve(cfg, target: Path) -> dict:
         flush=True,
     )
     with (
+        phase("Score all PDF pages on CUDA and aggregate papers"),
         (target / "page-scores.jsonl").open("x", encoding="utf-8") as page_scores,
         closing(
             iter_points(
@@ -554,6 +555,7 @@ def retrieve(cfg, target: Path) -> dict:
         "scoring": {
             "device": cfg.model.device,
             "dtype": "float32",
+            "matmul_precision": cfg.model.retrieval.matmul_precision,
             "library": "sentence_transformers.util.maxsim",
         },
         "aggregation": {

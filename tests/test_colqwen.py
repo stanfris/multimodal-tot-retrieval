@@ -177,7 +177,7 @@ def test_independent_lifecycle_identity_reuse_and_integrity(
 ):
     index, cfg, hydra = execute(tmp_path, dataset, "index", "index")
     assert all(call[0] == "document" for call in encoder)
-    assert [len(call[1]) for call in encoder] == [2, 1, 1]
+    assert [len(call[1]) for call in encoder] == [2, 2]
     assert encoder[0][2] == {"batch_size": 2, "convert_to_numpy": True}
     manifest = verify_index(index, cfg)
     assert manifest["provenance"]["pages"] == 4
@@ -366,6 +366,7 @@ def test_streamed_search_matches_local_qdrant(
     assert saved["artifacts"]["scoring"] == {
         "device": "cuda",
         "dtype": "float32",
+        "matmul_precision": "highest",
         "library": "sentence_transformers.util.maxsim",
     }
     scores = [json.loads(line) for line in (output / "page-scores.jsonl").read_text().splitlines()]

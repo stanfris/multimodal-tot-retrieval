@@ -16,6 +16,7 @@ indexing:
   comparator: max_sim
   exact: true
 retrieval:
+  matmul_precision: highest  # high opts in to TF32 on supported CUDA hardware.
   batch_size: 2
   scoring_batch_size: 16
   page_batch_size: 32

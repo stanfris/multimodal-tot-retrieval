@@ -330,12 +330,17 @@ def test_qwen_full_query_and_combined_context():
     seen = []
     encoder.model = SimpleNamespace(
         max_length=32768,
-        format_model_input=lambda **row: row,
+        format_model_input=lambda **row: seen.append(row) or row,
         _preprocess_inputs=lambda rows: {
             "attention_mask": torch.ones(len(rows), 9000),
             "pixel_values": torch.ones(1),
         },
-        process=lambda rows, **kw: seen.extend(rows),
+        model=SimpleNamespace(device="cpu"),
+        forward=lambda values: {
+            "last_hidden_state": torch.ones(len(values["attention_mask"]), 2, 2),
+            "attention_mask": values["attention_mask"],
+        },
+        _pooling_last=lambda hidden, mask: hidden[:, -1],
     )
     query = "original ToT text " * 1000
     encoder.encode([query], "query")

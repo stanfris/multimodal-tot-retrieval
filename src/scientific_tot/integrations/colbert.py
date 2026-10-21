@@ -2,7 +2,6 @@
 
 import json
 import os
-from importlib.metadata import version
 from pathlib import Path
 
 import pandas as pd
@@ -23,6 +22,7 @@ from scientific_tot.config_artifacts import (
 from scientific_tot.integrations.bm25_batch import save_batch
 from scientific_tot.integrations.pyterrier import to_pyterrier_queries
 from scientific_tot.records import Records, Report, records_digest
+from scientific_tot.reporting import package_version, phase, tqdm
 
 
 def local_checkpoint_digest(path: Path) -> str:
@@ -122,6 +122,7 @@ def build_colbert_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict
         "checkpoint_sha256": local_checkpoint_digest(Path(checkpoint)),
         "corpus_sha256": records_digest(inputs.documents),
         "corpus_provenance": corpus.provenance,
+        "corpus_report": corpus.report.to_dict(),
         "local_revision_verified": corpus.provenance["local_revision_verified"],
         "documents": len(mapping),
         "document_domains": {row["doc_id"]: row["domain"] for row in mapping},
@@ -131,8 +132,8 @@ def build_colbert_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict
             "policy": "prefix truncation by ColBERT DocTokenizer; no passage splitting",
         },
         "versions": {
-            name: version(name)
-            for name in ("colbert-ai", "transformers", "torch", "faiss-cpu", "numpy")
+            name: package_version(name)
+            for name in ("colbert-ai", "transformers", "torch", "faiss", "numpy")
         },
     }
     write_index_manifest(target, cfg, provenance=provenance)
@@ -175,22 +176,36 @@ def retrieve_colbert(cfg, target: Path) -> dict:
             collection=[""] * len(mapping),
             config=config,
         )
-        for topic in inputs.topics.itertuples():
-            pids, ranks, scores = searcher.search(topic.query, k=cfg.retrieval.top_k)
-            # Searcher returns k rank positions even when fewer than k PIDs are found.
-            if len(pids) != len(scores) or len(ranks) < len(pids):
-                raise ValueError("ColBERT returned inconsistent ranking lengths")
-            for pid, rank, score in zip(pids, ranks[: len(pids)], scores, strict=True):
-                if type(pid) is not int or not 0 <= pid < len(mapping):
-                    raise ValueError("ColBERT returned an unknown PID")
-                rows.append(
-                    {
-                        "qid": topic.qid,
-                        "docno": mapping[pid]["doc_id"],
-                        "rank": rank,
-                        "score": score,
-                    }
-                )
+        topics = list(inputs.topics.itertuples())
+        size = cfg.retrieval.batch_size
+        with (
+            phase("Encode queries in batches and score ColBERT candidates"),
+            tqdm(
+                total=len(topics), desc="Retrieving queries (CUDA ColBERT)", unit="query"
+            ) as progress,
+        ):
+            for start in range(0, len(topics), size):
+                chunk = topics[start : start + size]
+                encoded = searcher.encode([topic.query for topic in chunk])
+                for offset, topic in enumerate(chunk):
+                    pids, ranks, scores = searcher.dense_search(
+                        encoded[offset : offset + 1], k=cfg.retrieval.top_k
+                    )
+                    # Searcher returns k rank positions even when fewer than k PIDs are found.
+                    if len(pids) != len(scores) or len(ranks) < len(pids):
+                        raise ValueError("ColBERT returned inconsistent ranking lengths")
+                    for pid, rank, score in zip(pids, ranks[: len(pids)], scores, strict=True):
+                        if type(pid) is not int or not 0 <= pid < len(mapping):
+                            raise ValueError("ColBERT returned an unknown PID")
+                        rows.append(
+                            {
+                                "qid": topic.qid,
+                                "docno": mapping[pid]["doc_id"],
+                                "rank": rank,
+                                "score": score,
+                            }
+                        )
+                    progress.update(1)
     run = pd.DataFrame(rows, columns=["qid", "docno", "rank", "score"])
     query_mapping = inputs.query_ids.copy()
     query_mapping["domain"] = query_mapping.query_key.map(

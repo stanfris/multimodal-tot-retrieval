@@ -28,6 +28,7 @@ def dense_arguments(cfg: DictConfig) -> dict:
         "model_id": cfg.model.model_id,
         "model_revision": cfg.model.revision,
         "device": cfg.model.device,
+        "precision": cfg.model.precision,
         "batch_size": cfg.model.batch_size,
         "profile": "model",  # YAML prompts are authoritative, including explicit empty strings.
         "query_prompt": cfg.model.encoding.query_prompt,

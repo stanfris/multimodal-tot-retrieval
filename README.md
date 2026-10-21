@@ -116,9 +116,7 @@ in `results/evaluations/bm25_fulltext_c-all_q-test_<evaluation-hash>/metrics.csv
 and `results/evaluations/dense_fulltext_c-all_q-test_<evaluation-hash>/metrics.csv`;
 `per-query.csv` contains individual query scores. Rankings are saved as `run.trec`
 under the corresponding `results/models/` directory. Both baselines retrieve
-top-100 and report RR@10, Recall@1, Recall@10, and NDCG@10 by default. To also
-report Recall@100, pass `'evaluation.metrics=[RR@10,R@1,R@10,R@100,nDCG@10]'`
-to each evaluation command.
+top-100 and report RR@10, Recall@1, Recall@10, Recall@100, and NDCG@10 by default.
 
 For passage-based dense retrieval, replace `model=dense representation=fulltext`
 with `experiment=dense_passages` in all three dense commands. This splits original
@@ -172,7 +170,7 @@ The scripts run from the repository root and share `./data`, `./cache`, and
 `./results`; edit `scripts/defaults.sh` or use `TOT_DATA_ROOT`, `TOT_CACHE_ROOT`,
 and `TOT_OUTPUT_ROOT`. Their uv cache defaults to `${TOT_CACHE_ROOT}/uv`.
 BM25/fulltext defaults to ACL, all corpus documents, test queries, CPU, top-100,
-and RR@10/Recall@1/Recall@10/NDCG@10. The scripts do not restore datasets or launch prerequisites.
+and RR@10/Recall@1/Recall@10/Recall@100/NDCG@10. The scripts do not restore datasets or launch prerequisites.
 Automatic index selection rereads the selected corpus to match its exact identity;
 multiple compatible saved retrieval runs require an explicit `paths.run` choice.
 Changing content/settings creates a new identity;
@@ -303,8 +301,9 @@ No fine-tuning is performed.
 Dense embedding generation requires CUDA. Both the example script and Hydra
 `model=dense` (including `experiment=dense_passages`) select CUDA by default.
 If no NVIDIA GPU is available to PyTorch, execution raises an error instead of
-falling back to CPU, even when embeddings are cached. FAISS search and saved-run
-evaluation remain on CPU; evaluating an existing run needs no GPU.
+falling back to CPU, even when embeddings are cached. Hydra FAISS retrieval selects
+CUDA when the installed FAISS build exposes a GPU, and reports CPU execution otherwise.
+Saved-run evaluation remains on CPU and needs no GPU.
 
 Check GPU availability after syncing the updated environment:
 
@@ -394,7 +393,7 @@ Five experiments use single-vector FAISS retrieval with maximum-score document
 aggregation: `openclip_pages`, `openclip_figures`, `qwen3_vl_page`, `qwen3_vl_multimodal` (page plus
 aligned MinerU text), and `qwen3_vl_figures` (supplied figures/table images).
 They share the existing stage scripts and document-level evaluation, reporting
-MRR@10 and Recall@1/10/100. Qwen query embeddings are shared across its three
+MRR@10, Recall@1/10/100, and NDCG@10. Qwen query embeddings are shared across its three
 strategies; document embeddings and indexes remain separate.
 
 ```sh
@@ -457,3 +456,63 @@ A model download is required only when running pretrained encoding.
 Library consumers can still install the small core wheel and choose package extras.
 ColQwen has a separate locked environment; textual workflows retain the default one. Code is MIT licensed;
 dataset artifacts retain their own licenses.
+
+
+## Progress, acceleration and performance reports
+
+Every Hydra stage shows four named phases: source verification, execution, output
+verification, and artifact sealing. Inner loops show counts, units, rates and ETA;
+opaque native calls show the active phase and elapsed time every 30 seconds.
+ColBERT batches query encoding and shows completed query counts. Evaluation computes
+aggregate and per-query metrics together, with progress for query/metric pairs.
+Cache hits and reused artifacts are explicitly announced.
+
+Each new stage's `manifest.json` contains a common `performance` section, including
+UTC timestamps, elapsed and process CPU seconds, phase timings, throughput, output
+bytes, full index-directory bytes for index stages, and referenced embedding-cache
+bytes. Monitoring covers stage work after configuration snapshots are created,
+including source verification and output checksumming. It excludes CLI discovery
+and environment setup. Index bytes exclude Hydra snapshots, the outer manifest
+and locks; cache bytes are separate and exclude downloaded model weights.
+
+RAM is the Python process lifetime high-water mark, excluding JVM/child processes.
+GPU reports include the active device, CUDA runtime, PyTorch allocator peaks since
+stage start, and optional device-wide `nvidia-smi` utilization/memory/driver samples
+at 10-second intervals and completion. Device-wide samples include other processes;
+PyTorch peaks exclude FAISS/native allocations. Missing telemetry is represented by
+empty samples. Enabled SDPA backends are recorded; this is not a trace of the kernel
+chosen for each batch. Timing of cached embedding generation is explicitly historical;
+current-run timing is in `performance`. Reusing an existing immutable artifact keeps
+its original report.
+
+FAISS retrieval settings apply to E5, both OpenCLIP variants and all Qwen3-VL variants:
+
+```sh
+./scripts/03_retrieve.sh experiment=openclip_figures retrieval.search_device=auto retrieval.batch_size=32
+# Require a GPU-capable FAISS installation rather than accept CPU availability:
+./scripts/03_retrieve.sh experiment=openclip_figures retrieval.search_device=cuda
+# Explicit CPU search:
+./scripts/03_retrieve.sh experiment=openclip_figures retrieval.search_device=cpu
+```
+
+The locked environment installs `faiss-cpu`. CUDA search requires a compatible FAISS
+GPU build in the execution environment. When using a separately provisioned GPU
+FAISS environment, set `UV_NO_SYNC=1` so stage scripts do not replace its dependencies.
+`auto` reports CPU execution if GPU FAISS is unavailable; `cuda` fails in that case.
+Indexes remain portable CPU-format files, and GPU search uses FP32 storage and exact
+inner products. [FAISS GPU top-k](https://github.com/facebookresearch/faiss/wiki/Faiss-on-the-GPU)
+supports depths up to 2048: deeper exhaustive passage
+searches or expanded visual ties explicitly use CPU, with CPU/GPU search counts in
+the retrieval manifest. Deep passage searches avoid allocating an unused GPU index.
+Queries are batched with bounded score buffers. Floating-point scores can differ
+slightly between CPU/GPU implementations.
+
+E5 now accepts `model.precision=fp16` or `bf16`; FP32 remains its default. OpenCLIP
+already accepts those precision overrides. ColQwen accepts
+`model.retrieval.matmul_precision=high` to permit TF32 where supported; `highest`
+remains the default. Qwen3-VL retains BF16 and SDPA on CUDA. Reduced precision can
+change retrieval scores and should be compared with FP32 on the target hardware.
+Visual encoding prefetches one image batch while the GPU processes the current
+batch; PDFium work stays on one worker. Qwen validates and reuses its official
+preprocessed tensors instead of processing each batch twice. These changes do not
+add distributed model execution or automatic batch-size tuning.

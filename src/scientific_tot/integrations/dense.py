@@ -9,6 +9,7 @@ import tempfile
 from dataclasses import asdict, dataclass
 from importlib.metadata import version
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 import pandas as pd
@@ -18,6 +19,7 @@ from scientific_tot.config_artifacts import artifact_reference
 from scientific_tot.integrations.evaluation import evaluate_run
 from scientific_tot.integrations.pyterrier import to_pyterrier
 from scientific_tot.records import Records, records_digest
+from scientific_tot.reporting import package_version, phase
 
 DEFAULT_MODEL = "intfloat/e5-small-v2"
 DEFAULT_MODEL_REVISION = "ffb93f3bd4047442299a41ebb6fa998a38507c52"
@@ -34,6 +36,7 @@ class EncodingConfig:
     model_id: str = DEFAULT_MODEL
     model_revision: str | None = None
     device: str = "cuda"
+    precision: str = "fp32"
     batch_size: int = 16
     max_seq_length: int | None = None
     profile: str = "auto"
@@ -48,6 +51,8 @@ class EncodingConfig:
     def __post_init__(self):
         if self.device != "cuda" and not self.device.startswith("cuda:"):
             raise ValueError("Dense retrieval requires a CUDA device")
+        if self.precision not in {"fp32", "fp16", "bf16"}:
+            raise ValueError("precision must be fp32, fp16 or bf16")
         if self.batch_size < 1 or self.faiss_threads < 1 or self.encoding_threads < 1:
             raise ValueError("Batch size and thread counts must be positive")
         if self.max_seq_length is not None and self.max_seq_length < 1:
@@ -189,6 +194,11 @@ def _encode_task(
         device=config.device,
         cache_folder=str(model_cache),
         trust_remote_code=False,
+        model_kwargs={
+            "torch_dtype": {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}[
+                config.precision
+            ]
+        },
     )
     if config.max_seq_length is not None:
         model.max_seq_length = config.max_seq_length
@@ -210,6 +220,7 @@ def _encode_task(
     ):
         raise ValueError("Model returned invalid embeddings")
     metadata = {
+        "compute_precision": config.precision,
         "max_seq_length": model.max_seq_length,
         "cpu_threads": torch.get_num_threads(),
         "saved_prompts": model.prompts,
@@ -257,8 +268,8 @@ def cached_encoding(
         "dataset_revision": dataset_revision,
         "precision": "float32",
         "versions": {
-            name: version(name)
-            for name in ("sentence-transformers", "transformers", "torch", "numpy", "faiss-cpu")
+            name: package_version(name)
+            for name in ("sentence-transformers", "transformers", "torch", "numpy", "faiss")
         },
     }
     if task == "document":
@@ -273,9 +284,12 @@ def cached_encoding(
     faiss.omp_set_num_threads(config.faiss_threads)
     if not hit:
         text_key = "text" if task == "document" else "query"
-        vectors, metadata = _encode_task(
-            config, revision, cache / "models", task, [row[text_key] for row in rows], kwargs
-        )
+        started = perf_counter()
+        with phase(f"Encode {len(rows):,} {task} inputs on {config.device} ({config.precision})"):
+            vectors, metadata = _encode_task(
+                config, revision, cache / "models", task, [row[text_key] for row in rows], kwargs
+            )
+        metadata["generation_seconds"] = perf_counter() - started
         index = None
         ids = None
         if task == "document":

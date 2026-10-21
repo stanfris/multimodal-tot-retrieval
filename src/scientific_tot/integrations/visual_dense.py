@@ -4,8 +4,8 @@ import hashlib
 import importlib.util
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, closing
-from importlib.metadata import version
 from io import BytesIO
 from pathlib import Path
 from time import perf_counter
@@ -20,6 +20,7 @@ from scientific_tot.data.artifacts import Artifacts
 from scientific_tot.data.validation import DatasetFormatError
 from scientific_tot.integrations.dense import _read_cache, _write_cache
 from scientific_tot.records import Issue, Records, Report, records_digest
+from scientific_tot.reporting import package_version, phase
 
 
 def document_mapping(corpus, cfg) -> list[dict]:
@@ -75,7 +76,8 @@ def visual_corpus_digest(corpus, cfg) -> str:
 def load_visual_corpus(adapter, cfg) -> Records:
     """Use original PDFs or supplied images, with explicit MinerU alignment for mixed input."""
     from PIL import Image
-    from tqdm.auto import tqdm
+
+    from scientific_tot.reporting import tqdm
 
     strategy = cfg.model.document_input
     if strategy != "figures":
@@ -139,13 +141,13 @@ def load_visual_corpus(adapter, cfg) -> Records:
 
 
 def dependency_versions(cfg) -> dict:
-    names = ["torch", "torchvision", "pillow", "pypdfium2", "numpy", "faiss-cpu"]
+    names = ["torch", "torchvision", "pillow", "pypdfium2", "numpy", "faiss"]
     names += (
         ["open-clip-torch"]
         if cfg.model.name in OPENCLIP_MODELS
         else ["transformers", "qwen-vl-utils"]
     )
-    return {name: version(name) for name in names}
+    return {name: package_version(name) for name in names}
 
 
 class OpenCLIPEncoder:
@@ -221,7 +223,7 @@ class QwenEmbeddingEncoder:
         )
         self.model.model.to(cfg.model.device)
         self.metadata = {
-            "implementation": "checkpoint/scripts/qwen3_vl_embedding.py:Qwen3VLEmbedder.process",
+            "implementation": "official Qwen3VLEmbedder preprocessing, forward and _pooling_last",
             "max_length": self.model.max_length,
             "min_pixels": self.model.min_pixels,
             "max_pixels": self.model.max_pixels,
@@ -251,8 +253,14 @@ class QwenEmbeddingEncoder:
             raise ValueError("Qwen input exceeds the shared context budget; refusing truncation")
         if task == "document" and "pixel_values" not in preview:
             raise ValueError("Official Qwen preprocessing did not retain the image modality")
-        del preview
-        return self.model.process(inputs, normalize=True)
+        # Reuse the validated CPU tensors with the official forward/pooling methods.
+        # Calling process(inputs) here would repeat image processing and tokenization.
+        processed = {key: value.to(self.model.model.device) for key, value in preview.items()}
+        output = self.model.forward(processed)
+        embeddings = self.model._pooling_last(output["last_hidden_state"], output["attention_mask"])
+        import torch
+
+        return torch.nn.functional.normalize(embeddings, p=2, dim=-1)
 
 
 def load_model(cfg):
@@ -266,12 +274,76 @@ def load_model(cfg):
     return encoder(cfg, cache)
 
 
+def _load_batch(rows, cfg, task, store):
+    """Decode one batch on a single worker while the previous batch runs on the GPU."""
+    from PIL import Image
+
+    if task == "query":
+        return [row["query"] for row in rows]
+    values = []
+    try:
+        with ExitStack() as resources:
+            document = None
+            pdf = None
+            for row in rows:
+                if cfg.model.get("document_input") == "figures":
+                    data = store.read_bytes(row["image_path"])
+                    if hashlib.sha256(data).hexdigest() != row["image_sha256"]:
+                        raise ValueError(f"Image changed during encoding: {row['image_path']}")
+                    with Image.open(BytesIO(data)) as source:
+                        image = source.convert("RGB")
+                else:
+                    import pypdfium2 as pdfium
+
+                    from scientific_tot.integrations.colqwen import render_page
+
+                    if row["doc_id"] != document:
+                        resources.close()
+                        document = row["doc_id"]
+                        pdf = resources.enter_context(pdfium.PdfDocument(row["pdf_path"]))
+                    with closing(render_page(pdf, row["page_number"], cfg)) as rendered:
+                        image = rendered.copy()
+                values.append({"image": image, **({"text": row["text"]} if "text" in row else {})})
+        return values
+    except BaseException:
+        for value in values:
+            value["image"].close()
+        raise
+
+
+def prefetched_batches(rows, cfg, task="document", store=None):
+    """Keep two owned batches at most; close both on success, cancellation or failure."""
+    size = cfg.model.batch_size
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="visual-input") as worker:
+        pending = worker.submit(_load_batch, rows[:size], cfg, task, store) if rows else None
+        try:
+            for start in range(0, len(rows), size):
+                values = pending.result()
+                pending = None
+                if start + size < len(rows):
+                    pending = worker.submit(
+                        _load_batch, rows[start + size : start + 2 * size], cfg, task, store
+                    )
+                try:
+                    yield start, values
+                finally:
+                    if task == "document":
+                        for value in values:
+                            value["image"].close()
+        finally:
+            if pending is not None and not pending.cancel():
+                values = pending.result()
+                if task == "document":
+                    for value in values:
+                        value["image"].close()
+
+
 def cached_encoding(cfg, *, task, rows, dataset_revision):
     """Stream bounded image batches into the existing NumPy/FAISS embedding cache."""
     import faiss
     import torch
-    from PIL import Image
-    from tqdm.auto import tqdm
+
+    from scientific_tot.reporting import tqdm
 
     assert task in {"document", "query"} and (rows or task == "document")
     model_settings = OmegaConf.to_container(cfg.model, resolve=True)
@@ -308,7 +380,7 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
         started = perf_counter()
         encoder = load_model(cfg) if rows else None
         cache.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=cache) as folder, ExitStack() as resources:
+        with tempfile.TemporaryDirectory(dir=cache) as folder:
             vectors = np.lib.format.open_memmap(
                 Path(folder) / "embeddings.npy",
                 mode="w+",
@@ -323,53 +395,25 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
                 if task == "document" and cfg.model.document_input == "figures"
                 else None
             )
-            pdf = None
-            document = None
-            size = cfg.model.batch_size
-            for start in tqdm(range(0, len(rows), size), desc=f"Encoding {task}", unit="batch"):
-                batch = rows[start : start + size]
-                with ExitStack() as images:
-                    if task == "document":
-                        values = []
-                        for row in batch:
-                            if cfg.model.document_input == "figures":
-                                data = store.read_bytes(row["image_path"])
-                                if hashlib.sha256(data).hexdigest() != row["image_sha256"]:
-                                    raise ValueError(
-                                        f"Image changed during encoding: {row['image_path']}"
-                                    )
-                                source = images.enter_context(Image.open(BytesIO(data)))
-                                image = images.enter_context(source.convert("RGB"))
-                            else:
-                                import pypdfium2 as pdfium
-
-                                from scientific_tot.integrations.colqwen import render_page
-
-                                if row["doc_id"] != document:
-                                    resources.close()
-                                    document = row["doc_id"]
-                                    pdf = resources.enter_context(
-                                        pdfium.PdfDocument(row["pdf_path"])
-                                    )
-                                image = images.enter_context(
-                                    closing(render_page(pdf, row["page_number"], cfg))
-                                )
-                            values.append(
-                                {"image": image, **({"text": row["text"]} if "text" in row else {})}
-                            )
-                    else:
-                        values = [row["query"] for row in batch]
-                    with torch.inference_mode():
-                        encoded = encoder.encode(values, task).float()
-                        assert encoded.shape == (len(batch), cfg.model.dimension)
-                        assert torch.isfinite(encoded).all()
-                        assert (encoded.norm(dim=1) > 0).all()
-                        encoded = torch.nn.functional.normalize(encoded, dim=1)
-                        chunk = encoded.cpu().numpy()
-                    assert np.allclose(np.linalg.norm(chunk, axis=1), 1, atol=1e-5)
-                    vectors[start : start + len(batch)] = chunk
-                    if index is not None:
-                        index.add(chunk)
+            with phase(f"Encode {task} inputs on {cfg.model.device} ({cfg.model.precision})"):
+                with closing(prefetched_batches(rows, cfg, task, store)) as batches:
+                    for start, values in tqdm(
+                        batches,
+                        total=(len(rows) + cfg.model.batch_size - 1) // cfg.model.batch_size,
+                        desc=f"Encoding {task} ({cfg.model.device})",
+                        unit="batch",
+                    ):
+                        with torch.inference_mode():
+                            encoded = encoder.encode(values, task).float()
+                            assert encoded.shape == (len(values), cfg.model.dimension)
+                            assert torch.isfinite(encoded).all()
+                            assert (encoded.norm(dim=1) > 0).all()
+                            encoded = torch.nn.functional.normalize(encoded, dim=1)
+                            chunk = encoded.cpu().numpy()
+                        assert np.allclose(np.linalg.norm(chunk, axis=1), 1, atol=1e-5)
+                        vectors[start : start + len(values)] = chunk
+                        if index is not None:
+                            index.add(chunk)
             metadata = {
                 **(encoder.metadata if encoder is not None else {}),
                 "dimension": cfg.model.dimension,
