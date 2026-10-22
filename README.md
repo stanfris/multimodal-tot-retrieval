@@ -1,7 +1,7 @@
 # Scientific Tip of the Tongue Retrieval.
 
 This repository is the retrieval model implementation for **Multimodal Tip-of-the-Tongue Retrieval for Scientific Papers**, which introduces a
-[multimodal scientific tip-of-the-tongue dataset](https://huggingface.co/datasets/kasys/open-source-scientific-documents). 
+[multimodal scientific tip-of-the-tongue dataset](https://huggingface.co/datasets/kasys/multimodal-tip-of-the-tongue-retrieval-for-scientific-documents).
 In this repository we provide implementations of retrieval models to be used for evaluation.
 
 Please first download the dataset from the [generation repository](https://github.com/stanfris/multimodal-tip-of-tongue-retrieval-for-scientific-papers)
@@ -122,6 +122,273 @@ UV_PROJECT_ENVIRONMENT=.venv-colqwen uv run --locked \
   python -c 'import torch; print(torch.cuda.is_available())'
 ```
 
+## H200 deployment
+
+Use Linux, Python **3.11**, uv, one allocated NVIDIA H200, and enough separate
+storage for the restored data, reusable caches, and results. ColBERT also requires
+a local CUDA toolkit with `nvcc`, a compatible C++ compiler, and Ninja (locked
+Python dependency). Run inside your site's GPU allocation; these scripts make no
+scheduler assumption. Expose one GPU with your allocation's `CUDA_VISIBLE_DEVICES`.
+
+### Install and check the machine
+
+From this retrieval checkout, set absolute paths once:
+
+```bash
+export TOT_DATA_ROOT=/data/scientific-tot
+export TOT_CACHE_ROOT=/cache/scientific-tot
+export TOT_OUTPUT_ROOT=/results/scientific-tot
+export TOT_TEST_ROOT=/results/scientific-tot-test
+export HF_HOME="$TOT_CACHE_ROOT/huggingface"
+export PYTERRIER_HOME="$TOT_CACHE_ROOT/pyterrier"
+unset UV_PROJECT_ENVIRONMENT
+./scripts/setup_h200.sh
+```
+
+The setup checks Linux, installed Python 3.11, uv, the NVIDIA driver and memory,
+then installs **both locked environments**, without updating `uv.lock` or individual
+packages. It checks installed dependency constraints and imports, performs a small
+CUDA/BF16 operation in each environment, checks exact FAISS search in the default
+environment, and compiles/loads ColBERT's actual CUDA packbits and residual-decoding
+extensions. It downloads no model weights. The memory check rejects less than
+8 GiB free; passing it does **not** guarantee that every paper or batch fits.
+
+The Torch wheel's CUDA runtime does not include `nvcc`. If compilation fails, load
+a toolkit/compiler compatible with the printed `torch.version.cuda`, then rerun
+with `COLBERT_LOAD_TORCH_EXTENSION_VERBOSE=True`. Set `MAX_JOBS=2` to bound compiler
+workers. Do not repair compatibility errors by upgrading Torch or Transformers.
+The unchanged lock currently selects Torch 2.14.1; Linux CUDA runtime and driver
+compatibility must be verified on the target machine. Default Transformers 4.57.6
+and ColQwen Transformers 5.15.0 remain in separate environments.
+
+The lock installs **faiss-cpu**. CUDA model encoding and CPU exact search are a
+supported combination. `retrieval.search_device=auto` reports the available
+backend; force `cpu` to keep CPU search. Only use `cuda` with a separately verified
+compatible GPU FAISS build; setup accepts `retrieval.search_device=cuda` to test
+that choice. For such a provisioned environment, run the check module directly
+with `UV_NO_SYNC=1` rather than syncing over its custom packages:
+
+```bash
+uv run --no-sync python -m scientific_tot.h200_check default retrieval.search_device=cpu
+UV_PROJECT_ENVIRONMENT=.venv-colqwen uv run --no-sync \
+  --no-default-groups --extra colqwen --group dev \
+  python -m scientific_tot.h200_check colqwen
+```
+
+### Stage once, then run locally
+
+The producer's README, packager and downloader agree on
+[`kasys/multimodal-tip-of-the-tongue-retrieval-for-scientific-documents`](https://huggingface.co/datasets/kasys/multimodal-tip-of-the-tongue-retrieval-for-scientific-documents).
+The Hub API confirmed this ID, all five domains' query/preprocessed/PDF components, and commit
+`400ceae164dd6a2414dc1e2c511b06f7942dbeb2` on 2026-10-22. Retrieval's former
+`kasys/open-source-scientific-documents` default has been replaced.
+
+Only the staging command needs the
+[generation checkout](https://github.com/stanfris/multimodal-tip-of-tongue-retrieval-for-scientific-papers).
+It imports that checkout's packaging helpers using the retrieval environment;
+it does not install the generation pipeline or change dataset production.
+
+```bash
+export TOT_GENERATION_REPO=/path/to/multimodal-tip-of-tongue-retrieval-for-scientific-papers
+export TOT_DATA_REVISION=400ceae164dd6a2414dc1e2c511b06f7942dbeb2
+
+# Text and extracted figures: no separate raw PDF shard download.
+./scripts/stage_dataset.sh launcher=h200 "dataset.revision=$TOT_DATA_REVISION" \
+  'dataset.download.components=[metadata,queries,splits,preprocessed]'
+
+# Add original PDFs only for ColQwen/OpenCLIP/Qwen page experiments.
+./scripts/stage_dataset.sh launcher=h200 "dataset.revision=$TOT_DATA_REVISION" \
+  'dataset.download.components=[pdfs]'
+```
+
+This selects components across all five domains, retaining the producer's layout:
+`preprocessed/`, `pdf_datasets/`, `query_collections/`, `splits/`, and
+`metadata.parquet`. Query JSONL and authoritative `splits/pdf_dataset_split.json`
+are restored unchanged. The PDF index uses `document_id`, `source`,
+`original_relative_path`, `shard`, `member_path`, `size_bytes`, and `sha256`, plus
+bibliographic/license columns; it is not a table of extracted paper IDs.
+
+Filtered snapshots and transfer state live in
+`DATA_ROOT/.hf_dataset_download/<owner--repo>/<commit>/`. Rerunning with the same
+commit resumes transfers and skips identical restored files. Producer helpers
+validate archive paths, compare existing content, atomically publish restored
+files, and restore PDFs with recorded size/SHA-256 checks. Different existing
+files fail; staging never implicitly overwrites them. Reuse the same snapshot to
+add components. A different dataset revision should use a new data root. Archives
+are the download unit; preprocessed shards may themselves bundle extra assets.
+Keep the filtered snapshot for subsequent verification/reruns; this workflow does
+not make additional copies of it into a second download cache.
+
+Externally restored local data needs no generation checkout or staging marker.
+Check each selected experiment's required inputs without opening Markdown, PDF
+or image content:
+
+```bash
+for domain in ACL Biology Engineering Medicine Physics; do
+  .venv/bin/python -m scientific_tot.validate_dataset launcher=h200 \
+    "dataset.domains=[$domain]" "dataset.revision=$TOT_DATA_REVISION"
+done
+# Check page or figure requirements with the matching selector:
+.venv/bin/python -m scientific_tot.validate_dataset launcher=h200 \
+  experiment=qwen3_vl_multimodal 'dataset.domains=[ACL]'
+.venv/bin/python -m scientific_tot.validate_dataset launcher=h200 \
+  experiment=colqwen_pages 'dataset.domains=[ACL]'
+```
+
+Validation retains filenames and paper metadata, streams queries and Parquet
+batches, checks official split coverage and query positives, and rejects missing
+or empty required files. It does not certify local bytes against a remote commit,
+decode image/PDF contents, or prove that an externally supplied root includes every
+unassigned distractor. The normal stage checks verify actual input bytes and
+identities. `dataset.revision` on local inputs is a provenance assertion, as before.
+Keep the same assertion (or consistently leave it null) across all stages.
+`dataset.revision` defaults to `TOT_DATA_REVISION` when set, so the exported staging
+commit is also recorded by subsequent local runs; a CLI override still takes priority.
+
+### Run one baseline or all domains
+
+These use the existing stage entry points. Preparation exports canonical records
+and is optional; indexing does not consume a separate prepared-data implementation.
+
+```bash
+# One baseline/domain. Use the same overrides for every stage.
+./scripts/01_prepare.sh launcher=h200 experiment=dense_passages 'dataset.domains=[ACL]'
+./scripts/02_index.sh launcher=h200 experiment=dense_passages 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh launcher=h200 experiment=dense_passages 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh launcher=h200 experiment=dense_passages 'dataset.domains=[ACL]'
+
+# All ten implemented experiment profiles, each domain independently, sequentially.
+./scripts/run_benchmark.sh
+
+# Selected experiments/domains; include optional preparation.
+./scripts/run_benchmark.sh \
+  'benchmark.experiments=[bm25_fulltext,colqwen_pages]' \
+  'benchmark.domains=[ACL,Physics]' benchmark.prepare=true
+
+# Model-specific override, consistently applied across this job's stages.
+./scripts/run_benchmark.sh 'benchmark.experiments=[qwen3_vl_multimodal]' \
+  'benchmark.domains=[ACL]' model.batch_size=1
+
+# E5 fulltext retains its existing selector (also works with each stage script).
+./scripts/run_benchmark.sh 'benchmark.experiments=[dense_passages]' \
+  model=dense representation=fulltext
+
+# Configuration/command validation only: no stages, downloads, or inference.
+./scripts/run_benchmark.sh dry_run=true
+```
+
+Normal `split=test` means test queries against **all available domain corpus
+papers**, including distractors. The runner defaults to this selection. `mode=test`
+(or `--test` on individual stage scripts) instead isolates official test papers
+and caches/results under `TOT_TEST_ROOT`; it is not the paper benchmark.
+`visual_pages`/Byaldi is a configuration-only profile and is rejected by the runner.
+
+`config/launcher/h200.yaml` inherits `local_gpu`, which inherits `local_cpu`.
+It keeps the existing local execution contract, CUDA device and environment-driven
+storage roots, overriding only CPU thread defaults (8 each). Adjust via
+`TOT_INDEXING_THREADS`, `TOT_ENCODING_THREADS`, `TOT_FAISS_THREADS`, or normal
+`launcher.threads.*` overrides. The launcher owns execution/storage resources;
+`dataset` owns source/selection; `model` owns pinned checkpoints, precision and
+batch sizes; `representation` owns document inputs; `experiment` selects baseline
+combinations; `split` owns corpus/query membership; `stage` owns the operation.
+`config/benchmark.yaml` composes the same config and adds only experiment/domain
+lists and optional preparation. It validates each selected stage with Hydra and
+calls the ordinary scripts with identical shared overrides. No GPU jobs overlap
+within one runner; use one runner per allocated GPU.
+
+Qwen stays BF16, E5/OpenCLIP keep FP32, and ColBERT/ColQwen keep their existing
+library precision. E5/OpenCLIP/Qwen/ColQwen expose `model.batch_size`; ColBERT uses
+`model.indexing.index_bsize`. ColQwen's query/scoring controls remain under
+`model.retrieval`. H200 does not imply a universal safe batch size.
+
+Qwen still produces **one embedding per paper**. All selected figures or pages
+must fit together. The processor's existing image resizing and text-prefix
+truncation remain unchanged. The pinned processor rejects truncated image-token sequences before forward
+execution. Vision-processing failures no
+longer become placeholder inputs. Context failures identify the paper and counts;
+CUDA OOM errors retain their exception type and list the paper batch. Reduce
+`model.batch_size` for OOM; batch size cannot fix a single paper's image context
+overflow. No automatic image dropping, summarization, averaging or fallback is
+performed.
+
+### Logs, offline execution and interruption
+
+Artifacts remain in `results/{prepared,indexes,models,evaluations}/`, with the
+existing model/representation/domain/split/input identities, manifests and checksums.
+The runner prints exact commands, streams console output, appends independent logs
+to `TOT_OUTPUT_ROOT/logs/<experiment>/<domain>/<stage>.log`, and stops at the first
+stage error. In isolated mode logs use `TOT_TEST_ROOT/results/logs/`. Existing
+logs and results are retained. Inspect `manifest.json` for completion and
+`performance` reports; `nvidia-smi` shows current device-wide resource usage.
+
+Rerun the same command to reuse compatible **completed** indexes/retrieval/evaluation
+artifacts. Explicit artifact selection works through the original scripts:
+
+```bash
+./scripts/03_retrieve.sh launcher=h200 experiment=dense_passages \
+  'dataset.domains=[ACL]' paths.index=/results/scientific-tot/indexes/EXACT_INDEX
+./scripts/04_evaluate.sh launcher=h200 experiment=dense_passages \
+  'dataset.domains=[ACL]' paths.run=/results/scientific-tot/models/EXACT_RUN
+```
+
+Evaluation consumes saved topics, qrels and rankings; it does not need source
+documents, model weights or a GPU. The unchanged defaults are RR@10, R@1, R@10,
+R@100 and nDCG@10 with the existing relevance/aggregation definitions.
+
+An incomplete artifact is never accepted as completed. ColQwen's existing recovery
+validates source/config/dependency identity and persisted page IDs/vectors, then
+resumes missing pages when the same **index stage** is rerun. The standalone
+`python -m scientific_tot.recover_colqwen INDEX` only finalizes a fully populated
+trusted index. Other incomplete indexes/stage outputs need restarting: inspect the
+failed manifest, confirm the old process stopped, then explicitly move the failed
+directory outside the managed results tree and rerun. Do not change sealed files
+or pretend arbitrary model indexing is resumable. Completed embedding caches can
+still be reused when compatible; unfinished cache temp directories are not hits.
+
+After installing environments and prefetching the chosen weights and Terrier JARs
+with a connected smoke run, explicitly disable network transfers:
+
+```bash
+export HF_HUB_OFFLINE=1
+./scripts/run_benchmark.sh 'benchmark.experiments=[bm25_fulltext,dense_passages]'
+```
+
+The wrappers propagate offline mode to Hugging Face, Transformers, uv and the
+PyTerrier Maven resolver, and disable uv synchronization. Missing installed
+packages, model snapshots, dataset files or cached JARs fail rather than downloading.
+Normal retrieval uses `dataset=default` (local); it does not require the producer
+checkout or network. Dense model snapshots use the embedding cache's `models/`;
+visual/ColBERT/ColQwen snapshots use `TOT_CACHE_ROOT/models/`. Keep those locations
+when moving a prefetched cache. Staging is an explicit online operation and rejects
+offline mode. Unset `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`, `UV_OFFLINE` and
+`UV_NO_SYNC` before returning to connected installation/staging.
+
+### Smoke test before a full corpus
+
+A real small CPU BM25 pipeline is available on the two-paper checked-in fixture.
+This exercises index, retrieve and evaluate through the same stage scripts:
+
+```bash
+TOT_DATA_ROOT="$PWD/tests/fixtures/adapter" \
+TOT_OUTPUT_ROOT="$(mktemp -d /tmp/tot-bm25-smoke.XXXXXX)" \
+  ./scripts/run_benchmark.sh launcher=local_cpu \
+  'benchmark.experiments=[bm25_fulltext]' 'benchmark.domains=[ACL]'
+```
+
+Use the official isolated test setup for a GPU smoke run after staging; it uses
+**every official test paper**, so it may still be substantial:
+
+```bash
+./scripts/00_test.sh --test launcher=h200 experiment=qwen3_vl_figures \
+  'dataset.domains=[ACL]' model.batch_size=1
+./scripts/00_test.sh --test launcher=h200 experiment=colqwen_pages \
+  'dataset.domains=[ACL]' model.batch_size=1
+```
+
+Repeat with each selected experiment before full-corpus execution. A dry run or
+setup import/extension check is not end-to-end model inference. H200 CUDA, native
+extension and full-corpus success must be established on the target machine.
+
 ## Dataset layout and required files
 
 Set `TOT_DATA_ROOT` to an existing restored dataset root, with canonical paths:
@@ -181,10 +448,10 @@ data defaults to `dataset.missing=error`; explicit `skip` cannot leave an
 unresolved positive judgment. Test mode rejects skipped papers.
 
 The adapter also supports selected domain extraction TARs without unpacking;
-original PDF TAR shards must first be restored to the paths above. Restoration
-is external to these scripts. See the [dataset contract](docs/dataset-schema.md) for
-archive schemas and dated publication evidence. That evidence concerns a
-query-only Hub revision, so it is not proof that full corpus inputs are available.
+original PDF TAR shards must first be restored to the paths above. The H200 staging
+wrapper delegates restoration to the producer's helpers. The pinned snapshot above
+publishes query, split, preprocessed and PDF components for all five domains;
+validate the staged local inputs before running a benchmark.
 
 ## Roots and one domain per run
 
@@ -573,7 +840,7 @@ An existing experiment output is rejected to prevent stale indexes. Choose a new
 ```python
 from scientific_tot import Dataset, DatasetAdapter
 
-source = Dataset(revision="3b764a4c6855925ec802a2560712c4f5cc96f980")
+source = Dataset(revision="400ceae164dd6a2414dc1e2c511b06f7942dbeb2")
 print(source.discover())  # filenames/sizes only, no artifact downloads
 adapter = DatasetAdapter(source)
 queries = adapter.load_queries(domain="ACL", split="test")

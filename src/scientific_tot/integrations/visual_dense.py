@@ -237,6 +237,7 @@ class QwenEmbeddingEncoder:
         module = importlib.util.module_from_spec(spec)
         sys.modules[name] = module
         spec.loader.exec_module(module)
+        self.process_vision_info = module.process_vision_info
         dtype = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}
         self.model = module.Qwen3VLEmbedder(
             model_name_or_path=str(snapshot),
@@ -257,7 +258,51 @@ class QwenEmbeddingEncoder:
             "attention": "sdpa",
         }
 
+    def _preprocess(self, conversations):
+        # Same pinned official preprocessing arguments, with errors allowed to
+        # propagate instead of its catch-all replacement with a NULL input.
+        text = self.model.processor.apply_chat_template(
+            conversations, add_generation_prompt=True, tokenize=False
+        )
+        images, videos, kwargs = self.process_vision_info(
+            conversations,
+            image_patch_size=16,
+            return_video_metadata=True,
+            return_video_kwargs=True,
+        )
+        assert videos is None  # This integration supplies images and text only.
+        return self.model.processor(
+            text=text,
+            images=images,
+            videos=None,
+            video_metadata=None,
+            truncation=True,
+            max_length=self.model.max_length,
+            padding=True,
+            do_resize=False,
+            return_tensors="pt",
+            **kwargs,
+        )
+
     def encode(self, values, task):
+        import torch
+
+        ids = (
+            [row.get("doc_id", "unknown paper") for row in values]
+            if task == "document"
+            else [f"query batch ({len(values)} queries)"]
+        )
+        try:
+            return self._encode(values, task)
+        except torch.cuda.OutOfMemoryError as exc:
+            raise torch.cuda.OutOfMemoryError(
+                f"Qwen CUDA out of memory for {ids}: {exc}. Reduce model.batch_size "
+                "(try 1); a single paper may still exceed GPU memory."
+            ) from exc
+        except (ValueError, RuntimeError) as exc:
+            raise type(exc)(f"Qwen input {ids}: {exc}") from exc
+
+    def _encode(self, values, task):
         if task == "document":
             inputs = values
         else:
@@ -280,7 +325,7 @@ class QwenEmbeddingEncoder:
             conversations.append(conversation)
         # The official processor truncates at max_length. Images precede text,
         # so text fills the remaining context and its suffix is discarded.
-        preview = self.model._preprocess_inputs(conversations)
+        preview = self._preprocess(conversations)
         image_count = sum(len(row.get("images", [])) for row in inputs)
         if image_count and (
             "pixel_values" not in preview
@@ -290,6 +335,7 @@ class QwenEmbeddingEncoder:
             raise ValueError(
                 "Official Qwen preprocessing did not retain every image modality input"
             )
+        # The pinned processor itself rejects truncated image-token sequences.
         # Reuse the processed CPU tensors with the official forward/pooling methods.
         # Calling process(inputs) here would repeat image processing and tokenization.
         processed = {key: value.to(self.model.model.device) for key, value in preview.items()}
@@ -480,6 +526,7 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
                         vectors[start : start + len(values)] = chunk
                         if index is not None:
                             index.add(chunk)
+                        del encoded, chunk
             metadata = {
                 **(encoder.metadata if encoder is not None else {}),
                 "dimension": cfg.model.dimension,

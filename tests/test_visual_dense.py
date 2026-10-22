@@ -493,10 +493,10 @@ def test_qwen_full_inputs_and_processor_truncation():
             ),
         }
 
+    encoder._preprocess = preprocess
     encoder.model = SimpleNamespace(
         max_length=32768,
         format_model_input=format_input,
-        _preprocess_inputs=preprocess,
         model=SimpleNamespace(device="cpu"),
         forward=lambda values: (
             forwarded.append(values)
@@ -532,15 +532,45 @@ def test_qwen_full_inputs_and_processor_truncation():
         assert forwarded[-1]["attention_mask"].shape == (1, 8192)
         assert limits[-1] == encoder.model.max_length == 8192
     encoder.model.max_length = 32768
-    encoder.model._preprocess_inputs = lambda rows: {
+    encoder._preprocess = lambda rows: {
         "attention_mask": torch.ones(len(rows), 2),
         "pixel_values": torch.ones(1),
         "image_grid_thw": torch.ones(1, 3),
     }
     with pytest.raises(ValueError, match="every image"):
         encoder.encode([{"images": images, "text": "Full text"}], "document")
+
+    def context_failure(rows):
+        raise ValueError(
+            "Mismatch in image token count; ids=[16], text=[48]; truncation=max_length"
+        )
+
+    encoder._preprocess = context_failure
+    with pytest.raises(ValueError, match="paper-too-large.*image token count"):
+        encoder.encode([{"images": images, "doc_id": "paper-too-large"}], "document")
+
+    def fail(rows):
+        raise torch.cuda.OutOfMemoryError("allocation failed")
+
+    encoder._preprocess = fail
+    with pytest.raises(torch.cuda.OutOfMemoryError, match="paper-oom.*allocation failed"):
+        encoder.encode([{"images": images, "doc_id": "paper-oom"}], "document")
     for image in images:
         image.close()
+
+
+def test_qwen_vision_errors_propagate_without_placeholder():
+    encoder = QwenEmbeddingEncoder.__new__(QwenEmbeddingEncoder)
+    encoder.model = SimpleNamespace(
+        processor=SimpleNamespace(apply_chat_template=lambda *a, **k: "formatted input")
+    )
+
+    def fail(*args, **kwargs):
+        raise ValueError("invalid image dimensions")
+
+    encoder.process_vision_info = fail
+    with pytest.raises(ValueError, match="invalid image dimensions"):
+        encoder._preprocess([])
 
 
 @pytest.mark.visual_live

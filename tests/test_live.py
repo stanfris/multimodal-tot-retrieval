@@ -1,20 +1,22 @@
 import pytest
 
 from scientific_tot import Dataset, DatasetAdapter
-from scientific_tot.data.hub import MissingComponentError
+from scientific_tot.data.schemas import DOMAINS
 
 
 @pytest.mark.live
 def test_published_adapter():
     """Opt-in: inventory, small metadata, and one ~7 MB ACL test JSONL; no archives."""
-    dataset = Dataset(revision="3b764a4c6855925ec802a2560712c4f5cc96f980")
+    dataset = Dataset(revision="400ceae164dd6a2414dc1e2c511b06f7942dbeb2")
     inventory = dataset.discover()
-    assert len(inventory.collections) == 10
-    assert inventory.components == ("query_collections",)
+    assert {collection.domain for collection in inventory.collections} == set(DOMAINS)
+    assert {"metadata", "data", "preprocessed", "query_collections", "splits"} <= set(
+        inventory.components
+    )
+    split = dataset.load_split()
+    assert split["train"] and split["test"]
     adapter = DatasetAdapter(dataset)
     queries = adapter.load_queries(domain="ACL", split="test")
-    assert len(queries) == 110
-    assert queries[0]["query_id"] == "test_visual_and_text_q00000"
-    assert queries[0]["relevant_ids"] == ["ACL_2022.coling-1.30"]
-    with pytest.raises(MissingComponentError):
-        adapter.load_corpus(domain="ACL")
+    assert queries
+    assert all(row["domain"] == "ACL" and row["split"] == "test" for row in queries)
+    # Intentionally do not load a corpus: that would download domain TARs.

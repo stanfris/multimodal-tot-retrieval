@@ -1,0 +1,20 @@
+defaults:
+  - config
+  - override launcher: h200
+  - _self_
+
+# Only orchestration choices. Each job composes the ordinary stage configuration.
+benchmark:
+  experiments:
+    - bm25_fulltext
+    - dense_passages
+    - colbert_fulltext
+    - colqwen_pages
+    - openclip_pages
+    - openclip_figures
+    - qwen3_vl_text
+    - qwen3_vl_figures
+    - qwen3_vl_pages
+    - qwen3_vl_multimodal
+  domains: [ACL, Biology, Engineering, Medicine, Physics]
+  prepare: false

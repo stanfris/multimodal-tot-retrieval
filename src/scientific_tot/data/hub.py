@@ -22,7 +22,7 @@ from scientific_tot.data.validation import (
     validate_split,
 )
 
-DEFAULT_REPO = "kasys/open-source-scientific-documents"
+DEFAULT_REPO = "kasys/multimodal-tip-of-the-tongue-retrieval-for-scientific-documents"
 
 
 class MissingComponentError(FileNotFoundError):

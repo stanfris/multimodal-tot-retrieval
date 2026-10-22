@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 from dataclasses import dataclass
 from importlib.metadata import version
@@ -27,6 +28,8 @@ def _start_terrier(pt, terrier_version: str) -> None:
     if not pt.java.started():
         from jdk4py import JAVA_HOME
 
+        if os.environ.get("HF_HUB_OFFLINE") == "1":
+            pt.java.mavenresolver.offline()
         pt.java.set_java_home(str(JAVA_HOME))
         pt.terrier.set_version(terrier_version)
         pt.java.init()

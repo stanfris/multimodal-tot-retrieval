@@ -1,7 +1,7 @@
 name: scientific_tot
 source: local  # hub explicitly opts into network access in future stage implementations.
-repo_id: kasys/open-source-scientific-documents
-revision: null  # Optional full 40-character commit SHA; local revisions are assertions.
+repo_id: kasys/multimodal-tip-of-the-tongue-retrieval-for-scientific-documents
+revision: ${oc.env:TOT_DATA_REVISION,null}  # Full commit SHA; local revisions are assertions.
 root: ${launcher.dataset_root}
 cache_dir: ${launcher.cache_root}/datasets
 domains: [ACL]
