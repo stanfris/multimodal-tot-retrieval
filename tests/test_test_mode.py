@@ -25,7 +25,8 @@ METHODS = [
     "experiment=openclip_figures",
     "experiment=qwen3_vl_text",
     "experiment=qwen3_vl_multimodal",
-    "experiment=qwen3_vl_images",
+    "experiment=qwen3_vl_pages",
+    "experiment=qwen3_vl_figures",
 ]
 
 
@@ -67,7 +68,15 @@ def test_official_test_split_has_no_fixed_size(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "method", ["model=dense", "experiment=openclip_figures", "experiment=qwen3_vl_images"]
+    "method",
+    [
+        "model=dense",
+        "experiment=openclip_figures",
+        "experiment=qwen3_vl_pages",
+        "experiment=qwen3_vl_figures",
+        "experiment=qwen3_vl_multimodal",
+        "experiment=qwen3_vl_text",
+    ],
 )
 def test_110_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypatch, method):
     from PIL import Image
@@ -93,11 +102,21 @@ def test_110_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypa
             )
         )
         (target / "markdown.md").write_text("target" if number == 1 else "distractor")
-        if "figures" in method or "qwen3_vl_images" in method:
+        if "figures" in method or "qwen3_vl_multimodal" in method:
             # Reproduce a restored lean corpus with no per-paper/figure metadata.
             (target / "paper.json").unlink()
             (target / "images").mkdir()
             Image.new("RGB", (16 if number == 1 else 8, 8)).save(target / "images/figure.png")
+        elif "qwen3_vl_pages" in method:
+            import pypdfium2 as pdfium
+
+            pdf_path = dataset / "pdf_datasets" / source
+            pdf_path.parent.mkdir(parents=True, exist_ok=True)
+            with pdfium.PdfDocument.new() as pdf:
+                # The positive has two pages. Both still belong to one paper vector.
+                for _ in range(2 if number == 1 else 1):
+                    pdf.new_page(8 if number == 1 else 4, 4).close()
+                pdf.save(pdf_path)
     for number in range(10):
         unrelated = papers / f"ACL_2026.findings-acl.{number}" / "images"
         unrelated.mkdir(parents=True)
@@ -125,15 +144,19 @@ def test_110_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypa
 
             vectors = torch.zeros(len(values), self.dimension)
             for number, value in enumerate(values):
-                image = (
-                    None if task == "query" else value.get("image", value.get("images", [None])[0])
-                )
-                vectors[number, 0 if task == "query" or image.width == 16 else 1] = 1
+                if task == "query":
+                    positive = True
+                elif value.get("images") or "image" in value:
+                    image = value["image"] if "image" in value else value["images"][0]
+                    positive = image.width == 16
+                else:
+                    positive = value["text"] == "target"
+                vectors[number, 0 if positive else 1] = 1
             return vectors
 
     monkeypatch.setattr("scientific_tot.integrations.visual_dense.load_model", VisualEncoder)
     arguments = ["--test", method, f"dataset.root={dataset}"]
-    if "figures" in method or "qwen3_vl_images" in method:
+    if method != "model=dense":
         arguments.extend(["launcher=local_cpu", "model.precision=fp32"])
     outputs = {}
     for stage in ("index", "retrieve", "evaluate"):

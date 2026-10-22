@@ -1,4 +1,4 @@
-"""Single-vector supplied-image encoders using official OpenCLIP and Qwen APIs."""
+"""Single-vector page/text and supplied-image encoders using official OpenCLIP and Qwen APIs."""
 
 import hashlib
 import importlib.util
@@ -31,15 +31,30 @@ def document_mapping(corpus, cfg) -> list[dict]:
                 "docno": paper["doc_id"],
                 "doc_id": paper["doc_id"],
                 "domain": paper["domain"],
-                "images": [
+                **(
                     {
-                        "figure_id": figure["figure_id"],
-                        "image_path": figure["image"]["path"],
-                        "image_sha256": figure["image_sha256"],
+                        "page_count": paper["page_count"],
+                        "pdf_path": paper["pdf_path"],
+                        "pdf_sha256": paper["pdf_sha256"],
                     }
-                    for figure in paper["figures"]
-                ],
-                **({"text": paper["text"]} if cfg.model.document_input != "images" else {}),
+                    if cfg.model.document_input == "pages"
+                    else {
+                        "page_count": 0,
+                        "images": [
+                            {
+                                "figure_id": figure["figure_id"],
+                                "image_path": figure["image"]["path"],
+                                "image_sha256": figure["image_sha256"],
+                            }
+                            for figure in paper["figures"]
+                        ],
+                    }
+                ),
+                **(
+                    {"text": paper["text"]}
+                    if cfg.model.document_input in {"text", "multimodal"}
+                    else {}
+                ),
             }
             for paper in corpus
         ]
@@ -87,7 +102,7 @@ def visual_corpus_digest(corpus, cfg) -> str:
 
 
 def load_visual_corpus(adapter, cfg) -> Records:
-    """Read original Markdown and/or supplied images; only OpenCLIP pages need PDFs."""
+    """Reuse original PDF loading for page inputs and the text adapter for Markdown."""
     from scientific_tot.reporting import tqdm
 
     strategy = cfg.model.document_input
@@ -132,10 +147,8 @@ def load_visual_corpus(adapter, cfg) -> Records:
                 continue
             figures.append(figure)
         paper["figures"] = figures
-        if not figures and strategy == "images":
-            raise ValueError(
-                f"{paper['doc_id']}: image-only document input requires supplied images"
-            )
+        if not figures and cfg.model.name == "qwen3_vl_figures":
+            raise ValueError(f"{paper['doc_id']}: figure-only input requires supplied figures")
         if not figures and strategy == "figures":
             report.issues.append(
                 Issue(
@@ -314,10 +327,19 @@ def _load_batch(rows, cfg, task, store):
                     value = {"doc_id": row["doc_id"], "images": []}
                     # Own decoded images even if a later image fails to decode.
                     values.append(value)
-                    for image in row["images"]:
-                        data = store.read_bytes(image["image_path"])
-                        with Image.open(BytesIO(data)) as source:
-                            value["images"].append(source.convert("RGB"))
+                    if row["page_count"]:
+                        import pypdfium2 as pdfium
+
+                        from scientific_tot.integrations.colqwen import render_page
+
+                        with pdfium.PdfDocument(row["pdf_path"]) as paper_pdf:
+                            for number in range(1, row["page_count"] + 1):
+                                value["images"].append(render_page(paper_pdf, number, cfg))
+                    else:
+                        for image in row["images"]:
+                            data = store.read_bytes(image["image_path"])
+                            with Image.open(BytesIO(data)) as source:
+                                value["images"].append(source.convert("RGB"))
                     if "text" in row:
                         value["text"] = row["text"]
                     continue
@@ -428,14 +450,14 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
                 Artifacts(
                     configured_adapter(cfg).dataset, tuple(cfg.dataset.domains), archives=True
                 )
-                if task == "document"
-                and cfg.model.document_input in {"figures", "images", "multimodal"}
+                if task == "document" and cfg.model.document_input in {"figures", "multimodal"}
                 else None
             )
             if task == "document" and cfg.model.name in QWEN_MODELS:
                 print(
                     f"Qwen document input={cfg.model.document_input}: {len(rows):,} papers, "
-                    f"{sum(len(row['images']) for row in rows):,} supplied images, "
+                    f"{sum(row['page_count'] for row in rows):,} rendered PDF pages, "
+                    f"{sum(len(row.get('images', [])) for row in rows):,} supplied figures, "
                     f"{sum('text' in row for row in rows):,} full texts; one embedding per paper",
                     flush=True,
                 )
@@ -469,7 +491,8 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
                 metadata.update(
                     embedding_level="paper",
                     document_input=cfg.model.document_input,
-                    supplied_images=sum(len(row["images"]) for row in rows),
+                    rendered_pages=sum(row["page_count"] for row in rows),
+                    supplied_images=sum(len(row.get("images", [])) for row in rows),
                     full_texts=sum("text" in row for row in rows),
                 )
             if cfg.model.name in OPENCLIP_MODELS and task == "query":

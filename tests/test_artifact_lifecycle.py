@@ -49,7 +49,7 @@ def identity(base, *overrides):
     return value, artifact_directory(cfg, value)
 
 
-@pytest.mark.parametrize("model", ["openclip_figures", "qwen3_vl_images"])
+@pytest.mark.parametrize("model", ["openclip_figures", "qwen3_vl_pages"])
 def test_figure_startup_logs_precede_source_reads(tmp_path, monkeypatch, capsys, model):
     from scientific_tot.artifact_identity import hydra_directory
 

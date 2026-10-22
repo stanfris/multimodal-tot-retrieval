@@ -3,5 +3,5 @@ defaults:
   - override /representation@_global_.representation: figures
   - _self_
 
-name: qwen3_vl_images
-document_input: images
+name: qwen3_vl_figures
+document_input: figures

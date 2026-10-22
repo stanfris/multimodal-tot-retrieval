@@ -18,7 +18,7 @@ if not CONFIG_DIR.is_dir():
 STAGES = {"prepare", "index", "retrieve", "evaluate", "search", "export"}
 SPLITS = {"train", "test", "train+test", "all"}
 OPENCLIP_MODELS = {"openclip", "openclip_figures"}
-QWEN_MODELS = {"qwen3_vl_images", "qwen3_vl_text", "qwen3_vl_multimodal"}
+QWEN_MODELS = {"qwen3_vl_pages", "qwen3_vl_figures", "qwen3_vl_text", "qwen3_vl_multimodal"}
 VISUAL_DENSE_MODELS = OPENCLIP_MODELS | QWEN_MODELS
 BACKENDS = {
     "bm25": "pyterrier",
@@ -30,7 +30,8 @@ BACKENDS = {
     "openclip_figures": "visual_faiss",
     "qwen3_vl_text": "visual_faiss",
     "qwen3_vl_multimodal": "visual_faiss",
-    "qwen3_vl_images": "visual_faiss",
+    "qwen3_vl_pages": "visual_faiss",
+    "qwen3_vl_figures": "visual_faiss",
 }
 REPRESENTATIONS = {
     "title_abstract": ("text", "original_metadata"),
@@ -227,7 +228,8 @@ def _validate(cfg: DictConfig) -> None:
     _require(model.backend == BACKENDS[model.name], f"Incorrect backend for model {model.name}")
     expected = (
         "image"
-        if model.name in {"visual", "colqwen", "qwen3_vl_images"} | OPENCLIP_MODELS
+        if model.name
+        in {"visual", "colqwen", "qwen3_vl_pages", "qwen3_vl_figures"} | OPENCLIP_MODELS
         else "text"
     )
     _require(
@@ -281,7 +283,8 @@ def _validate(cfg: DictConfig) -> None:
             "openclip_figures": "figures",
             "qwen3_vl_text": "text",
             "qwen3_vl_multimodal": "multimodal",
-            "qwen3_vl_images": "images",
+            "qwen3_vl_pages": "pages",
+            "qwen3_vl_figures": "figures",
         }
         _require(
             model.document_input == strategies[model.name], "Incorrect document input strategy"
@@ -289,7 +292,6 @@ def _validate(cfg: DictConfig) -> None:
         expected_rep = {
             "pages": "pages",
             "figures": "figures",
-            "images": "figures",
             "text": "fulltext",
             "multimodal": "fulltext",
         }[model.document_input]

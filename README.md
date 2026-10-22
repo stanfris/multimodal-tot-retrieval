@@ -11,6 +11,14 @@ Sentence Transformers, FAISS, Stanford ColBERT, Qdrant, and ir_measures.
 
 ## Install and run
 
+See the [benchmark reference and complete run instructions](docs/benchmark.md)
+for all **11 core methods**: BM25 fulltext, E5 fulltext/passages, ColBERT fulltext,
+ColQwen pages, OpenCLIP pages/figures, and Qwen text/figures/pages/multimodal.
+It includes checkpoint/input/aggregation tables, token limits, dataset and
+environment requirements, and separate index/retrieve/evaluate commands for
+every method. Additional supported configurations and unimplemented profiles
+are listed separately.
+
 Use Python 3.11 (selected by `.python-version`) and [uv](https://docs.astral.sh/uv/).
 Run all commands from the repository root. One locked `.venv` contains the adapter,
 Parquet reader, BM25, dense retrieval, bundled Java runtime, JupyterLab, and test tools.
@@ -347,32 +355,33 @@ OpenCLIP indexes individual pages (`openclip_pages`) or supplied figure/table
 images (`openclip_figures`) and takes the maximum score per paper.
 Qwen3-VL produces exactly one 2048-dimensional embedding per paper:
 
-- `qwen3_vl_images`: all supplied images together in one input.
-- `qwen3_vl_text`: the full original `markdown.md`, as used by the text baselines.
-- `qwen3_vl_multimodal`: all supplied images, followed by the full Markdown text,
-  together in one input.
+- `qwen3_vl_text`: full original Markdown text.
+- `qwen3_vl_figures`: all extracted figure/table images together.
+- `qwen3_vl_pages`: all rendered PDF pages together, in page order.
+- `qwen3_vl_multimodal`: all extracted figure/table images, followed by full original Markdown text.
 
 Qwen ranks paper embeddings directly, without page/figure score aggregation.
 All profiles share the existing stage scripts and evaluation, reporting MRR@10,
-Recall@1/10/100 and NDCG@10. Qwen query embeddings are shared across its three
+Recall@1/10/100 and NDCG@10. Qwen query embeddings are shared across its four
 profiles; document embeddings and indexes remain separate.
 
 ```sh
-for experiment in openclip_pages openclip_figures qwen3_vl_text qwen3_vl_multimodal qwen3_vl_images; do
+for experiment in openclip_pages openclip_figures qwen3_vl_text qwen3_vl_figures qwen3_vl_pages qwen3_vl_multimodal; do
   ./scripts/02_index.sh "experiment=$experiment"
   ./scripts/03_retrieve.sh "experiment=$experiment"
   ./scripts/04_evaluate.sh "experiment=$experiment"
 done
 ```
 
-All run in the default locked environment. Qwen needs no PDF rendering or
-page-level text alignment; lean `markdown.md` + `images/` staging is sufficient.
-Qwen supplies all images before all available text. The official processor
-keeps the input prefix up to the shared 32768-token context limit and truncates
-the remaining text from the end. Image-only Qwen requires at least one image
-per paper; multimodal papers without images use their full text.
-The old Qwen page/figure profiles have been replaced; rebuild their indexes using
-the new profiles. See the [visual dense retrieval guide](docs/visual-dense-retrieval.md).
+All run in the default locked environment. Only Qwen pages renders PDFs;
+figures uses the supplied extracted image assets, and multimodal uses those same
+images followed by the full `markdown.md` used by text baselines. No mode combines
+rendered pages with text. There is no Qwen implementation named “images.”
+No page-level text alignment or content-list JSON is
+needed. Excess text is truncated from the end at the shared 32768-token context
+limit; image tokens must fit within that limit. Rebuild indexes with the matching
+profile after changing modes. See the
+[visual dense retrieval guide](docs/visual-dense-retrieval.md).
 
 ## Discovery and Hub use
 
@@ -514,10 +523,12 @@ Run indexing, retrieval and evaluation together with one command per method:
 ./scripts/00_test.sh --test experiment=openclip_figures
 # Qwen3-VL full document text
 ./scripts/00_test.sh --test experiment=qwen3_vl_text
-# Qwen3-VL all images followed by full text
+# Qwen3-VL extracted figures followed by full text
 ./scripts/00_test.sh --test experiment=qwen3_vl_multimodal
-# Qwen3-VL all supplied images
-./scripts/00_test.sh --test experiment=qwen3_vl_images
+# Qwen3-VL all rendered pages together
+./scripts/00_test.sh --test experiment=qwen3_vl_pages
+# Qwen3-VL all extracted figures together
+./scripts/00_test.sh --test experiment=qwen3_vl_figures
 ```
 
 `00_test.sh` requires `--test` and stops if any stage fails. It reuses the existing

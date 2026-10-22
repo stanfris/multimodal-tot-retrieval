@@ -23,7 +23,7 @@ from scientific_tot.integrations.visual_dense import OpenCLIPEncoder, QwenEmbedd
 from scientific_tot.stage_cli import find_artifact
 
 pdf_dataset = _pdf_dataset
-QWEN_MODELS = ["qwen3_vl_text", "qwen3_vl_multimodal", "qwen3_vl_images"]
+QWEN_MODELS = ["qwen3_vl_text", "qwen3_vl_multimodal", "qwen3_vl_pages", "qwen3_vl_figures"]
 MODELS = ["openclip", "openclip_figures", *QWEN_MODELS]
 
 
@@ -34,7 +34,7 @@ def overrides(model):
 
 @pytest.mark.parametrize(
     "model,change_source",
-    [("openclip_figures", False), ("qwen3_vl_images", False), ("qwen3_vl_images", True)],
+    [("openclip_figures", False), ("qwen3_vl_pages", False), ("qwen3_vl_pages", True)],
 )
 def test_actual_hydra_reuses_startup_inputs_and_rechecks_sources(
     tmp_path, visual_dataset, model, change_source
@@ -43,7 +43,6 @@ def test_actual_hydra_reuses_startup_inputs_and_rechecks_sources(
 import json, os, socket
 from pathlib import Path
 import torch
-from PIL import Image
 from scientific_tot.data.hub import Dataset
 from scientific_tot.integrations import visual_dense
 from scientific_tot.hydra_entry import main
@@ -66,9 +65,9 @@ class Encoder:
         assert task == "document"
         counts["encoded_units"] += len(values)
         if os.environ["TOT_REGRESSION_MUTATE"] == "1":
-            path = next(Path(os.environ["TOT_REGRESSION_DATASET"]).glob(
-                "preprocessed/ACL/*/images/visual-0.png"))
-            Image.new("RGB", (8, 8), "red").save(path)
+            path = next(Path(os.environ["TOT_REGRESSION_DATASET"]).glob("pdf_datasets/ACL/*.pdf"))
+            with path.open("ab") as stream:
+                stream.write(b"\\n% changed PDF input\\n")
         return torch.ones(len(values), self.dimension)
 def blocked(*args, **kwargs):
     raise AssertionError("Startup reuse regression must not access the network")
@@ -214,13 +213,18 @@ def test_visual_stages(tmp_path, visual_dataset, monkeypatch, encoder, model):
         ]
     if model in QWEN_MODELS:
         assert [unit["docno"] for unit in units] == [unit["doc_id"] for unit in units]
-        assert [len(unit["images"]) for unit in units] == (
-            [0, 0] if model == "qwen3_vl_text" else [3, 1]
+        assert [unit["page_count"] for unit in units] == (
+            [3, 1] if model == "qwen3_vl_pages" else [0, 0]
         )
     (tmp_path / "results/indexes").mkdir(parents=True)
     index, _, _ = execute(tmp_path, visual_dataset, "index", "results/indexes/first", *args)
     provenance = json.loads((index / "index-manifest.json").read_text())["provenance"]
     assert provenance["vectors"] == count and provenance["documents"] == 2
+    if model in QWEN_MODELS:
+        assert provenance["encoding"]["rendered_pages"] == (4 if model == "qwen3_vl_pages" else 0)
+        assert provenance["encoding"]["supplied_images"] == (
+            4 if model in {"qwen3_vl_figures", "qwen3_vl_multimodal"} else 0
+        )
     assert all(task == "document" for task, _ in encoder)
     values = [value for _, batch in encoder for value in batch]
     assert all(
@@ -233,6 +237,8 @@ def test_visual_stages(tmp_path, visual_dataset, monkeypatch, encoder, model):
         assert [value["images"] for value in values] == (
             [[], []]
             if model == "qwen3_vl_text"
+            else [[(200, 160), (202, 160), (204, 160)], [(100, 160)]]
+            if model == "qwen3_vl_pages"
             else [[(200, 160), (201, 160), (202, 160)], [(100, 160)]]
         )
     vectors = np.load(Path(provenance["cache"]["documents"]) / "embeddings.npy")
@@ -338,7 +344,7 @@ def test_queries_are_shared_but_document_indexes_differ(tmp_path, visual_dataset
             visual_dataset,
             "evaluate",
             None,
-            *overrides("qwen3_vl_images"),
+            *overrides("qwen3_vl_pages"),
             f"paths.run={run}",
             "model.query_instruction='Different query instruction.'",
         )
@@ -350,43 +356,40 @@ def test_queries_are_shared_but_document_indexes_differ(tmp_path, visual_dataset
 def test_qwen_needs_only_selected_document_inputs(tmp_path, visual_dataset, model):
     import shutil
 
-    # These modes must not open PDFs, content lists or per-page associations.
-    shutil.rmtree(visual_dataset / "pdf_datasets")
+    # Each profile must work without any assets belonging to the other profiles.
+    if model != "qwen3_vl_pages":
+        shutil.rmtree(visual_dataset / "pdf_datasets")
     for path in visual_dataset.glob("preprocessed/ACL/*/paper.json"):
         paper = json.loads(path.read_text())
         paper.pop("structured_outputs", None)
         path.write_text(json.dumps(paper))
-        if model == "qwen3_vl_text":
+        if model in {"qwen3_vl_text", "qwen3_vl_pages"}:
             shutil.rmtree(path.parent / "images")
-        elif model == "qwen3_vl_images":
+        if model in {"qwen3_vl_pages", "qwen3_vl_figures"}:
             (path.parent / "markdown.md").unlink()
     cfg, _ = settings(tmp_path, visual_dataset, "index", None, *overrides(model))
     corpus = visual_dense.load_visual_corpus(configured_adapter(cfg), cfg)
     assert len(visual_dense.document_mapping(corpus, cfg)) == len(corpus) == 2
 
 
-@pytest.mark.parametrize("model", ["qwen3_vl_images", "qwen3_vl_multimodal"])
-def test_qwen_documents_without_images(tmp_path, visual_dataset, model):
-    path = next(visual_dataset.glob("preprocessed/ACL/*/paper.json"))
-    paper = json.loads(path.read_text())
-    paper["figures"] = []
-    path.write_text(json.dumps(paper))
-    for image in (path.parent / "images").iterdir():
-        image.unlink()
+@pytest.mark.parametrize("model", ["qwen3_vl_pages"])
+def test_qwen_pdf_identity_and_missing_pdf(tmp_path, visual_dataset, model):
+    from scientific_tot.records import IncompleteCorpusError
+
     cfg, _ = settings(tmp_path, visual_dataset, "index", None, *overrides(model))
-    if model == "qwen3_vl_images":
-        with pytest.raises(ValueError, match="image-only document input requires supplied images"):
-            resolve_identity(cfg)
-    else:
-        corpus = visual_dense.load_visual_corpus(configured_adapter(cfg), cfg)
-        mapping = visual_dense.document_mapping(corpus, cfg)
-        row = next(row for row in mapping if row["doc_id"] == paper["paper_id"])
-        assert row["images"] == [] and row["text"]
-        assert len(mapping) == 2
+    before = resolve_identity(cfg)
+    pdf = next(visual_dataset.glob("pdf_datasets/ACL/*.pdf"))
+    with pdf.open("ab") as stream:
+        stream.write(b"\n% changed PDF input\n")
+    assert resolve_identity(cfg) != before
+    pdf.unlink()
+    with pytest.raises(IncompleteCorpusError, match="unusable_pdf"):
+        resolve_identity(cfg)
 
 
-def test_figure_archive_and_content_identity(tmp_path, visual_dataset):
-    args = overrides("qwen3_vl_images")
+@pytest.mark.parametrize("model", ["openclip_figures", "qwen3_vl_figures", "qwen3_vl_multimodal"])
+def test_figure_archive_and_content_identity(tmp_path, visual_dataset, model):
+    args = overrides(model)
     cfg, _ = settings(tmp_path, visual_dataset, "index", None, *args)
     before = resolve_identity(cfg)
     image = next(visual_dataset.glob("preprocessed/ACL/*/images/*.png"))
@@ -400,7 +403,44 @@ def test_figure_archive_and_content_identity(tmp_path, visual_dataset):
                 archive.add(path, arcname=str(path.relative_to(base)))
                 path.unlink()
     corpus = visual_dense.load_visual_corpus(configured_adapter(cfg), cfg)
-    assert len(visual_dense.document_mapping(corpus, cfg)) == 2
+    assert len(visual_dense.document_mapping(corpus, cfg)) == (
+        4 if model == "openclip_figures" else 2
+    )
+
+
+@pytest.mark.parametrize("model", ["qwen3_vl_pages"])
+def test_qwen_page_rendering_is_part_of_identity(tmp_path, visual_dataset, model):
+    cfg, _ = settings(tmp_path, visual_dataset, "index", None, *overrides(model))
+    resized, _ = settings(
+        tmp_path,
+        visual_dataset,
+        "index",
+        None,
+        *overrides(model),
+        "representation.rendering.scale=1.0",
+    )
+    assert resolve_identity(cfg) != resolve_identity(resized)
+
+
+@pytest.mark.parametrize("model", ["qwen3_vl_figures", "qwen3_vl_multimodal"])
+def test_qwen_paper_without_figures(tmp_path, visual_dataset, model):
+    import shutil
+
+    path = next(visual_dataset.glob("preprocessed/ACL/*/paper.json"))
+    paper = json.loads(path.read_text())
+    paper["figures"] = []
+    path.write_text(json.dumps(paper))
+    shutil.rmtree(path.parent / "images")
+    cfg, _ = settings(tmp_path, visual_dataset, "index", None, *overrides(model))
+    if model == "qwen3_vl_figures":
+        with pytest.raises(ValueError, match="figure-only input requires supplied figures"):
+            resolve_identity(cfg)
+    else:
+        corpus = visual_dense.load_visual_corpus(configured_adapter(cfg), cfg)
+        mapping = visual_dense.document_mapping(corpus, cfg)
+        row = next(row for row in mapping if row["doc_id"] == paper["paper_id"])
+        assert row["images"] == [] and row["text"]
+        assert row["page_count"] == 0
 
 
 def test_openclip_standard_long_query_tokenization():
@@ -525,7 +565,16 @@ def test_real_qwen_prefix_truncation(tmp_path, visual_dataset):
 
     encoder.model.forward = capture
     text = "PREFIXRETAINED " + "scientific document " * 1000 + " SUFFIXREMOVED"
-    images = [Image.new("RGB", (32, 32)) for _ in range(3)]
+    from scientific_tot.config_arguments import configured_corpus
+
+    corpus = configured_corpus(cfg, configured_adapter(cfg))
+    row = visual_dense.document_mapping(corpus, cfg)[0]
+    from scientific_tot.data.artifacts import Artifacts
+
+    store = Artifacts(configured_adapter(cfg).dataset, tuple(cfg.dataset.domains), archives=True)
+    value = visual_dense._load_batch([row], cfg, "document", store)[0]
+    images = value["images"]
+    assert [image.size for image in images] == [(200, 160), (201, 160), (202, 160)]
     try:
         with torch.inference_mode():
             vectors = encoder.encode(
@@ -566,6 +615,13 @@ def test_real_checkpoint_stages(tmp_path, visual_dataset, model):
         "evaluation.metrics=[RR@10,R@1,R@10,R@100]",
     )
     index, _, _ = execute(tmp_path, visual_dataset, "index", "index", *args)
+    report = json.loads((index / "index-manifest.json").read_text())["provenance"]
+    assert report["vectors"] == (4 if model in OPENCLIP_MODELS else 2)
+    if model in QWEN_MODELS:
+        assert report["encoding"]["rendered_pages"] == (4 if model == "qwen3_vl_pages" else 0)
+        assert report["encoding"]["supplied_images"] == (
+            4 if model in {"qwen3_vl_figures", "qwen3_vl_multimodal"} else 0
+        )
     run, _, _ = execute(tmp_path, visual_dataset, "retrieve", "run", *args, f"paths.index={index}")
     evaluated, _, _ = execute(
         tmp_path, visual_dataset, "evaluate", "evaluation", *args, f"paths.run={run}"

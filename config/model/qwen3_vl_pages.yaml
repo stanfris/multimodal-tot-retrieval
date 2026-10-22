@@ -1,0 +1,7 @@
+defaults:
+  - qwen3_vl_text
+  - override /representation@_global_.representation: pages
+  - _self_
+
+name: qwen3_vl_pages
+document_input: pages
