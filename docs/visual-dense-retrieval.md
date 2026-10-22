@@ -4,9 +4,6 @@ Six zero-shot profiles share Hydra stages, FAISS persistence, embedding caches,
 the TREC writer and saved-run evaluation. All use the original textual ToT queries
 and the selected paper collection independently for each scientific domain.
 
-For the complete 11-method comparison, dataset requirements and separate stage
-commands for every core method, see the [benchmark reference](benchmark.md).
-
 | Model profile / experiment | Document input | Indexed unit | Dimensions |
 | --- | --- | --- | --- |
 | `openclip` / `openclip_pages` | Rendered original PDF page | Page | 512 |
@@ -91,8 +88,8 @@ extra is available for library consumers. The ColQwen Transformers 5 environment
 remains separate.
 
 The following executes indexing, retrieval, and evaluation for all six
-configurations independently per domain. The shared evaluation defaults report
-MRR@10 (`RR@10`), Recall@1/10/100 and NDCG@10. The test query split
+configurations independently per domain. Each experiment selects the existing
+MRR@10 (`RR@10`), Recall@1/10/100 and NDCG@10 metrics. The test query split
 retains all available corpus documents as distractors.
 
 ```sh
@@ -122,9 +119,7 @@ Replace the experiment value with `openclip_pages`, `openclip_figures`, `qwen3_v
 `qwen3_vl_pages` or `qwen3_vl_figures` to run the others. Preparation is optional, using
 `./scripts/01_prepare.sh` with the same experiment and domain overrides. Direct
 `model=...` overrides also choose the appropriate representation, while the
-experiment profiles additionally select the index stage. Metrics come from the
-shared `evaluation=default` profile, which includes RR@10, R@1, R@10, R@100 and
-nDCG@10; the experiments do not override them.
+experiment profiles additionally select the benchmark metrics.
 
 CUDA is the default. OpenCLIP uses `model.precision=fp32`; Qwen uses `bf16` with
 Transformers SDPA. Supported precision settings are `fp32`, `fp16`, and `bf16`;

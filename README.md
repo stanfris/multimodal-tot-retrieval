@@ -18,26 +18,428 @@ loaded from the Hub now; full corpus/qrel conversion requires appropriate local
 artifacts or a future publication containing them. Missing data is reported,
 never fabricated. [Evidence and data contract](docs/dataset-schema.md).
 
-## Install and run
+This is the reference for the 11 core methods. All methods use the original
+textual ToT query strings and return paper rankings. No fine-tuning is performed.
+Configuration values below come from `config/model/`, `config/representation/`,
+and the integrations in `src/scientific_tot/integrations/`.
 
-See the [benchmark reference and complete run instructions](docs/benchmark.md)
-for all **11 core methods**: BM25 fulltext, E5 fulltext/passages, ColBERT fulltext,
-ColQwen pages, OpenCLIP pages/figures, and Qwen text/figures/pages/multimodal.
-It includes checkpoint/input/aggregation tables, token limits, dataset and
-environment requirements, and separate index/retrieve/evaluate commands for
-every method. Additional supported configurations and unimplemented profiles
-are listed separately.
+## Core benchmark
 
-Use Python 3.11 (selected by `.python-version`) and [uv](https://docs.astral.sh/uv/).
-Run all commands from the repository root. One locked `.venv` contains the adapter,
-Parquet reader, BM25, dense retrieval, bundled Java runtime, JupyterLab, and test tools.
-`uv run` uses this environment for textual baselines. ColQwen uses the separate
-locked `.venv-colqwen` environment because Transformers 5 conflicts with ColBERT
-(see below):
+Environment **default** means the locked `.venv`; **ColQwen** means the separate
+locked `.venv-colqwen`. CUDA requirements in this table apply to indexing and
+retrieval. Preparation and saved-run evaluation require no GPU.
+
+| Method | Checkpoint/model | Document input | Indexed unit and paper-level aggregation | Configuration selector | CPU/GPU and environment |
+| --- | --- | --- | --- | --- | --- |
+| BM25 fulltext | PyTerrier/Terrier BM25; no neural checkpoint | Full original Markdown text | One text document per paper; ranks papers directly | `experiment=bm25_fulltext` | CPU, bundled Java; default environment |
+| E5 fulltext | `intfloat/e5-small-v2` | Full original Markdown text | One 384-dimensional vector per paper; ranks papers directly | `model=dense representation=fulltext` | CUDA encoding required; FAISS search as below; default environment |
+| E5 passages | `intfloat/e5-small-v2` | Overlapping passages of original Markdown | One vector per passage; maximum score across all passages per paper by default | `experiment=dense_passages` | CUDA encoding required; FAISS search as below; default environment |
+| ColBERT fulltext | `colbert-ir/colbertv2.0` | Original Markdown, token-truncated | One paper PID with token multi-vectors; ColBERT late interaction ranks papers directly | `experiment=colbert_fulltext` | CUDA required; CUDA toolkit, compiler and Ninja; default environment |
+| ColQwen pages | `vidore/colqwen2.5-v0.2` with `vidore/colqwen2.5-base` | Individually rendered original PDF pages | One multi-vector set per page; exact MaxSim per page, then maximum page score per paper | `experiment=colqwen_pages` | CUDA encoding and scoring required; CPU PDF rendering/storage; ColQwen environment |
+| OpenCLIP pages | `laion/CLIP-ViT-B-32-laion2B-s34B-b79K` (`ViT-B-32`, `laion2b_s34b_b79k`) | Individually rendered original PDF pages | One 512-dimensional vector per page; maximum page score per paper | `experiment=openclip_pages` | CUDA by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
+| OpenCLIP figures | Same OpenCLIP checkpoint | Individual extracted figure/table images, without added captions | One 512-dimensional vector per image; maximum image score per paper | `experiment=openclip_figures` | CUDA by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
+| Qwen text | `Qwen/Qwen3-VL-Embedding-2B` | full original Markdown text | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_text` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
+| Qwen figures | Same Qwen checkpoint | all extracted figure/table images together | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_figures` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
+| Qwen pages | Same Qwen checkpoint | all rendered PDF pages together, in page order | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_pages` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
+| Qwen multimodal | Same Qwen checkpoint | all extracted figure/table images, followed by full original Markdown text | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_multimodal` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
+
+Every Qwen configuration produces **ONE embedding per paper** and ranks papers
+directly, without page/image score aggregation or embedding averaging. There is
+no Qwen implementation named “images,” and no configuration combining rendered
+pages with text. The full input definitions above describe what is supplied to
+the encoder; token limits still apply.
+
+The profiles pin these immutable model revisions:
+
+| Model | Revision |
+| --- | --- |
+| E5 | `ffb93f3bd4047442299a41ebb6fa998a38507c52` |
+| ColBERT | `c1e84128e85ef755c096a95bdb06b47793b13acf` |
+| ColQwen adapter | `dcbe8d9cede518bce830488364ba0e40c873645b` |
+| ColQwen base | `92908120384b7a2110c5beda3ab29cbdb2c08e49` |
+| OpenCLIP | `1a25a446712ba5ee05982a381eed697ef9b435cf` |
+| Qwen | `9f2f7e710d6d81056aa5c0a4f04764fec6bb7bda` |
+
+## Additional supported configurations and unimplemented profiles
+
+These are separate from the core benchmark. Runnable variants use the same
+prepare/index/retrieve/evaluate scripts and the same checkpoints and environments
+as their parent methods.
+
+| Configuration | Document input | Indexed unit / ranking | Selector or override | Requirements / status |
+| --- | --- | --- | --- | --- |
+| BM25 title and abstract | Available original `title` and `abstract`, joined with a blank line | One paper document; direct BM25 ranking | `model=bm25 representation=title_abstract` | CPU/Java, default environment; implemented |
+| E5 title and abstract | Same original metadata fields | One vector per paper; direct ranking | `model=dense representation=title_abstract` | CUDA encoding, default environment; implemented |
+| E5 passages with mean aggregation | Same passages and E5 checkpoint as the core passage method | Mean score across **all** indexed passages per paper | `experiment=dense_passages representation.aggregation.method=mean` | CUDA encoding, default environment; implemented |
+| Alternate dense encoders | Selected text representation and explicit model-specific prompts | Same single-vector FAISS pipeline | `model=dense model.model_id=... model.revision=...` with appropriate `model.encoding` prompts | CUDA; supported Sentence Transformers Hub models only; local checkpoint paths unsupported; not a separate benchmark method |
+| BM25 passages | Declared passage representation | No BM25 passage execution path | `model=bm25 representation=passages` | **Configuration can compose, execution unimplemented**; passage execution is supported only for dense retrieval |
+| Legacy Byaldi/ColPali profile | Declared pages or figures | No executable index/retrieval implementation | `model=visual` or `experiment=visual_pages` | **Configuration-only, not runnable**; declared `vidore/colpali-v1.3` is not an implemented baseline |
+| `stage=search`, `stage=export` | Configuration contracts | No executable stage | Corresponding stage selector | **Unimplemented**; use `03_retrieve.sh` for batch search and `01_prepare.sh` for canonical JSONL export |
+
+Title/abstract loading uses only supplied original metadata from `paper.json`
+and, when present, `metadata.parquet`. It reports partial fields and rejects a
+paper when both are absent under the default strict missing policy. It does not
+derive abstracts from Markdown. Device, precision, batch size, split, and metric
+overrides are execution settings rather than additional benchmark methods.
+
+## Token limits and document processing
+
+| Method | Existing limit and truncation behavior |
+| --- | --- |
+| BM25 | No application-level neural context limit or prefix truncation. Full supplied text goes to Terrier's indexing/tokenization pipeline. |
+| E5 | Sentence Transformers uses the checkpoint's `max_seq_length`: **512 tokens** for the pinned E5, including prompts and special tokens. Long documents/queries are tokenizer-truncated; fulltext does not imply complete-document encoding. YAML supplies `passage: ` and `query: ` prompts. The effective length is recorded in encoding metadata. |
+| E5 passages | LangChain `RecursiveCharacterTextSplitter`: **1000 characters**, **200-character overlap**, with whitespace stripping and configured separators. These are character counts, not tokens. Each passage and each query still obeys E5's token limit. FAISS scores every passage before max/mean paper aggregation. |
+| ColBERT | `model.indexing.doc_maxlen=220` WordPiece tokens including CLS, document marker and SEP (about 217 content tokens); retains the text prefix, without passage splitting. `model.retrieval.query_maxlen=32` controls query tokenization. |
+| ColQwen | Every original PDF page is rendered at scale 2.0 and encoded independently. The pinned checkpoint's official processor/module owns image resizing, query tokenization and any model length limits; this integration adds no shared Qwen3-VL `model.max_length` setting, document-text truncation or page-count cap. Effective processor, module and model configs are saved in index provenance. |
+| OpenCLIP | The code asserts the checkpoint's **77-token** query context, including special tokens. Long queries are truncated by the OpenCLIP tokenizer; truncation counts/proportions are printed and saved. Images use the standard evaluation resize/center-crop to 224 pixels. All pages/images are indexed. |
+| Qwen, all four modes | Shared **32768-token** context by default, including image tokens, text, instructions and chat template. The official processor truncates excess text **from the end** at `model.max_length`; `model.truncation_side=right` retains the prefix. Image blocks precede text and **image tokens must fit within the context**; truncation through image tokens is rejected. There is no automatic image/page dropping, paper chunking, summarization or multi-vector aggregation. Queries share the same context limit. |
+
+E5's limit is loaded rather than hardcoded by the application; see its
+[pinned checkpoint config](https://huggingface.co/intfloat/e5-small-v2/blob/ffb93f3bd4047442299a41ebb6fa998a38507c52/sentence_bert_config.json).
+The standalone dense example offers `--max-seq-length`; the Hydra dense profile
+does not expose that override. Qwen allows a positive `model.max_length` up to
+32768, with right truncation required. Its official image processor uses
+4096–1843200 pixels per image. Supplying every page/image in a single paper input
+can exceed context or GPU memory even with a small batch size.
+
+## Install environments
+
+Run commands from the repository root with Python 3.11 and
+[uv](https://docs.astral.sh/uv/). Install both locked environments:
 
 ```sh
+# BM25, E5, ColBERT, OpenCLIP, Qwen, evaluation and test tools.
 uv sync --locked
-# Fully offline two-document synthetic example:
+
+# Separate Transformers 5 / Sentence Transformers 6 environment for ColQwen.
+UV_PROJECT_ENVIRONMENT=.venv-colqwen uv sync --locked \
+  --no-default-groups --extra colqwen --group dev
+```
+
+The default environment pins Transformers 4.57.6 for ColBERT and the visual
+single-vector methods. ColQwen pins Transformers 5.15.0, Sentence Transformers
+6.1.0 and PEFT 0.19.1. These environments cannot be combined. The stage scripts
+automatically select `.venv-colqwen` when passed `experiment=colqwen_pages` or
+`model=colqwen`; leave `UV_PROJECT_ENVIRONMENT` unset for ordinary script use.
+
+BM25 uses the bundled `jdk4py` Java runtime; its first run downloads Terrier
+JARs. Neural methods download pinned pretrained weights on first use. Linux with
+an NVIDIA GPU and a compatible CUDA driver is the intended benchmark setup.
+ColBERT additionally needs a CUDA toolkit, compiler and Ninja for native
+extensions. Verify PyTorch sees CUDA in each neural environment you use:
+
+```sh
+uv run --locked python -c 'import torch; print(torch.cuda.is_available())'
+UV_PROJECT_ENVIRONMENT=.venv-colqwen uv run --locked \
+  --no-default-groups --extra colqwen --group dev \
+  python -c 'import torch; print(torch.cuda.is_available())'
+```
+
+## Dataset layout and required files
+
+Set `TOT_DATA_ROOT` to an existing restored dataset root, with canonical paths:
+
+```text
+DATA_ROOT/
+  preprocessed/<DOMAIN>/<PAPER_ID>/
+    paper.json                         # Full extraction identity/source/figure metadata
+    markdown.md                        # Original extracted text
+    images/<image-file>                 # Extracted figure/table assets
+  pdf_datasets/<DOMAIN>/<original-relative-path>.pdf
+  metadata.parquet                     # Optional original bibliographic/PDF index
+  splits/pdf_dataset_split.json         # Authoritative train/test PDF membership
+  query_collections/<DOMAIN>/query_generation_test/visual_and_text/
+    queries.jsonl
+    metadata.json                      # Retained collection provenance when supplied
+```
+
+Use `query_generation_train/` as well when selecting training queries. The
+default query mode is `visual-and-text` (directory `visual_and_text`), whose
+`query` field is text. Each query supplies `relevant_ids`; qrels are validated
+against canonical extraction paper IDs and positives receive grade 1. No separate
+input TREC qrels file is required. Clue files and query-generation prompts are
+not document inputs.
+
+| Methods | Required document inputs for indexing |
+| --- | --- |
+| BM25 fulltext, E5 fulltext/passages, ColBERT fulltext, Qwen text | Canonical extraction directories and nonempty original `markdown.md`; no PDFs or image binaries required |
+| ColQwen pages, OpenCLIP pages, Qwen pages | Canonical extraction identity directories plus restored original PDFs under `pdf_datasets/`; no Markdown/figure assets required |
+| OpenCLIP figures, Qwen figures | Canonical extraction identity directories and extracted figure/table image assets; no PDFs or Markdown required |
+| Qwen multimodal | Canonical extraction identity directories, nonempty original Markdown and all referenced extracted figure/table images; no PDFs required |
+| Additional BM25/E5 title/abstract | Original title/abstract in `paper.json` and/or `metadata.parquet`; no Markdown/PDF/image binaries required |
+
+Full `paper.json` supplies authoritative IDs, source paths and ordered figure
+records with `image_relpath`. Lean staging without `paper.json` is supported:
+directory names retain paper IDs, `images/` supplies extracted images in sorted
+path order, and source mappings must be resolvable. For pages, absent explicit
+source metadata, the adapter removes the domain prefix from the paper ID and
+appends `.pdf` within the domain; for example `ACL_2026.findings-acl.999` maps
+to `pdf_datasets/ACL/2026.findings-acl.999.pdf`. Explicit source metadata wins.
+Page-only directories need a recognized identity marker (`paper.json`,
+`markdown.md`, `_SUCCESS`, or an `images/` member); an empty directory is insufficient.
+
+`metadata.parquet` is optional for fulltext/figure methods and page methods with
+resolvable source paths. The split JSON is required for split-selected corpora,
+including isolated test mode; `split.corpus=all` can index available extractions
+without it. Test-query loading uses the corresponding query collection; index
+stages do not read queries or qrels. Retrieval uses the saved index and query
+files; explicit text index selection avoids rereading document inputs. Evaluation
+reads only saved retrieval artifacts and does not reopen data, weights or indexes.
+
+Qwen figures requires at least one supplied figure per paper. Qwen multimodal
+encodes text alone for papers without figures; any referenced missing image is
+an error for either Qwen image mode. OpenCLIP figures retains papers without
+images in the evaluation corpus but gives them no retrievable vector. Missing
+data defaults to `dataset.missing=error`; explicit `skip` cannot leave an
+unresolved positive judgment. Test mode rejects skipped papers.
+
+The adapter also supports selected domain extraction TARs without unpacking;
+original PDF TAR shards must first be restored to the paths above. Restoration
+is external to these scripts. See the [dataset contract](docs/dataset-schema.md) for
+archive schemas and dated publication evidence. That evidence concerns a
+query-only Hub revision, so it is not proof that full corpus inputs are available.
+
+## Roots and one domain per run
+
+```sh
+export TOT_DATA_ROOT=/your/restored/data
+export TOT_CACHE_ROOT=./cache
+export TOT_OUTPUT_ROOT=./results/ACL
+export TOT_TEST_ROOT=./test
+```
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TOT_DATA_ROOT` | `./data` | Read-only dataset inputs |
+| `TOT_CACHE_ROOT` | `./cache` | Normal-run dataset/model/embedding caches; script uv cache defaults to `${TOT_CACHE_ROOT}/uv` |
+| `TOT_OUTPUT_ROOT` | `./results` | Normal-run prepared/index/retrieval/evaluation artifacts |
+| `TOT_TEST_ROOT` | `./test` | Isolated test mode's `cache/` and `results/`; overrides normal application cache/output roots |
+
+The shell scripts change to the repository root, so their relative paths resolve
+there. Direct Hydra invocations resolve relative paths from their invocation
+directory. Keep data, cache and output roots separate and non-overlapping.
+
+Each run selects **exactly one** of `ACL`, `Biology`, `Engineering`, `Medicine`,
+or `Physics`, using the same `dataset.domains=[DOMAIN]` override for every stage.
+The commands below select ACL explicitly. For another domain replace `[ACL]`
+on all three commands and use an appropriate output root. Repeat runs per domain;
+a multi-domain list is rejected.
+
+Normal `split=test` selects **test queries and all available corpus documents**,
+including unassigned distractors. There are no document/query count limits in
+these stage scripts. It differs from `--test`, described below.
+
+## Separate index, retrieval and evaluation commands for all core methods
+
+Run each selected method's three commands in order after setting the roots above.
+Repeat any model/representation/encoding overrides consistently at all stages.
+The scripts discover compatible saved artifacts and print the paths selected.
+
+```sh
+# 1. BM25 fulltext
+./scripts/02_index.sh experiment=bm25_fulltext split=test 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh experiment=bm25_fulltext split=test 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh experiment=bm25_fulltext split=test 'dataset.domains=[ACL]'
+
+# 2. E5 fulltext
+./scripts/02_index.sh model=dense representation=fulltext split=test 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh model=dense representation=fulltext split=test 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh model=dense representation=fulltext split=test 'dataset.domains=[ACL]'
+
+# 3. E5 passages
+./scripts/02_index.sh experiment=dense_passages split=test 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh experiment=dense_passages split=test 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh experiment=dense_passages split=test 'dataset.domains=[ACL]'
+
+# 4. ColBERT fulltext
+./scripts/02_index.sh experiment=colbert_fulltext split=test 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh experiment=colbert_fulltext split=test 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh experiment=colbert_fulltext split=test 'dataset.domains=[ACL]'
+
+# 5. ColQwen pages (scripts automatically select .venv-colqwen)
+./scripts/02_index.sh experiment=colqwen_pages split=test 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh experiment=colqwen_pages split=test 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh experiment=colqwen_pages split=test 'dataset.domains=[ACL]'
+
+# 6. OpenCLIP pages
+./scripts/02_index.sh experiment=openclip_pages split=test 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh experiment=openclip_pages split=test 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh experiment=openclip_pages split=test 'dataset.domains=[ACL]'
+
+# 7. OpenCLIP figures
+./scripts/02_index.sh experiment=openclip_figures split=test 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh experiment=openclip_figures split=test 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh experiment=openclip_figures split=test 'dataset.domains=[ACL]'
+
+# 8. Qwen text
+./scripts/02_index.sh experiment=qwen3_vl_text split=test 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh experiment=qwen3_vl_text split=test 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh experiment=qwen3_vl_text split=test 'dataset.domains=[ACL]'
+
+# 9. Qwen figures
+./scripts/02_index.sh experiment=qwen3_vl_figures split=test 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh experiment=qwen3_vl_figures split=test 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh experiment=qwen3_vl_figures split=test 'dataset.domains=[ACL]'
+
+# 10. Qwen pages
+./scripts/02_index.sh experiment=qwen3_vl_pages split=test 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh experiment=qwen3_vl_pages split=test 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh experiment=qwen3_vl_pages split=test 'dataset.domains=[ACL]'
+
+# 11. Qwen multimodal
+./scripts/02_index.sh experiment=qwen3_vl_multimodal split=test 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh experiment=qwen3_vl_multimodal split=test 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh experiment=qwen3_vl_multimodal split=test 'dataset.domains=[ACL]'
+```
+
+Preparation is optional for every method. Use the same selector, split and domain
+with `01_prepare.sh`, for example:
+
+```sh
+./scripts/01_prepare.sh experiment=qwen3_vl_multimodal split=test 'dataset.domains=[ACL]'
+```
+
+It exports canonical corpus, queries and qrels with provenance; page/figure
+profiles add unit mappings and dense passages add passage records. It does not
+build an index, precompute neural embeddings or restore missing datasets. Indexing
+reads the original inputs directly rather than consuming prepared JSONL.
+
+## Metrics, reuse and output locations
+
+The default paper cutoff is `retrieval.top_k=100`. Default effectiveness metrics
+include **RR@10, R@1, R@10, R@100**; the current
+`config/evaluation/default.yaml` also enables **nDCG@10**. Aggregate RR@10 is
+mean reciprocal rank at 10; R is recall. To report exactly the four core metrics,
+append this override to **any** `04_evaluate.sh` command:
+
+```sh
+./scripts/04_evaluate.sh experiment=bm25_fulltext split=test 'dataset.domains=[ACL]' \
+  'evaluation.metrics=[RR@10,R@1,R@10,R@100]'
+```
+
+Evaluation can be rerun with different metrics without retrieving again; metric
+cutoffs cannot exceed the saved retrieval depth. Use explicit completed artifact
+paths when automatic selection is ambiguous or when text source files are no
+longer available:
+
+```sh
+# Set INDEX and RUN to the completed directories printed by previous stages.
+INDEX=/absolute/path/to/completed/index
+RUN=/absolute/path/to/completed/retrieval
+./scripts/03_retrieve.sh experiment=bm25_fulltext split=test 'dataset.domains=[ACL]' "paths.index=$INDEX"
+./scripts/04_evaluate.sh experiment=bm25_fulltext split=test 'dataset.domains=[ACL]' "paths.run=$RUN"
+```
+
+Substitute the matching method selector for other methods. Automatic text-index
+selection rereads the selected corpus to match identity; visual index selection
+uses saved manifests without opening original images/PDFs. Multiple compatible
+visual indexes or retrieval runs require an explicit path.
+
+Under `TOT_OUTPUT_ROOT`:
+
+| Directory | Contents |
+| --- | --- |
+| `prepared/<identity>/` | Optional `corpus.jsonl`, `queries.jsonl`, `qrels.jsonl`, sidecars and applicable unit/passage mappings |
+| `indexes/<identity>/` | `index-manifest.json`, backend files and paper/unit mappings: Terrier files, FAISS `index.faiss`, ColBERT `colbert/`, or ColQwen `qdrant/` |
+| `models/<identity>/` | Retrieval `run.trec`, `topics.jsonl`, `qrels.tsv`, `query-ids.jsonl`, `corpus-ids.jsonl`; ColQwen also saves every page score in `page-scores.jsonl` |
+| `evaluations/<identity>/` | Aggregate `metrics.csv` and individual-query `per-query.csv` |
+
+New artifacts also contain `.hydra/{config,hydra,overrides}.yaml` and
+`manifest.json` for resolved settings, identity and provenance. The printed
+completed path is authoritative. Index names include model, representation,
+domain and corpus split; visual indexes also include a content hash. Retrieval
+and evaluation names include content identities. Weights/embeddings remain in
+the cache hierarchy rather than `models/` retrieval outputs.
+
+Repeated completed retrieval/evaluation/preparation jobs verify and reuse
+identical artifacts. BM25/E5 index generation skips an existing destination,
+including unfinished destinations; skipping does not establish index validity.
+Use a fresh `paths.index` for a different build and pass it to retrieval.
+ColBERT/visual indexes validate identity before completed reuse. ColQwen can
+resume a validated partial page prefix by rerunning its index command; see
+[ColQwen recovery](docs/colqwen-retrieval.md#resuming-an-interrupted-index).
+Other interrupted builds are not generally resumable. Existing corrupt or
+incompatible artifacts fail validation rather than being overwritten. See the
+[configuration guide](docs/configuration.md) for precise stage contracts.
+
+## GPU encoding and FAISS search
+
+E5 and ColBERT require CUDA for indexing/retrieval; E5 checks CUDA even with
+cached embeddings. ColQwen requires CUDA for encoding and exact MaxSim scoring.
+BM25 uses CPU/Java. OpenCLIP and all Qwen profiles default to CUDA but explicitly
+support `launcher=local_cpu model.precision=fp32`; repeat these settings across
+stages. CPU fixture runs do not establish full-corpus performance.
+Qwen defaults to BF16 with SDPA; E5 and OpenCLIP default to FP32 and also accept
+FP16/BF16. Use precision supported by the GPU and reduce `model.batch_size` if
+needed; all pages/images of one Qwen paper must still fit a single input.
+
+E5, OpenCLIP and Qwen persist CPU-format exact FAISS `IndexFlatIP` indexes.
+Encoding on CUDA does not imply FAISS runs on CUDA: **the lock installs
+`faiss-cpu`**, so default search runs on CPU. `retrieval.search_device=auto`
+selects CUDA only with an installed GPU-enabled FAISS build and a visible GPU;
+`cpu` forces CPU and `cuda` fails when GPU FAISS is unavailable. A separately
+provisioned compatible GPU FAISS environment can use `UV_NO_SYNC=1` to prevent
+stage scripts from replacing its dependencies.
+
+When supported, FAISS clones the index to GPU 0 in FP32. Search depths **over
+2048** still use the CPU index, even with `search_device=cuda`. This includes
+exhaustive E5 passage search and expanded OpenCLIP page/image searches for enough
+unique papers and complete cutoff ties. Deep passage search avoids an unused
+GPU clone; expanded visual searches can switch to CPU mid-query. Retrieval
+manifests report CPU/GPU query-search counts. ColBERT's upstream index/search and
+ColQwen's persisted Qdrant vectors with streamed CUDA MaxSim use their own paths;
+the shared FAISS selector does not control them.
+
+## Progress logs and resource reports
+
+Stages print the selected sources/counts, artifact paths, cache hits and completion
+status. Named phases cover source verification, execution, output verification
+and sealing. Progress bars show encoding/indexing/rendering/search work where
+available; opaque calls print a heartbeat every 30 seconds. Hydra job file
+logging is disabled. Capture console output yourself when a durable log is useful:
+
+```sh
+mkdir -p logs
+# In bash/zsh, propagate a failed stage through tee.
+set -o pipefail
+./scripts/02_index.sh experiment=qwen3_vl_pages split=test 'dataset.domains=[ACL]' \
+  2>&1 | tee logs/qwen3_vl_pages-ACL-index.log
+```
+
+Each new stage's `manifest.json` has a `performance` section with elapsed/process
+CPU time, phase timings, throughput, output/index/cache bytes, Python-process peak
+RAM, hardware and CUDA details, PyTorch memory peaks, and optional device-wide
+`nvidia-smi` samples. Timing covers the stage and verification/I/O after snapshots,
+excluding CLI discovery and environment setup. RAM excludes JVM/child processes;
+PyTorch peaks exclude FAISS/native allocations; device-wide GPU samples include
+other processes. Cache encoding time can be historical; current execution time
+is in `performance`. Reused artifacts retain their original reports. These are
+scoped resource measurements, not complete hardware utilization benchmarks.
+
+## Isolated official test-split runs
+
+Add `--test` to **each** stage command above to select only official test papers
+and test queries, while retaining all pages/passages/figures for those papers.
+This uses `TOT_TEST_ROOT/results/` and `TOT_TEST_ROOT/cache/`, independent of
+normal application outputs/caches. `TOT_DATA_ROOT` still supplies the original
+inputs. It requires the full official test split, rejects skipped papers and
+conflicting split overrides, and prevents consuming artifacts across modes.
+
+The existing convenience script chains the same three stages for any core
+selector, for example:
+
+```sh
+./scripts/00_test.sh --test experiment=qwen3_vl_figures 'dataset.domains=[ACL]'
+```
+
+Direct Hydra uses `mode=test` instead of the shell `--test` flag. GPU requirements
+still apply. To validate a stage's composed settings without data/model access,
+append `dry_run=true` to any stage command.
+
+## Dataset adapter quickstart
+
+```sh
+# Fully offline two-document synthetic example after installation:
 uv run python examples/convert_dataset.py \
   --local-dir tests/fixtures/adapter --domain ACL --output /tmp/scientific-tot-example
 ```
@@ -65,190 +467,6 @@ raise. Figure metadata and file/archive paths are exposed without loading images
 [API documentation](docs/api.md) covers component downloads, metadata-only reads,
 Hub revisions, archive granularity, lean extractions, missing-data policy, and
 record schemas. [Architecture](docs/architecture.md) records design decisions.
-
-## Hydra configuration CLI
-
-The four independent stages write directly into deterministic artifact directories:
-
-```text
-results/
-  indexes/bm25_fulltext_d-ACL_c-all/
-    .hydra/{config,hydra,overrides}.yaml
-    manifest.json
-    index-manifest.json
-    data.properties                 # plus Terrier files
-  models/bm25_fulltext_c-all_q-test_<retrieval-hash>/
-    .hydra/  manifest.json  run.trec  topics.jsonl  qrels.tsv
-    query-ids.jsonl  corpus-ids.jsonl
-  evaluations/bm25_fulltext_c-all_q-test_<evaluation-hash>/
-    .hydra/  manifest.json  metrics.csv  per-query.csv
-  prepared/bm25_fulltext_c-all_q-test_<prepare-hash>/
-    .hydra/  manifest.json  corpus.jsonl  queries.jsonl  qrels.jsonl
-```
-
-Dense indexes use the same layout with `dense_fulltext` or `dense_passages`
-and FAISS/vector files. ColBERT indexes store the upstream compressed index
-under `colbert/` with a canonical PID mapping. `models/` contains retrieval outputs; pretrained weights
-and embeddings stay in the existing `cache/` hierarchy. There are no timestamped
-artifact wrappers.
-
-### Run BM25 and dense baselines on the test set
-
-After `uv sync --locked`, point `TOT_DATA_ROOT` at your restored dataset. These
-commands index every available ACL document and evaluate all test queries from
-the `visual-and-text` query collection, using original fulltext for both baselines:
-
-```sh
-export TOT_DATA_ROOT=/your/restored/data
-
-# BM25 baseline: index, retrieve test queries, then compute scores.
-./scripts/02_index.sh experiment=bm25_fulltext split=test
-./scripts/03_retrieve.sh experiment=bm25_fulltext split=test
-./scripts/04_evaluate.sh experiment=bm25_fulltext split=test
-
-# Pretrained dense baseline (intfloat/e5-small-v2, CUDA; no fine-tuning).
-./scripts/02_index.sh model=dense representation=fulltext split=test
-./scripts/03_retrieve.sh model=dense representation=fulltext split=test
-./scripts/04_evaluate.sh model=dense representation=fulltext split=test
-```
-
-`split=test` selects test queries while keeping `split.corpus=all`, so distractor
-documents remain in the retrieval collection. There are no document or query
-limits. The first BM25 run downloads Terrier's JAR; the first dense run downloads
-the pretrained weights. Preparation/export with `./scripts/01_prepare.sh` is
-optional. The dataset must include corpus, query, and split artifacts as described
-in [the data contract](docs/dataset-schema.md).
-
-Each stage prints its completed output directory. Aggregate test-set scores are
-in `results/evaluations/bm25_fulltext_c-all_q-test_<evaluation-hash>/metrics.csv`
-and `results/evaluations/dense_fulltext_c-all_q-test_<evaluation-hash>/metrics.csv`;
-`per-query.csv` contains individual query scores. Rankings are saved as `run.trec`
-under the corresponding `results/models/` directory. Both baselines retrieve
-top-100 and report RR@10, Recall@1, Recall@10, Recall@100, and NDCG@10 by default.
-
-For passage-based dense retrieval, replace `model=dense representation=fulltext`
-with `experiment=dense_passages` in all three dense commands. This splits original
-fulltext into overlapping passages and aggregates their scores by maximum per
-paper.
-
-### Evaluate each domain separately
-
-The published domains are `ACL`, `Biology`, `Engineering`, `Medicine`, and
-`Physics`. Pass the same `dataset.domains` override to indexing, retrieval, and
-evaluation. For example, run both baselines separately for every domain:
-
-```sh
-export TOT_DATA_ROOT=/your/restored/data
-
-for domain in ACL Biology Engineering Medicine Physics; do
-  export TOT_OUTPUT_ROOT="./results/$domain"
-
-  ./scripts/02_index.sh experiment=bm25_fulltext split=test "dataset.domains=[$domain]"
-  ./scripts/03_retrieve.sh experiment=bm25_fulltext split=test "dataset.domains=[$domain]"
-  ./scripts/04_evaluate.sh experiment=bm25_fulltext split=test "dataset.domains=[$domain]"
-
-  ./scripts/02_index.sh model=dense representation=fulltext split=test "dataset.domains=[$domain]"
-  ./scripts/03_retrieve.sh model=dense representation=fulltext split=test "dataset.domains=[$domain]"
-  ./scripts/04_evaluate.sh model=dense representation=fulltext split=test "dataset.domains=[$domain]"
-done
-unset TOT_OUTPUT_ROOT
-```
-
-To run only selected domains, shorten the loop list, for example
-`for domain in Biology Physics; do`. Each domain needs its restored corpus,
-test queries, and split artifacts. Scores are saved separately under
-`results/<DOMAIN>/evaluations/`; each baseline's `metrics.csv` reports that
-domain's test-set scores, and `per-query.csv` reports its individual query scores.
-The cache remains shared at `./cache`.
-
-If indexing and retrieval have already completed, rerun only the corresponding
-`04_evaluate.sh` command with the same domain and output root. For example:
-
-```sh
-TOT_OUTPUT_ROOT=./results/Biology ./scripts/04_evaluate.sh \
-  experiment=bm25_fulltext split=test 'dataset.domains=[Biology]'
-TOT_OUTPUT_ROOT=./results/Biology ./scripts/04_evaluate.sh \
-  model=dense representation=fulltext split=test 'dataset.domains=[Biology]'
-```
-
-Each run selects exactly one domain. Use the separate runs above for per-domain
-baseline results.
-
-The scripts run from the repository root and share `./data`, `./cache`, and
-`./results`; edit `scripts/defaults.sh` or use `TOT_DATA_ROOT`, `TOT_CACHE_ROOT`,
-and `TOT_OUTPUT_ROOT`. Their uv cache defaults to `${TOT_CACHE_ROOT}/uv`.
-BM25/fulltext defaults to ACL, all corpus documents, test queries, CPU, top-100,
-and RR@10/Recall@1/Recall@10/Recall@100/NDCG@10. The scripts do not restore datasets or launch prerequisites.
-Automatic index selection rereads the selected corpus to match its exact identity;
-multiple compatible saved retrieval runs require an explicit `paths.run` choice.
-Changing content/settings creates a new identity;
-identical completed artifacts are always verified and reused.
-
-Runs print corpus selection and counts, index/model metadata, cache hits, and stage
-status as work proceeds. Progress bars track BM25 indexing/retrieval, dense encoding,
-passage splitting, and staged FAISS query retrieval. Index stages select documents
-only; query counts and test/train selection are printed during retrieval.
-
-The bare Hydra CLI supports explicit artifact inputs and multiruns. Copy the
-completed paths printed by each command into `INDEX` and `RUN` below:
-
-```sh
-uv run scientific-tot stage=index dataset.root=/your/restored/data
-# Set INDEX to the completed results/indexes/... directory.
-uv run scientific-tot stage=retrieve dataset.root=/your/restored/data "paths.index=$INDEX"
-# Set RUN to the completed results/models/... directory.
-uv run scientific-tot stage=evaluate dataset.root=/your/restored/data "paths.run=$RUN"
-uv run scientific-tot stage=evaluate dataset.root=/your/restored/data "paths.run=$RUN" 'evaluation.metrics=[RR@10,R@100]'
-# An explicit persistent destination is also supported:
-uv run scientific-tot stage=index dataset.root=/your/restored/data paths.index=results/indexes/my-bm25-index
-uv run scientific-tot dry_run=true experiment=dense_passages launcher=local_gpu
-uv run scientific-tot --multirun stage=index split.queries=train,test
-```
-
-Index names use readable model/representation/corpus split labels without a checksum
-suffix. Existing BM25/dense index generation skips existing destinations. ColBERT
-instead verifies corpus/settings identity and sealed checksums before reuse. Use a different `paths.index` to build another index.
-Other stage names combine readable model/representation/split labels with the first 16 hex
-characters of a SHA256 of the resolved content identity. Full identities and
-hashes remain in manifests alongside full configuration hashes. Index identities
-include corpus bytes, dataset commit, representation, construction settings and
-resolved document encoder settings/commit. Query split, scoring controls, retrieval
-depth and metrics do not affect indexes. Retrieval identities include the exact
-index manifest, query content/selection and ranking parameters. Evaluation identities
-include the exact saved retrieval manifest and metric settings; evaluation needs
-neither the original dataset nor the index.
-
-For stages other than index generation, identical completed outputs are reused
-only after manifest, snapshot and output checksum verification, without rewriting files. Incomplete, corrupted, legacy or
-conflicting destinations fail explicitly. Concurrent writers reserve exclusively;
-index multirun jobs sharing a destination skip subsequent builds. Other stages
-reuse identical completed outputs and give different identities separate destinations. Index and retrieval consumers require schema-2 artifacts
-and explicit document-domain identities. Rebuild older artifacts from original inputs.
-
-[Configuration guide](docs/configuration.md) covers profiles, naming, provenance,
-reuse and limitations. BM25 and dense `prepare`, `index`, `retrieve`, and `evaluate`
-execute for text corpora. Dense passages preserve the configured LangChain splitter
-and PyTerrier max/mean aggregation. ColBERT executes all four stages with fulltext.
-ColQwen and the single-vector visual profiles execute the same four stages.
-`search`, `export`, and the legacy `model=visual` profile remain configuration-only.
-Standalone tutorial examples below retain
-their established output layouts and APIs.
-
-## ColBERTv2 textual baseline
-
-```sh
-./scripts/02_index.sh experiment=colbert_fulltext
-./scripts/03_retrieve.sh experiment=colbert_fulltext
-./scripts/04_evaluate.sh experiment=colbert_fulltext
-```
-
-This uses the pinned `colbert-ir/colbertv2.0` checkpoint and original extracted
-fulltext, truncated by ColBERT to **220 tokens including special tokens** per
-paper. It does not split documents into passages. Preparation is optional; model
-weights download on first indexing/search. CUDA is selected by default and required for indexing/retrieval. Saved-run
-evaluation requires no GPU. Native extensions require a compiler, Ninja and a CUDA toolkit.
-[ColBERT guide](docs/colbert-retrieval.md) covers parameters, provenance,
-requirements and the opt-in real-checkpoint test.
 
 ## Full document collection (default)
 
@@ -363,72 +581,6 @@ missing fulltext; all query positives must still resolve. CLI options use
 An existing experiment output is rejected to prevent stale indexes. Choose a new
 `--output` for a rerun; reuse the dense `--cache` directory.
 
-## Visual PDF retrieval with ColQwen2.5
-
-`experiment=colqwen_pages` uses the pinned `vidore/colqwen2.5-v0.2` checkpoint
-through Sentence Transformers 6.1's `MultiVectorEncoder`. PDFium renders original
-PDF pages; the official checkpoint processor handles model preprocessing. Qdrant
-persists page multi-vectors; Sentence Transformers performs batched exact MaxSim on CUDA. Maximum page-score
-aggregation produces canonical paper rankings, and `retrieval.top_k` counts
-papers. This aggregation is specific to our paper-level benchmark.
-
-```sh
-export TOT_DATA_ROOT=/your/restored/data
-./scripts/01_prepare.sh experiment=colqwen_pages
-./scripts/02_index.sh experiment=colqwen_pages
-./scripts/03_retrieve.sh experiment=colqwen_pages
-./scripts/04_evaluate.sh experiment=colqwen_pages
-```
-
-These scripts automatically use the locked `.venv-colqwen` environment and
-select CUDA. ColQwen encoding requires an available NVIDIA GPU; CPU/MPS
-overrides and CPU fallback are rejected. Preparation and saved-run evaluation
-require no GPU. PDF rendering and SQLite reads use the CPU; encoding and MaxSim
-scoring use CUDA. Originals must be restored
-under `pdf_datasets/` with canonical extraction identity metadata. Indexes have
-content hashes and are verified before reuse across query splits/modes/depths.
-Retrieval consumes saved pages; evaluation consumes only saved rankings.
-Exact search streams saved page vectors from read-only SQLite once for all queries,
-using bounded page and query groups for CUDA scoring. This remains an exhaustive correctness baseline.
-Pretrained CPU/GPU inference and full corpus performance have not been exercised locally. See the
-[visual retrieval guide](docs/colqwen-retrieval.md) for pinned versions, rendering,
-identity, resource requirements, and the selectable real-checkpoint test, and the
-[implementation report](docs/colqwen-implementation-report.md) for executed checks.
-
-## OpenCLIP and Qwen3-VL-Embedding baselines
-
-OpenCLIP indexes individual pages (`openclip_pages`) or supplied figure/table
-images (`openclip_figures`) and takes the maximum score per paper.
-Qwen3-VL produces exactly one 2048-dimensional embedding per paper:
-
-- `qwen3_vl_text`: full original Markdown text.
-- `qwen3_vl_figures`: all extracted figure/table images together.
-- `qwen3_vl_pages`: all rendered PDF pages together, in page order.
-- `qwen3_vl_multimodal`: all extracted figure/table images, followed by full original Markdown text.
-
-Qwen ranks paper embeddings directly, without page/figure score aggregation.
-All profiles share the existing stage scripts and evaluation, reporting MRR@10,
-Recall@1/10/100 and NDCG@10. Qwen query embeddings are shared across its four
-profiles; document embeddings and indexes remain separate.
-
-```sh
-for experiment in openclip_pages openclip_figures qwen3_vl_text qwen3_vl_figures qwen3_vl_pages qwen3_vl_multimodal; do
-  ./scripts/02_index.sh "experiment=$experiment"
-  ./scripts/03_retrieve.sh "experiment=$experiment"
-  ./scripts/04_evaluate.sh "experiment=$experiment"
-done
-```
-
-All run in the default locked environment. Only Qwen pages renders PDFs;
-figures uses the supplied extracted image assets, and multimodal uses those same
-images followed by the full `markdown.md` used by text baselines. No mode combines
-rendered pages with text. There is no Qwen implementation named “images.”
-No page-level text alignment or content-list JSON is
-needed. Excess text is truncated from the end at the shared 32768-token context
-limit; image tokens must fit within that limit. Rebuild indexes with the matching
-profile after changing modes. See the
-[visual dense retrieval guide](docs/visual-dense-retrieval.md).
-
 ## Discovery and Hub use
 
 ```python
@@ -476,127 +628,3 @@ A model download is required only when running pretrained encoding.
 Library consumers can still install the small core wheel and choose package extras.
 ColQwen has a separate locked environment; textual workflows retain the default one. Code is MIT licensed;
 dataset artifacts retain their own licenses.
-
-
-## Progress, acceleration and performance reports
-
-Every Hydra stage shows four named phases: source verification, execution, output
-verification, and artifact sealing. Inner loops show counts, units, rates and ETA;
-opaque native calls show the active phase and elapsed time every 30 seconds.
-ColBERT batches query encoding and shows completed query counts. Evaluation computes
-aggregate and per-query metrics together, with progress for query/metric pairs.
-Cache hits and reused artifacts are explicitly announced.
-
-Index startup prepares the corpus and dataset inventory once. Repeated Hydra
-output-path resolution and the index build reuse that snapshot. After indexing,
-one fresh source scan verifies that inputs did not change; a second fingerprinting
-progress bar in this final verification phase is expected. Image encoding runs once.
-
-Each new stage's `manifest.json` contains a common `performance` section, including
-UTC timestamps, elapsed and process CPU seconds, phase timings, throughput, output
-bytes, full index-directory bytes for index stages, and referenced embedding-cache
-bytes. Monitoring covers stage work after configuration snapshots are created,
-including source verification and output checksumming. It excludes CLI discovery
-and environment setup. Index bytes exclude Hydra snapshots, the outer manifest
-and locks; cache bytes are separate and exclude downloaded model weights.
-
-RAM is the Python process lifetime high-water mark, excluding JVM/child processes.
-GPU reports include the active device, CUDA runtime, PyTorch allocator peaks since
-stage start, and optional device-wide `nvidia-smi` utilization/memory/driver samples
-at 10-second intervals and completion. Device-wide samples include other processes;
-PyTorch peaks exclude FAISS/native allocations. Missing telemetry is represented by
-empty samples. Enabled SDPA backends are recorded; this is not a trace of the kernel
-chosen for each batch. Timing of cached embedding generation is explicitly historical;
-current-run timing is in `performance`. Reusing an existing immutable artifact keeps
-its original report.
-
-FAISS retrieval settings apply to E5, both OpenCLIP variants and all Qwen3-VL variants:
-
-```sh
-./scripts/03_retrieve.sh experiment=openclip_figures retrieval.search_device=auto retrieval.batch_size=32
-# Require a GPU-capable FAISS installation rather than accept CPU availability:
-./scripts/03_retrieve.sh experiment=openclip_figures retrieval.search_device=cuda
-# Explicit CPU search:
-./scripts/03_retrieve.sh experiment=openclip_figures retrieval.search_device=cpu
-```
-
-The locked environment installs `faiss-cpu`. CUDA search requires a compatible FAISS
-GPU build in the execution environment. When using a separately provisioned GPU
-FAISS environment, set `UV_NO_SYNC=1` so stage scripts do not replace its dependencies.
-`auto` reports CPU execution if GPU FAISS is unavailable; `cuda` fails in that case.
-Indexes remain portable CPU-format files, and GPU search uses FP32 storage and exact
-inner products. [FAISS GPU top-k](https://github.com/facebookresearch/faiss/wiki/Faiss-on-the-GPU)
-supports depths up to 2048: deeper exhaustive passage
-searches or expanded visual ties explicitly use CPU, with CPU/GPU search counts in
-the retrieval manifest. Deep passage searches avoid allocating an unused GPU index.
-Queries are batched with bounded score buffers. Floating-point scores can differ
-slightly between CPU/GPU implementations.
-
-E5 now accepts `model.precision=fp16` or `bf16`; FP32 remains its default. OpenCLIP
-already accepts those precision overrides. ColQwen accepts
-`model.retrieval.matmul_precision=high` to permit TF32 where supported; `highest`
-remains the default. Qwen3-VL retains BF16 and SDPA on CUDA. Reduced precision can
-change retrieval scores and should be compared with FP32 on the target hardware.
-Visual encoding prefetches one image batch while the GPU processes the current
-batch; PDFium work stays on one worker. Qwen validates and reuses its official
-preprocessed tensors instead of processing each batch twice. These changes do not
-add distributed model execution or automatic batch-size tuning.
-
-## Isolated test-split runs
-
-Attach `--test` to run only the **documents in the official test split** and
-that split's queries. There is no fixed document count: a split containing 110
-papers uses all 110. The mode rejects a different corpus/query split or skipped
-papers. All pages, passages or figures belonging to those papers remain available
-to their respective methods.
-
-Run indexing, retrieval and evaluation together with one command per method:
-
-```sh
-# BM25 fulltext
-./scripts/00_test.sh --test experiment=bm25_fulltext
-# E5 fulltext
-./scripts/00_test.sh --test model=dense representation=fulltext
-# E5 passages
-./scripts/00_test.sh --test experiment=dense_passages
-# ColBERT fulltext
-./scripts/00_test.sh --test experiment=colbert_fulltext
-# ColQwen pages
-./scripts/00_test.sh --test experiment=colqwen_pages
-# OpenCLIP pages
-./scripts/00_test.sh --test experiment=openclip_pages
-# OpenCLIP figures
-./scripts/00_test.sh --test experiment=openclip_figures
-# Qwen3-VL full document text
-./scripts/00_test.sh --test experiment=qwen3_vl_text
-# Qwen3-VL extracted figures followed by full text
-./scripts/00_test.sh --test experiment=qwen3_vl_multimodal
-# Qwen3-VL all rendered pages together
-./scripts/00_test.sh --test experiment=qwen3_vl_pages
-# Qwen3-VL all extracted figures together
-./scripts/00_test.sh --test experiment=qwen3_vl_figures
-```
-
-`00_test.sh` requires `--test` and stops if any stage fails. It reuses the existing
-stage scripts, including the separate ColQwen environment. To run stages separately,
-attach `--test` to each of `02_index.sh`, `03_retrieve.sh`, and `04_evaluate.sh`.
-Direct Hydra invocations use `mode=test` instead of `--test`.
-
-The default layout is separate from normal `./results/` and `./cache/`:
-
-```text
-test/
-  cache/                 # Test embedding, model and dataset caches
-  results/
-    indexes/             # Index files, configuration and provenance
-    models/              # Retrieval runs and query/corpus mappings
-    evaluations/         # metrics.csv and per-query.csv
-```
-
-Use `TOT_TEST_ROOT=/path/to/test` or `test_root=/path/to/test` to relocate the entire
-test folder. Dataset inputs are read from the usual `TOT_DATA_ROOT` or
-`dataset.root=...`; they are not copied or modified. The mode rejects explicit
-index/run paths outside the test folder. Test indexes and saved runs have separate
-identities and cannot be consumed by a normal run, even with an explicit path.
-Normal runs keep their existing splits and output/cache locations when the flag
-is absent. Existing GPU requirements still apply to neural methods.
