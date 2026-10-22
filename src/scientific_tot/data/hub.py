@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub.errors import EntryNotFoundError
 from huggingface_hub.hf_api import RepoFile
 
 from scientific_tot.data.schemas import FileInfo, Inventory, Paper, QueryCollection
@@ -53,46 +54,93 @@ class Dataset:
         self.revision = revision
         self.local_dir = Path(local_dir).expanduser() if local_dir is not None else None
         self.cache_dir = cache_dir
-        self._inventory: Inventory | None = None
+        self._inventories: dict[tuple[str, bool], Inventory] = {}
         self._files: dict[str, FileInfo] = {}
 
-    def discover(self) -> Inventory:
-        """List filenames and sizes only; never download artifact contents."""
-        if self._inventory is not None:
-            return self._inventory
+    def _local_path(self, name: str) -> Path | None:
+        assert self.local_dir is not None
+        if not self.local_dir.is_dir():
+            raise MissingComponentError(f"Local dataset directory does not exist: {self.local_dir}")
+        parts = name.split("/") if name else []
+        if any(part.startswith(".") for part in parts):
+            return None
+        path = self.local_dir
+        for part in parts[:-1]:
+            path = path / part
+            if path.is_symlink():
+                return None
+        return self.local_dir / name
+
+    def _pin_revision(self) -> None:
+        if self.revision is None:
+            self.revision = HfApi().dataset_info(self.repo_id).sha
+
+    def discover(self, prefix: str = "", *, include_images: bool = True) -> Inventory:
+        """List a subtree without downloading contents; the default lists all files.
+
+        Text/page selections skip images for known extraction directories and
+        retain at most one file per remaining images tree to detect image-only papers.
+        """
+        if prefix:
+            relative_path(prefix)
+        key = (prefix, include_images)
+        if key in self._inventories:
+            return self._inventories[key]
         if self.local_dir is not None:
-            if not self.local_dir.is_dir():
-                raise MissingComponentError(
-                    f"Local dataset directory does not exist: {self.local_dir}"
-                )
+            root = self._local_path(prefix)
             files = []
-            # Prune hidden caches before traversal, rather than visiting every
-            # cached PDF/image and then discarding it from the local inventory.
-            pending = [(self.local_dir, "")]
+            pending = (
+                [(root, prefix + "/" if prefix else "")]
+                if root is not None and (not prefix or not root.is_symlink()) and root.is_dir()
+                else []
+            )
+            images = set()
             while pending:
-                directory, prefix = pending.pop()
+                directory, parent = pending.pop()
+                image_root = parent.partition("/images/")[0] if "/images/" in parent else None
+                if not include_images and image_root in images:
+                    continue
                 with os.scandir(directory) as entries:
                     for entry in entries:
                         if entry.name.startswith("."):
                             continue
-                        name = prefix + entry.name
+                        name = parent + entry.name
                         if entry.is_dir():
                             if not entry.is_symlink():
                                 pending.append((entry.path, name + "/"))
                         elif entry.is_file():
                             files.append(FileInfo(name, entry.stat().st_size))
+                            if not include_images and entry.name in {
+                                "paper.json",
+                                "markdown.md",
+                                "_SUCCESS",
+                            }:
+                                images.add(parent.rstrip("/"))
+                            if not include_images and image_root is not None:
+                                images.add(image_root)
+                                break
         else:
-            api = HfApi()
-            self.revision = self.revision or api.dataset_info(self.repo_id).sha
-            files = [
-                FileInfo(entry.path, entry.size)
-                for entry in api.list_repo_tree(
-                    self.repo_id, repo_type="dataset", revision=self.revision, recursive=True
-                )
-                if isinstance(entry, RepoFile)
-            ]
+            self._pin_revision()
+            try:
+                files = [
+                    FileInfo(entry.path, entry.size)
+                    for entry in HfApi().list_repo_tree(
+                        self.repo_id,
+                        path_in_repo=prefix or None,
+                        repo_type="dataset",
+                        revision=self.revision,
+                        recursive=True,
+                    )
+                    if isinstance(entry, RepoFile)
+                    and (not prefix or entry.path.startswith(prefix + "/"))
+                ]
+            except EntryNotFoundError:
+                if not prefix:
+                    raise
+                files = []
         files.sort(key=lambda item: item.path)
-        paths = self._files = {item.path: item for item in files}
+        paths = {item.path: item for item in files}
+        self._files.update(paths)
         collections = []
         for path in paths:
             parts = path.split("/")
@@ -115,17 +163,33 @@ class Dataset:
                 | ({"metadata"} if "metadata.parquet" in paths else set())
             )
         )
-        self._inventory = Inventory(tuple(files), tuple(collections), components, self.revision)
-        return self._inventory
+        inventory = Inventory(tuple(files), tuple(collections), components, self.revision)
+        self._inventories[key] = inventory
+        return inventory
+
+    def file_info(self, name: str) -> FileInfo | None:
+        """Inspect one exact file without discovering unrelated dataset contents."""
+        relative_path(name)
+        if name not in self._files:
+            if self.local_dir is not None:
+                path = self._local_path(name)
+                if path is not None and path.is_file():
+                    self._files[name] = FileInfo(name, path.stat().st_size)
+            else:
+                self._pin_revision()
+                for entry in HfApi().get_paths_info(
+                    self.repo_id, paths=[name], repo_type="dataset", revision=self.revision
+                ):
+                    if isinstance(entry, RepoFile):
+                        self._files[entry.path] = FileInfo(entry.path, entry.size)
+        return self._files.get(name)
 
     def get_file(self, name: str) -> Path:
         """Select one exact artifact, using the Hub's revision cache incrementally.
 
         No other file is downloaded. Local mode returns the existing file only.
         """
-        relative_path(name)
-        self.discover()
-        if name not in self._files:
+        if self.file_info(name) is None:
             raise MissingComponentError(
                 f"Missing {name!r} in {self.local_dir or self.repo_id} "
                 f"(revision {self.revision or 'local/unrecorded'}). "
@@ -151,8 +215,7 @@ class Dataset:
             raise ValueError("read_json accepts only .json metadata files")
         if max_bytes < 1:
             raise ValueError("max_bytes must be positive")
-        self.discover()
-        info = self._files.get(name)
+        info = self.file_info(name)
         if info is not None and (info.size is None or info.size > max_bytes):
             raise ValueError(f"{name}: metadata exceeds max_bytes or size is unknown")
         path = self.get_file(name)
@@ -171,7 +234,8 @@ class Dataset:
         Duplicate query IDs are rejected within this file. Fully exhaust the
         iterator for complete validation. Records include untouched clue metadata.
         """
-        if collection not in self.discover().collections:
+        prefix = collection.queries_path.rpartition("/")[0]
+        if collection not in self.discover(prefix).collections:
             raise ValueError("Select a collection from this dataset's discover().collections")
         seen = set()
         with self.get_file(collection.queries_path).open(encoding="utf-8") as stream:

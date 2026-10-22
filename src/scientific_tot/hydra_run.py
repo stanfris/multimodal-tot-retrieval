@@ -285,6 +285,11 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
     monitor = None
     try:
         monitor = StageMonitor(cfg)
+        if cfg.model.name == "colbert" and cfg.stage.name in {"index", "retrieve"}:
+            from scientific_tot.integrations.colbert import prepare_cuda
+
+            with phase("Check ColBERT CUDA extensions"):
+                prepare_cuda(cfg)
         from scientific_tot.artifact_identity import PLANNED_IDENTITIES, resolve_identity
 
         with phase("1/4 Resolve and verify source identity"):

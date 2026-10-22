@@ -49,6 +49,69 @@ def test_inventory_prunes_hidden_trees_and_does_not_follow_directory_links(tmp_p
     ]
 
 
+def test_exact_local_reads_do_not_discover_the_dataset(local_dataset, monkeypatch):
+    from scientific_tot.data import hub
+
+    def blocked(*args):
+        raise AssertionError("Exact file reads must not scan directories")
+
+    monkeypatch.setattr(hub.os, "scandir", blocked)
+    ds = Dataset(local_dir=local_dataset)
+    assert ds.load_split()["metadata"]["seed"] == 42
+    assert ds.load_paper(PAPER).paper_id == "ACL_2022.example-1.1"
+    assert ds.file_info("missing.json") is None
+    with pytest.raises(ValueError, match="max_bytes"):
+        ds.read_json(f"{PAPER}/paper.json", max_bytes=1)
+
+
+def test_scoped_discovery_and_exact_reads_preserve_link_and_hidden_rules(tmp_path):
+    paper = tmp_path / "real/markdown.md"
+    paper.parent.mkdir()
+    paper.write_text("text")
+    (tmp_path / "linked").symlink_to(paper.parent, target_is_directory=True)
+    hidden = tmp_path / ".cache/metadata.json"
+    hidden.parent.mkdir()
+    hidden.write_text("{}")
+    ds = Dataset(local_dir=tmp_path)
+    assert not ds.discover("linked").files
+    assert not ds.discover(".cache").files
+    assert ds.file_info("linked/markdown.md") is None
+    assert ds.file_info(".cache/metadata.json") is None
+    # The dataset root itself can be a symlink to restored data.
+    assert Dataset(local_dir=tmp_path / "linked").get_file("markdown.md").read_text() == "text"
+
+
+def test_exact_hub_reads_pin_revision_without_listing_the_repository(monkeypatch, local_dataset):
+    from scientific_tot.data import hub
+
+    sha = "a" * 40
+    name = "splits/pdf_dataset_split.json"
+    calls = []
+
+    class Api:
+        def dataset_info(self, repo_id):
+            calls.append("revision")
+            return SimpleNamespace(sha=sha)
+
+        def get_paths_info(self, repo_id, paths, **kwargs):
+            assert paths == [name]
+            assert kwargs["revision"] == sha
+            calls.append("file")
+            return [RepoFile(path=name, size=100, oid=sha)]
+
+    def download(repo_id, filename, **kwargs):
+        assert filename == name
+        assert kwargs["revision"] == sha
+        return str(local_dataset / filename)
+
+    monkeypatch.setattr(hub, "HfApi", Api)
+    monkeypatch.setattr(hub, "hf_hub_download", download)
+    ds = Dataset()
+    ds.load_split()
+    ds.load_split()
+    assert calls == ["revision", "file"]
+
+
 def test_missing_components_and_lean_paper(local_dataset):
     ds = Dataset(local_dir=local_dataset)
     with pytest.raises(MissingComponentError, match="Inspect discover"):

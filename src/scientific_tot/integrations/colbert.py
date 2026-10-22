@@ -2,6 +2,10 @@
 
 import json
 import os
+import re
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -53,20 +57,71 @@ def checkpoint_path(cfg) -> str:
     )
 
 
+def prepare_cuda(cfg) -> None:
+    """Resolve the native toolchain and load ColBERT kernels before reading the corpus."""
+    import torch
+
+    if cfg.launcher.device != "cuda":
+        raise ValueError("ColBERT indexing and retrieval require launcher.device=cuda")
+    if not torch.cuda.is_available() or torch.version.cuda is None:
+        raise RuntimeError("ColBERT requires an available NVIDIA GPU; CUDA is unavailable")
+    # Direct venv Python invocations do not put its Ninja executable on PATH.
+    os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]
+    from torch.utils import cpp_extension
+
+    cuda_home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH")
+    if not cuda_home:
+        nvcc = shutil.which("nvcc")
+        cuda_home = str(Path(nvcc).resolve().parent.parent) if nvcc else cpp_extension.CUDA_HOME
+    if not cuda_home or not (Path(cuda_home) / "bin/nvcc").is_file():
+        raise RuntimeError(
+            "ColBERT requires a CUDA compiler toolkit, not just the PyTorch runtime. "
+            f"Load a toolkit compatible with torch.version.cuda={torch.version.cuda} and "
+            "set CUDA_HOME (or CUDA_PATH) to its root containing bin/nvcc before submission. "
+            "Alternatively pass +launcher.environment.CUDA_HOME=/path/to/cuda with launcher=h200."
+        )
+    cuda_home = str(Path(cuda_home).expanduser().resolve())
+    os.environ["CUDA_HOME"] = cuda_home
+    # PyTorch caches this at import time; another library may have imported it
+    # before the toolkit environment was configured.
+    cpp_extension.CUDA_HOME = cuda_home
+    for executable in (os.environ.get("CXX", "c++"), "ninja"):
+        if shutil.which(executable) is None:
+            raise RuntimeError(f"ColBERT CUDA extension compilation requires {executable} on PATH")
+    result = subprocess.run(
+        [str(Path(cuda_home) / "bin/nvcc"), "--version"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    release = re.search(r"\brelease (\d+\.\d+)", result.stdout)
+    if release is None:
+        raise RuntimeError(f"Cannot determine CUDA toolkit version from nvcc: {result.stdout}")
+    if release.group(1).split(".")[0] != torch.version.cuda.split(".")[0]:
+        raise RuntimeError(
+            f"CUDA toolkit {release.group(1)} at {cuda_home} is incompatible with "
+            f"torch.version.cuda={torch.version.cuda}; load a matching toolkit."
+        )
+    print(
+        f"ColBERT CUDA_HOME={cuda_home}; toolkit={release.group(1)}; "
+        f"Torch CUDA={torch.version.cuda}",
+        flush=True,
+    )
+    os.environ["TORCH_EXTENSIONS_DIR"] = str(Path(cfg.launcher.cache_root) / "torch_extensions")
+    os.environ.setdefault("MAX_JOBS", "4")
+    from colbert.indexing.codecs.residual import ResidualCodec
+
+    ResidualCodec.try_load_torch_extensions(True)
+
+
 def library_config(cfg, target: Path, *, retrieval=False):
     """Bind YAML parameters to the verified colbert-ai 0.2.22 configuration API."""
     import faiss
     import torch
     from colbert.infra import ColBERTConfig
 
-    if cfg.launcher.device != "cuda":
-        raise ValueError("ColBERT indexing and retrieval require launcher.device=cuda")
-    if not torch.cuda.is_available():
-        raise RuntimeError("ColBERT requires an available NVIDIA GPU; CUDA is unavailable")
     torch.set_num_threads(cfg.launcher.threads.encoding)
     faiss.omp_set_num_threads(cfg.launcher.threads.faiss)
-    # Keep native-extension compilation in reusable caches, outside sealed artifacts.
-    os.environ["TORCH_EXTENSIONS_DIR"] = str(Path(cfg.launcher.cache_root) / "torch_extensions")
     arguments = OmegaConf.to_container(cfg.model.indexing, resolve=True)
     if retrieval:
         arguments.update(OmegaConf.to_container(cfg.model.retrieval, resolve=True))

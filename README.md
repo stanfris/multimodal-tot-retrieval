@@ -26,10 +26,10 @@ retrieval. Preparation and saved-run evaluation require no GPU.
 | OpenCLIP figures | Same OpenCLIP checkpoint | Individual extracted figure/table images, without added captions | One 512-dimensional vector per image; maximum image score per paper | `experiment=openclip_figures` | CUDA by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 | Qwen text | `Qwen/Qwen3-VL-Embedding-2B` | full original Markdown text | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_text` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 | Qwen figures | Same Qwen checkpoint | all extracted figure/table images together | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_figures` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
-| Qwen pages | Same Qwen checkpoint | all rendered PDF pages together, in page order | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_pages` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
+| Qwen pages | Same Qwen checkpoint | leading rendered PDF pages that fit the token limit, in page order | ONE 2048-dimensional embedding per encoded paper; ranks papers directly | `experiment=qwen3_vl_pages` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 | Qwen multimodal | Same Qwen checkpoint | all extracted figure/table images, followed by full original Markdown text | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_multimodal` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 
-Every Qwen configuration produces **ONE embedding per paper** and ranks papers
+Every Qwen configuration produces **ONE embedding per encoded paper** and ranks papers
 directly, without page/image score aggregation or embedding averaging. There is
 no Qwen implementation named “images,” and no configuration combining rendered
 pages with text. The full input definitions above describe what is supplied to
@@ -75,15 +75,18 @@ overrides are execution settings rather than additional benchmark methods.
 | ColBERT | `model.indexing.doc_maxlen=220` WordPiece tokens including CLS, document marker and SEP (about 217 content tokens); retains the text prefix, without passage splitting. `model.retrieval.query_maxlen=32` controls query tokenization. |
 | ColQwen | Every original PDF page is rendered at scale 2.0 and encoded independently. The pinned checkpoint's official processor/module owns image resizing, query tokenization and any model length limits; this integration adds no shared Qwen3-VL `model.max_length` setting, document-text truncation or page-count cap. Effective processor, module and model configs are saved in index provenance. |
 | OpenCLIP | The code asserts the checkpoint's **77-token** query context, including special tokens. Long queries are truncated by the OpenCLIP tokenizer; truncation counts/proportions are printed and saved. Images use the standard evaluation resize/center-crop to 224 pixels. All pages/images are indexed. |
-| Qwen, all four modes | Shared **32768-token** context by default, including image tokens, text, instructions and chat template. The official processor truncates excess text **from the end** at `model.max_length`; `model.truncation_side=right` retains the prefix. Image blocks precede text and **image tokens must fit within the context**; truncation through image tokens is rejected. There is no automatic image/page dropping, paper chunking, summarization or multi-vector aggregation. Queries share the same context limit. |
+| Qwen, all four modes | Shared **32768-token** context by default, including image tokens, text, instructions and chat template. Text is truncated **from the end** at `model.max_length`. Page mode skips whole trailing pages to fit the context, preserving the instruction/template and complete retained images. Figure/multimodal modes reject truncation through image tokens. There is no paper chunking, summarization or multi-vector aggregation. Queries share the same context limit. |
 
 E5's limit is loaded rather than hardcoded by the application; see its
 [pinned checkpoint config](https://huggingface.co/intfloat/e5-small-v2/blob/ffb93f3bd4047442299a41ebb6fa998a38507c52/sentence_bert_config.json).
 The standalone dense example offers `--max-seq-length`; the Hydra dense profile
 does not expose that override. Qwen allows a positive `model.max_length` up to
 32768, with right truncation required. Its official image processor uses
-4096–1843200 pixels per image. Supplying every page/image in a single paper input
-can exceed context or GPU memory even with a small batch size.
+4096–1843200 pixels per image. Page mode logs skipped page numbers in encoding
+metadata under `skipped_pages`. If no page fits, the paper receives no embedding
+and remains in the evaluation corpus. `model.page_overflow=skip` is recorded in
+page index/cache identities. Figure/multimodal inputs can still exceed context;
+any mode can exceed GPU memory even with a small batch size.
 
 ## Install environments
 
@@ -172,6 +175,13 @@ The Torch wheel's CUDA runtime does not include `nvcc`. If compilation fails, lo
 a toolkit/compiler compatible with the printed `torch.version.cuda`, then rerun
 with `COLBERT_LOAD_TORCH_EXTENSION_VERBOSE=True`. Set `MAX_JOBS=2` to bound compiler
 workers. Do not repair compatibility errors by upgrading Torch or Transformers.
+ColBERT index/retrieve runs now resolve `CUDA_HOME`, `CUDA_PATH`, or `nvcc` on
+`PATH` and compile/load the extensions before reading the corpus. PBS submissions
+preserve both toolkit variables. If your toolkit is not on `PATH`, export its
+installation root before submitting, or pass
+`+launcher.environment.CUDA_HOME=/path/to/cuda` with `launcher=h200`. The root must
+contain `bin/nvcc`; a PyTorch runtime directory is insufficient. An explicitly
+configured invalid toolkit or a different CUDA major version fails immediately.
 The unchanged lock currently selects Torch 2.14.1; Linux CUDA runtime and driver
 compatibility must be verified on the target machine. Default Transformers 4.57.6
 and ColQwen Transformers 5.15.0 remain in separate environments.
@@ -498,7 +508,8 @@ stages do not read queries or qrels. Retrieval uses the saved index and query
 files; explicit text index selection avoids rereading document inputs. Evaluation
 reads only saved retrieval artifacts and does not reopen data, weights or indexes.
 
-Qwen figures requires at least one supplied figure per paper. Qwen multimodal
+Qwen figures skips encoding papers without supplied figures and retains them in
+the evaluation corpus. Qwen multimodal
 encodes text alone for papers without figures; any referenced missing image is
 an error for either Qwen image mode. OpenCLIP figures retains papers without
 images in the evaluation corpus but gives them no retrievable vector. Missing
@@ -713,6 +724,15 @@ set -o pipefail
 ./scripts/02_index.sh experiment=qwen3_vl_pages split=test 'dataset.domains=[ACL]' \
   2>&1 | tee logs/qwen3_vl_pages-ACL-index.log
 ```
+
+Dataset discovery is scoped to the selected domain and query collection. Exact
+file reads do not inventory the dataset root. Local runs without figure inputs
+skip image trees for known extractions and inspect at most one file per remaining
+`images/` tree to detect image-only papers. Figure runs inventory their selected
+images. TAR inputs still require a header scan of each selected shard.
+Source content checks and post-build verification
+remain enabled. Heartbeat `stage elapsed` is cumulative; phase completion times
+cover only that phase.
 
 Each new stage's `manifest.json` has a `performance` section with elapsed/process
 CPU time, phase timings, throughput, output/index/cache bytes, Python-process peak

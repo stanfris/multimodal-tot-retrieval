@@ -25,26 +25,34 @@ class Artifact:
 class Artifacts:
     """A virtual preprocessed tree; a TAR shard is the smallest download unit."""
 
-    def __init__(self, dataset: Dataset, domains: tuple[str, ...], *, archives: bool) -> None:
+    def __init__(
+        self,
+        dataset: Dataset,
+        domains: tuple[str, ...],
+        *,
+        archives: bool,
+        include_images: bool = True,
+    ) -> None:
         self.dataset = dataset
         self.files: dict[str, Artifact] = {}
         self.images: dict[str, list[str]] = {}
         self.used: dict[str, Path] = {}
         self._archive_paths: dict[str, str] = {}
-        for item in dataset.discover().files:
-            name = item.path
-            parts = name.split("/")
-            if len(parts) < 3 or parts[0] != "preprocessed" or parts[1] not in domains:
-                continue
-            if name.endswith(".tar"):
-                if not archives:
-                    raise MissingComponentError(
-                        f"{name}: archive reads disabled. "
-                        "Use restored local files or archives=True."
-                    )
-                self._index_archive(name, parts[1])
-            elif not name.endswith(".manifest.json"):
-                self._add(Artifact(name, name))
+        self._include_images = include_images
+        for domain in domains:
+            for item in dataset.discover(
+                f"preprocessed/{domain}", include_images=include_images
+            ).files:
+                name = item.path
+                if name.endswith(".tar"):
+                    if not archives:
+                        raise MissingComponentError(
+                            f"{name}: archive reads disabled. "
+                            "Use restored local files or archives=True."
+                        )
+                    self._index_archive(name, domain)
+                elif not name.endswith(".manifest.json"):
+                    self._add(Artifact(name, name))
 
     def _add(self, artifact: Artifact) -> None:
         relative_path(artifact.path)
@@ -140,6 +148,12 @@ class Artifacts:
     def locator(self, name: str) -> dict[str, Any]:
         """Describe an artifact; never download a separate image just to locate it."""
         artifact = self.files.get(name)
+        # A text selection omits most image entries, but custom Markdown paths
+        # can still point inside an images tree. Resolve that exact local file.
+        if artifact is None and not self._include_images and self.dataset.local_dir is not None:
+            if self.dataset.file_info(name) is not None:
+                artifact = Artifact(name, name)
+                self._add(artifact)
         result: dict[str, Any] = {"path": name, "available": artifact is not None}
         if artifact is not None:
             result["archive"] = artifact.file if artifact.member else None

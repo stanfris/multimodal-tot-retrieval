@@ -86,6 +86,10 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         )
     index = faiss.read_index(str(entry / "index.faiss"))
     ids = json.loads((entry / "ids.json").read_text())
+    if cfg.model.name == "qwen3_vl_pages":
+        encoded_ids = set(ids)
+        documents = [row for row in documents if row["docno"] in encoded_ids]
+        mapping = [row for row in mapping if row["vector_id"] in encoded_ids]
     if (
         ids != [row["docno"] for row in documents]
         or index.ntotal != len(mapping)
@@ -168,12 +172,16 @@ def retrieve_dense(cfg, target: Path) -> dict:
     print(f"Verifying FAISS index: {location}", flush=True)
     manifest = verify_index(location, cfg)
     provenance = manifest["provenance"]
-    figures = cfg.model.name == "openclip_figures"
+    optional_vectors = cfg.model.name in {"openclip_figures", "qwen3_vl_figures", "qwen3_vl_pages"}
     names = ("index.faiss", "ids.json", "vectors.jsonl", "vectors.jsonl.manifest.json")
     for name in names:
         if provenance.get("index_files", {}).get(name) != artifact_reference(location / name):
             raise ValueError(f"Incomplete/corrupt persistent dense index: {name}")
-    if figures and provenance["vectors"] == 0 and (location / "vectors.jsonl").stat().st_size == 0:
+    if (
+        optional_vectors
+        and provenance["vectors"] == 0
+        and (location / "vectors.jsonl").stat().st_size == 0
+    ):
         mapping = pd.DataFrame(columns=["vector_id", "doc_id", "domain"])
     else:
         mapping = _read_jsonl(location / "vectors.jsonl")
@@ -191,7 +199,7 @@ def retrieve_dense(cfg, target: Path) -> dict:
     domains = provenance["document_domains"]
     if (
         (set(mapping.doc_id) - set(domains))
-        or (not figures and set(mapping.doc_id) != set(domains))
+        or (not optional_vectors and set(mapping.doc_id) != set(domains))
         or len(domains) != provenance["documents"]
         or any(row.domain != domains[row.doc_id] for row in mapping.itertuples())
     ):

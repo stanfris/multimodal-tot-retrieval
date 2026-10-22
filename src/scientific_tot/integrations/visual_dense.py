@@ -58,6 +58,7 @@ def _document_mapping(corpus, model, strategy):
                 **({"text": paper["text"]} if strategy in {"text", "multimodal"} else {}),
             }
             for paper in corpus
+            if strategy != "figures" or paper["figures"]
         ]
     if strategy == "figures":
         return [
@@ -167,10 +168,6 @@ def load_visual_corpus(adapter, cfg) -> Records:
                         continue
                     figures.append(figure)
                 paper["figures"] = figures
-                if not figures and cfg.model.name == "qwen3_vl_figures":
-                    raise ValueError(
-                        f"{paper['doc_id']}: figure-only input requires supplied figures"
-                    )
                 if not figures and strategy == "figures":
                     report.issues.append(
                         Issue(
@@ -282,7 +279,7 @@ class QwenEmbeddingEncoder:
             "attention": "sdpa",
         }
 
-    def _preprocess(self, conversations):
+    def _preprocess(self, conversations, *, truncation=True):
         # Same pinned official preprocessing arguments, with errors allowed to
         # propagate instead of its catch-all replacement with a NULL input.
         text = self.model.processor.apply_chat_template(
@@ -300,13 +297,80 @@ class QwenEmbeddingEncoder:
             images=images,
             videos=None,
             video_metadata=None,
-            truncation=True,
+            truncation=truncation,
             max_length=self.model.max_length,
             padding=True,
             do_resize=False,
             return_tensors="pt",
             **kwargs,
         )
+
+    def _limit_pages(self, processed, inputs):
+        """Remove whole trailing image blocks and their matching pixel patches on CPU."""
+        import torch
+
+        self.retained_indices = list(range(len(inputs)))
+        if processed["attention_mask"].sum(dim=1).max().item() <= self.model.max_length:
+            return processed
+        processor = self.model.processor
+        grids = processed["image_grid_thw"]
+        patch_counts = grids.prod(dim=1).tolist()
+        image_offset = patch_offset = 0
+        tokens = []
+        retained_grids = []
+        retained_pixels = []
+        self.retained_indices = []
+        skipped = self.metadata.setdefault("skipped_pages", {})
+        for row_index, row in enumerate(inputs):
+            active = processed["attention_mask"][row_index].bool()
+            ids = processed["input_ids"][row_index][active]
+            starts = (ids == processor.vision_start_token_id).nonzero().flatten().tolist()
+            ends = (ids == processor.vision_end_token_id).nonzero().flatten().tolist()
+            assert len(starts) == len(ends) == len(row["images"])
+            lengths = [end - start + 1 for start, end in zip(starts, ends, strict=True)]
+            size = len(ids) - sum(lengths)  # Reserve the instruction and complete chat template.
+            retained = 0
+            for length in lengths:
+                if size + length > self.model.max_length:
+                    break
+                size += length
+                retained += 1
+            if retained < len(lengths):
+                skipped[row["doc_id"]] = list(range(retained + 1, len(lengths) + 1))
+                print(
+                    f"Qwen pages {row['doc_id']}: retained {retained}/{len(lengths)} pages; "
+                    f"skipped trailing pages exceeding {self.model.max_length} tokens",
+                    flush=True,
+                )
+            if retained:
+                keep = torch.ones(len(ids), dtype=torch.bool)
+                for start, end in zip(starts[retained:], ends[retained:], strict=True):
+                    keep[start : end + 1] = False
+                tokens.append(
+                    {
+                        key: value[row_index][active][keep].tolist()
+                        for key, value in processed.items()
+                        if key not in {"pixel_values", "image_grid_thw"}
+                    }
+                )
+                self.retained_indices.append(row_index)
+                retained_grids.append(grids[image_offset : image_offset + retained])
+                retained_patches = sum(patch_counts[image_offset : image_offset + retained])
+                retained_pixels.append(
+                    processed["pixel_values"][patch_offset : patch_offset + retained_patches]
+                )
+            patch_offset += sum(patch_counts[image_offset : image_offset + len(lengths)])
+            image_offset += len(lengths)
+        assert image_offset == len(grids)
+        assert patch_offset == len(processed["pixel_values"])
+        if not tokens:
+            return None
+        result = dict(processor.tokenizer.pad(tokens, padding=True, return_tensors="pt"))
+        result.update(
+            image_grid_thw=torch.cat(retained_grids), pixel_values=torch.cat(retained_pixels)
+        )
+        assert result["input_ids"].shape[1] <= self.model.max_length
+        return result
 
     def encode(self, values, task):
         import torch
@@ -327,6 +391,8 @@ class QwenEmbeddingEncoder:
             raise type(exc)(f"Qwen input {ids}: {exc}") from exc
 
     def _encode(self, values, task):
+        import torch
+
         if task == "document":
             inputs = values
         else:
@@ -347,9 +413,14 @@ class QwenEmbeddingEncoder:
                 self.model.format_model_input(image=image)[1]["content"][0] for image in images[1:]
             ]
             conversations.append(conversation)
-        # The official processor truncates at max_length. Images precede text,
-        # so text fills the remaining context and its suffix is discarded.
-        preview = self._preprocess(conversations)
+        pages = task == "document" and self.cfg.model.document_input == "pages"
+        # Page inputs are tokenized in full on CPU, then shortened at image
+        # boundaries before any tensors are sent to the GPU.
+        preview = (
+            self._preprocess(conversations, truncation=False)
+            if pages
+            else self._preprocess(conversations)
+        )
         image_count = sum(len(row.get("images", [])) for row in inputs)
         if image_count and (
             "pixel_values" not in preview
@@ -359,14 +430,16 @@ class QwenEmbeddingEncoder:
             raise ValueError(
                 "Official Qwen preprocessing did not retain every image modality input"
             )
+        if pages:
+            preview = self._limit_pages(preview, inputs)
+            if preview is None:
+                return torch.empty((0, self.cfg.model.dimension))
         # The pinned processor itself rejects truncated image-token sequences.
         # Reuse the processed CPU tensors with the official forward/pooling methods.
         # Calling process(inputs) here would repeat image processing and tokenization.
         processed = {key: value.to(self.model.model.device) for key, value in preview.items()}
         output = self.model.forward(processed)
         embeddings = self.model._pooling_last(output["last_hidden_state"], output["attention_mask"])
-        import torch
-
         return torch.nn.functional.normalize(embeddings, p=2, dim=-1)
 
 
@@ -480,6 +553,7 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
         model_settings.pop("query_instruction", None)
     else:
         model_settings.pop("document_input")
+        model_settings.pop("page_overflow", None)
         model_settings["name"] = (
             "openclip" if cfg.model.name in OPENCLIP_MODELS else "qwen3_vl_embedding"
         )
@@ -517,6 +591,8 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
                 shape=(len(rows), cfg.model.dimension),
             )
             index = faiss.IndexFlatIP(cfg.model.dimension) if task == "document" else None
+            written = 0
+            encoded_rows = []
             store = None
             if task == "document" and cfg.model.document_input in {"figures", "multimodal"}:
                 adapter = configured_adapter(cfg)
@@ -542,14 +618,21 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
                     ):
                         with torch.inference_mode():
                             encoded = encoder.encode(values, task).float()
-                            assert encoded.shape == (len(values), cfg.model.dimension)
+                            retained = (
+                                encoder.retained_indices
+                                if task == "document" and cfg.model.name == "qwen3_vl_pages"
+                                else range(len(values))
+                            )
+                            assert encoded.shape == (len(retained), cfg.model.dimension)
                             assert torch.isfinite(encoded).all()
                             assert (encoded.norm(dim=1) > 0).all()
                             encoded = torch.nn.functional.normalize(encoded, dim=1)
                             chunk = encoded.cpu().numpy()
                         assert np.allclose(np.linalg.norm(chunk, axis=1), 1, atol=1e-5)
-                        vectors[start : start + len(values)] = chunk
+                        vectors[written : written + len(retained)] = chunk
+                        written += len(retained)
                         if index is not None:
+                            encoded_rows.extend(rows[start + offset] for offset in retained)
                             index.add(chunk)
                         del encoded, chunk
             metadata = {
@@ -557,7 +640,7 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
                 "dimension": cfg.model.dimension,
                 "normalized": True,
                 "generation_seconds": perf_counter() - started,
-                "units": len(rows),
+                "units": written,
             }
             if cfg.model.name in QWEN_MODELS and task == "document":
                 metadata.update(
@@ -576,14 +659,17 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
             _write_cache(
                 entry,
                 configuration,
-                vectors,
+                vectors[:written],
                 metadata,
                 index=index,
-                ids=[row["docno"] for row in rows] if index is not None else None,
+                ids=[row["docno"] for row in encoded_rows] if index is not None else None,
             )
             del vectors
     vectors, manifest = _read_cache(entry, configuration)
-    if vectors.shape != (len(rows), cfg.model.dimension):
+    pages = task == "document" and cfg.model.name == "qwen3_vl_pages"
+    if vectors.shape[1] != cfg.model.dimension or (
+        vectors.shape[0] > len(rows) if pages else vectors.shape[0] != len(rows)
+    ):
         raise ValueError("Cached embedding dimensions/count differ from configured inputs")
     if task == "query" and cfg.model.name in OPENCLIP_MODELS:
         meta = manifest["encoding"]

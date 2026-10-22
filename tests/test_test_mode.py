@@ -142,6 +142,7 @@ def test_110_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypa
         def encode(self, values, task):
             import torch
 
+            self.retained_indices = list(range(len(values)))
             vectors = torch.zeros(len(values), self.dimension)
             for number, value in enumerate(values):
                 if task == "query":

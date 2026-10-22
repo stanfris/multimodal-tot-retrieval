@@ -50,7 +50,7 @@ class DatasetAdapter:
     def _provenance(self, **selection: Any) -> dict[str, Any]:
         return {
             "repo_id": self.dataset.repo_id,
-            "revision": self.dataset.discover().revision,
+            "revision": self.dataset.revision,
             "local_dir": str(self.dataset.local_dir.resolve()) if self.dataset.local_dir else None,
             "local_revision_verified": False if self.dataset.local_dir else None,
             "selection": selection,
@@ -77,7 +77,6 @@ class DatasetAdapter:
             raise ValueError(f"Choose components from {sorted(allowed)}")
         if mode not in MODES:
             raise ValueError(f"Choose mode from {sorted(MODES)}")
-        paths = {f.path for f in self.dataset.discover().files}
         selected: set[str] = set()
         for component in components:
             if component in {"metadata", "splits"}:
@@ -86,7 +85,7 @@ class DatasetAdapter:
                     if component == "metadata"
                     else "splits/pdf_dataset_split.json"
                 )
-                if name not in paths:
+                if self.dataset.file_info(name) is None:
                     raise MissingComponentError(f"Missing requested component: {name}")
                 selected.add(name)
             elif component == "queries":
@@ -97,21 +96,21 @@ class DatasetAdapter:
                     root_meta = str(
                         PurePosixPath(collection.queries_path).parent.parent / "metadata.json"
                     )
-                    if root_meta in paths:
+                    if self.dataset.file_info(root_meta) is not None:
                         selected.add(root_meta)
             else:
                 prefix = "data" if component == "pdfs" else component
                 for item in domains:
                     matches = {
-                        p
-                        for p in paths
-                        if p.startswith(f"{prefix}/{item}/") and not p.endswith(".manifest.json")
+                        entry.path
+                        for entry in self.dataset.discover(f"{prefix}/{item}").files
+                        if not entry.path.endswith(".manifest.json")
                     }
                     if not matches:
                         raise MissingComponentError(f"Missing requested component: {prefix}/{item}")
                     selected.update(matches)
                 if component == "pdfs":
-                    if "metadata.parquet" not in paths:
+                    if self.dataset.file_info("metadata.parquet") is None:
                         raise MissingComponentError("PDF restoration requires metadata.parquet")
                     selected.add("metadata.parquet")
         return tuple(self.dataset.get_file(name) for name in sorted(selected))
@@ -159,21 +158,15 @@ class DatasetAdapter:
         if mode not in MODES:
             raise ValueError(f"Choose the published mode spelling from {sorted(MODES)}")
         found = []
-        available = self.dataset.discover().collections
         for domain in domains:
             for split in splits:
-                matches = [
-                    c
-                    for c in available
-                    if c.domain == domain
-                    and c.collection == f"query_generation_{split}"
-                    and c.mode_directory == MODES[mode]
-                ]
-                if not matches:
+                prefix = f"query_collections/{domain}/query_generation_{split}/{MODES[mode]}"
+                collections = self.dataset.discover(prefix).collections
+                if not collections:
                     raise MissingComponentError(
                         f"Missing query collection: {domain}/{split}/{mode}"
                     )
-                found.extend(matches)
+                found.extend(collections)
         return found
 
     def load_queries(
@@ -184,14 +177,13 @@ class DatasetAdapter:
         files = []
         collection_metadata = {}
         collections = self._collections(domains, splits, mode)
-        paths = {f.path for f in self.dataset.discover().files}
         for collection in collections:
             files.append(collection.queries_path)
             for name in (
                 collection.metadata_path,
                 str(PurePosixPath(collection.queries_path).parent.parent / "metadata.json"),
             ):
-                if name and name in paths:
+                if name and self.dataset.file_info(name) is not None:
                     collection_metadata[name] = self.dataset.read_json(name)
                     files.append(name)
             for raw in self.dataset.iter_queries(collection):
@@ -265,8 +257,6 @@ class DatasetAdapter:
             raise ValueError("representation must be fulltext, title_abstract, pages, or figures")
         if missing not in {"error", "skip"}:
             raise ValueError("missing must be error or skip")
-        inventory = self.dataset.discover()
-        paths = {f.path for f in inventory.files}
         # Fail before any large transfer when mandatory selection information is absent.
         expected: set[str] | None = None
         split_map: dict[str, str] = {}
@@ -279,7 +269,7 @@ class DatasetAdapter:
             if not expected:
                 raise MissingComponentError(f"No PDF split entries for {domains}/{split}")
         pdf_rows = []
-        if include_metadata and "metadata.parquet" in paths:
+        if include_metadata and self.dataset.file_info("metadata.parquet") is not None:
             pdf_rows = self.dataset.load_pdf_metadata().to_pylist()
             files.append("metadata.parquet")
         pdf_by_path = _pdf_index(pdf_rows)
@@ -289,13 +279,14 @@ class DatasetAdapter:
             else {p for p in pdf_by_path if p.split("/")[0] in domains}
         )
         candidates: dict[str, set[str]] | None = None
-        store = Artifacts(self.dataset, domains, archives=archives)
+        store = Artifacts(self.dataset, domains, archives=archives, include_images=include_figures)
         # Reuse this inventory for figure reads; text/page selections can release
         # it. New selections always rebuild it, including post-build verification.
         self.artifacts = store if include_figures else None
         if not store.files:
             raise MissingComponentError(
-                f"No preprocessed artifacts for {domains} at {inventory.revision or 'local root'}. "
+                f"No preprocessed artifacts for {domains} "
+                f"at {self.dataset.revision or 'local root'}. "
                 "Supply restored data or a published revision containing original extractions."
             )
         # Include image-only directories in coverage reports, without opening image data.
@@ -369,7 +360,7 @@ class DatasetAdapter:
             abstract = _text_field(pdf, paper, "abstract")
             markdown = f"{directory}/{relative_path(paper.get('markdown_relpath', 'markdown.md'))}"
             if representation == "fulltext":
-                if markdown not in store.files:
+                if markdown not in store.files and not store.locator(markdown)["available"]:
                     _skip(report, "missing_fulltext", markdown, paper_id)
                     continue
                 text = store.read_text(markdown)

@@ -41,6 +41,8 @@ def submission(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("stage", ["prepare", "index", "retrieve", "evaluate"])
 def test_stage_submits_without_loading_sources_or_artifacts(submission, monkeypatch, stage):
+    monkeypatch.setenv("CUDA_PATH", "/opt/cuda")
+    monkeypatch.setenv("TORCH_CUDA_ARCH_LIST", "9.0")
     monkeypatch.setattr(stage_cli, "find_artifact", lambda *args: pytest.fail("Login-node I/O"))
     monkeypatch.setattr(sys, "argv", ["stage", stage, "launcher=h200", "experiment=dense_fulltext"])
     stage_cli.main()
@@ -50,6 +52,8 @@ def test_stage_submits_without_loading_sources_or_artifacts(submission, monkeypa
     assert "walltime=03:00:00" in args
     script = Path(args[-1])
     body = script.read_text()
+    assert "export CUDA_PATH=/opt/cuda" in body
+    assert "export TORCH_CUDA_ARCH_LIST=9.0" in body
     plan = json.loads((script.parent / "plan.json").read_text())
     assert plan["command"][3:5] == ["scientific_tot.stage_cli", stage]
     log = Path(plan["log"])

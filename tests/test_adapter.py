@@ -1,8 +1,10 @@
 import hashlib
 import io
 import json
+import os
 import shutil
 import tarfile
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -134,6 +136,94 @@ def test_split_all_includes_distractors(complete):
     assert len(load_corpus(local_dir=complete, domain="ACL", split="all")) == 3
     assert len(load_corpus(local_dir=complete, domain="ACL", split="test")) == 1
     assert len(load_corpus(local_dir=complete, domain="ACL", split="train+test")) == 2
+
+
+@pytest.mark.parametrize("representation", ["fulltext", "title_abstract", "pages", "figures"])
+def test_corpus_discovery_only_visits_selected_domain(complete, monkeypatch, representation):
+    images = complete / PAPER / "images"
+    images.mkdir()
+    for number in range(100):
+        (images / f"{number}.png").write_bytes(b"image")
+    for directory in (PAPER, TRAIN):
+        source = complete / directory / "paper.json"
+        paper = json.loads(source.read_text())
+        paper.update(title="Title", abstract="Abstract")
+        source.write_text(json.dumps(paper))
+    scandir = os.scandir
+    visited = []
+
+    @contextmanager
+    def scoped(path):
+        assert Path(path).is_relative_to(complete / "preprocessed/ACL")
+        if representation != "figures":
+            assert "images" not in Path(path).relative_to(complete).parts
+        with scandir(path) as entries:
+
+            def tracked():
+                for entry in entries:
+                    visited.append(Path(entry.path))
+                    yield entry
+
+            yield tracked()
+
+    monkeypatch.setattr(os, "scandir", scoped)
+    corpus = load_corpus(
+        local_dir=complete,
+        domain="ACL",
+        split="all",
+        representation=representation,
+        include_figures=representation == "figures",
+        include_metadata=False,
+    )
+    assert len(corpus) == 2
+    assert sum(path.suffix == ".png" for path in visited) == (
+        100 if representation == "figures" else 0
+    )
+
+
+def test_query_loading_only_visits_selected_collection(complete, monkeypatch):
+    scandir = os.scandir
+
+    def scoped(path):
+        assert Path(path) == (complete / QPATH).parent
+        return scandir(path)
+
+    monkeypatch.setattr(os, "scandir", scoped)
+    queries = load_queries(local_dir=complete, domain="ACL", split="test")
+    assert len(queries) == 1
+
+
+def test_text_selection_preserves_image_only_papers_and_custom_markdown(complete):
+    images = complete / PAPER / "images"
+    images.mkdir()
+    (images / "figure.png").write_bytes(b"image")
+    (images / "custom.md").write_text("Custom original text")
+    path = complete / PAPER / "paper.json"
+    paper = json.loads(path.read_text())
+    paper["markdown_relpath"] = "images/custom.md"
+    path.write_text(json.dumps(paper))
+    extra = complete / "preprocessed/ACL/image-only/images"
+    extra.mkdir(parents=True)
+    (extra / "figure.png").write_bytes(b"image")
+    with pytest.raises(IncompleteCorpusError) as error:
+        load_corpus(
+            local_dir=complete,
+            domain="ACL",
+            split="all",
+            include_figures=False,
+            include_metadata=False,
+        )
+    assert error.value.report.skipped == 1
+    assert {issue.code for issue in error.value.report.issues} == {"missing_fulltext"}
+    corpus = load_corpus(
+        local_dir=complete,
+        domain="ACL",
+        split="all",
+        include_figures=False,
+        include_metadata=False,
+        missing="skip",
+    )
+    assert corpus[0]["text"] == "Custom original text"
 
 
 @pytest.mark.parametrize("representation", ["fulltext", "figures", "pages"])
@@ -404,7 +494,16 @@ def test_selective_hub_downloads_pinned_and_reusable(complete, monkeypatch):
 
         def list_repo_tree(self, repo_id, **kwargs):
             assert kwargs["revision"] == sha
-            return inventory
+            prefix = kwargs["path_in_repo"]
+            assert prefix in {
+                "preprocessed/ACL",
+                "query_collections/ACL/query_generation_test/visual_and_text",
+            }
+            return [entry for entry in inventory if entry.path.startswith(prefix + "/")]
+
+        def get_paths_info(self, repo_id, paths, **kwargs):
+            assert kwargs["revision"] == sha
+            return [entry for entry in inventory if entry.path in paths]
 
     def download(repo_id, filename, **kwargs):
         assert kwargs["revision"] == sha

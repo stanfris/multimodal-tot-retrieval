@@ -339,6 +339,8 @@ def _validate(cfg: DictConfig) -> None:
                 "Qwen max_length must be positive and at most 32768",
             )
             _require(_text(model.query_instruction), "Qwen query instruction is required")
+            if model.name == "qwen3_vl_pages":
+                _require(model.page_overflow == "skip", "Qwen pages requires page_overflow=skip")
     elif model.name == "dense":
         _require(
             model.revision is None or _text(model.revision), "model.revision must be null or text"

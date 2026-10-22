@@ -67,10 +67,10 @@ index_archive = Artifacts._index_archive
 def counted_archive(self, *args, **kwargs):
     counts["archive_scans"] += 1
     return index_archive(self, *args, **kwargs)
-def counted_discover(self):
-    if self._inventory is None:
+def counted_discover(self, *args, **kwargs):
+    if not self._inventories:
         counts["inventories"] += 1
-    return discover(self)
+    return discover(self, *args, **kwargs)
 def counted_corpus(*args, **kwargs):
     counts["corpus_loads"] += 1
     return load_corpus(*args, **kwargs)
@@ -81,6 +81,7 @@ class Encoder:
         self.figures = cfg.model.document_input == "figures"
     def encode(self, values, task):
         assert task == "document"
+        self.retained_indices = list(range(len(values)))
         counts["encoded_units"] += len(values)
         if os.environ["TOT_REGRESSION_MUTATE"] == "1":
             root = Path(os.environ["TOT_REGRESSION_DATASET"])
@@ -195,6 +196,7 @@ def encoder(monkeypatch):
         def encode(self, values, task):
             import torch
 
+            self.retained_indices = list(range(len(values)))
             calls.append(
                 (
                     task,
@@ -327,7 +329,7 @@ def test_visual_stages(tmp_path, visual_dataset, monkeypatch, encoder, model):
     assert (evaluated / "metrics.csv").is_file()
 
 
-@pytest.mark.parametrize("model", ["openclip_figures"])
+@pytest.mark.parametrize("model", ["openclip_figures", "qwen3_vl_figures"])
 @pytest.mark.parametrize("empty_all", [False, True])
 def test_papers_without_figures_stay_in_evaluation(
     tmp_path, visual_dataset, encoder, empty_all, model
@@ -546,12 +548,14 @@ def test_qwen_paper_without_figures(tmp_path, visual_dataset, model):
     path.write_text(json.dumps(paper))
     shutil.rmtree(path.parent / "images")
     cfg, _ = settings(tmp_path, visual_dataset, "index", None, *overrides(model))
+    corpus = visual_dense.load_visual_corpus(configured_adapter(cfg), cfg)
+    mapping = visual_dense.document_mapping(corpus, cfg)
     if model == "qwen3_vl_figures":
-        with pytest.raises(ValueError, match="figure-only input requires supplied figures"):
-            resolve_identity(cfg)
+        assert len(corpus) == 2
+        assert paper["paper_id"] not in {row["doc_id"] for row in mapping}
+        assert any(issue.code == "no_visual_elements" for issue in corpus.report.issues)
+        resolve_identity(cfg)
     else:
-        corpus = visual_dense.load_visual_corpus(configured_adapter(cfg), cfg)
-        mapping = visual_dense.document_mapping(corpus, cfg)
         row = next(row for row in mapping if row["doc_id"] == paper["paper_id"])
         assert row["images"] == [] and row["text"]
         assert row["page_count"] == 0
@@ -577,7 +581,9 @@ def test_qwen_full_inputs_and_processor_truncation():
 
     encoder = QwenEmbeddingEncoder.__new__(QwenEmbeddingEncoder)
     encoder.cfg = SimpleNamespace(
-        model=SimpleNamespace(query_instruction="Retrieve relevant images.")
+        model=SimpleNamespace(
+            query_instruction="Retrieve relevant images.", document_input="multimodal"
+        )
     )
     seen = []
     limits = []
@@ -685,6 +691,123 @@ def test_qwen_vision_errors_propagate_without_placeholder():
     encoder.process_vision_info = fail
     with pytest.raises(ValueError, match="invalid image dimensions"):
         encoder._preprocess([])
+
+
+@pytest.mark.parametrize(
+    "limit,retained,patches", [(20, [0, 1], 40), (10, [0, 1], 20), (7, [1], 8), (6, [], 0)]
+)
+def test_qwen_pages_drop_complete_trailing_pages(limit, retained, patches):
+    import torch
+
+    def pad(rows, **kwargs):
+        size = max(len(row["input_ids"]) for row in rows)
+        return {
+            key: torch.tensor([[0] * (size - len(row[key])) + row[key] for row in rows])
+            for key in rows[0]
+        }
+
+    encoder = QwenEmbeddingEncoder.__new__(QwenEmbeddingEncoder)
+    encoder.metadata = {}
+    encoder.cfg = SimpleNamespace(model=SimpleNamespace(document_input="pages", dimension=2))
+    forwarded = []
+    encoder.model = SimpleNamespace(
+        max_length=limit,
+        processor=SimpleNamespace(
+            vision_start_token_id=10,
+            vision_end_token_id=12,
+            tokenizer=SimpleNamespace(pad=pad),
+        ),
+        model=SimpleNamespace(device="cpu"),
+        format_model_input=lambda image=None, **kwargs: [
+            {"role": "system", "content": "instruction"},
+            {"role": "user", "content": [{"type": "image", "image": image}]},
+        ],
+        forward=lambda values: (
+            forwarded.append(values)
+            or {
+                "last_hidden_state": torch.ones(len(values["input_ids"]), 1, 2),
+                "attention_mask": values["attention_mask"],
+            }
+        ),
+        _pooling_last=lambda hidden, mask: hidden[:, -1],
+    )
+    rows = [
+        [1, 10, 11, 11, 11, 12, 10, 11, 11, 11, 11, 11, 12, 2, 3],
+        [1, 10, 11, 11, 12, 2, 3],
+    ]
+    processed = pad([{"input_ids": row, "attention_mask": [1] * len(row)} for row in rows])
+    processed.update(
+        image_grid_thw=torch.tensor([[1, 2, 6], [1, 4, 5], [1, 2, 4]]),
+        pixel_values=torch.arange(40).reshape(40, 1),
+    )
+    inputs = [{"doc_id": "long", "images": [1, 2]}, {"doc_id": "short", "images": [3]}]
+
+    def preprocess(conversations, *, truncation):
+        assert truncation is False
+        assert all(item["type"] == "image" for row in conversations for item in row[1]["content"])
+        return processed
+
+    encoder._preprocess = preprocess
+    embeddings = encoder.encode(inputs, "document")
+    assert embeddings.shape == (len(retained), 2)
+    assert encoder.retained_indices == retained
+    if retained:
+        result = forwarded[0]
+        assert result["input_ids"].shape[1] <= limit
+        assert len(result["image_grid_thw"]) == (3 if limit == 20 else len(retained))
+        assert len(result["pixel_values"]) == patches
+        for tokens, active in zip(result["input_ids"], result["attention_mask"], strict=True):
+            ids = tokens[active.bool()].tolist()
+            assert ids[0] == 1 and ids[-2:] == [2, 3]
+            assert ids.count(10) == ids.count(12) == (2 if limit == 20 and len(ids) == 15 else 1)
+        assert result["pixel_values"][-8:].flatten().tolist() == list(range(32, 40))
+    else:
+        assert not forwarded
+    if limit == 20:
+        assert "skipped_pages" not in encoder.metadata
+    else:
+        assert encoder.metadata["skipped_pages"]["long"] == ([2] if limit == 10 else [1, 2])
+
+
+@pytest.mark.parametrize("empty_all", [False, True])
+@pytest.mark.parametrize("batch_size", [1, 2])
+def test_qwen_pages_skipped_papers_keep_correct_index_ids(
+    tmp_path, visual_dataset, monkeypatch, empty_all, batch_size
+):
+    import torch
+
+    class Encoder:
+        metadata = {"skipped_pages": {"oversized": [1, 2]}}
+
+        def __init__(self, cfg):
+            self.dimension = cfg.model.dimension
+
+        def encode(self, values, task):
+            self.retained_indices = [
+                i
+                for i, value in enumerate(values)
+                if task == "query" or (not empty_all and value["doc_id"].endswith("1.2"))
+            ]
+            return torch.ones(len(self.retained_indices), self.dimension)
+
+    monkeypatch.setattr(visual_dense, "load_model", Encoder)
+    args = (*overrides("qwen3_vl_pages"), f"model.batch_size={batch_size}")
+    index, _, _ = execute(tmp_path, visual_dataset, "index", "index", *args)
+    ids = json.loads((index / "ids.json").read_text())
+    assert ids == ([] if empty_all else ["ACL_2022.example-1.2"])
+    manifest = json.loads((index / "index-manifest.json").read_text())
+    assert manifest["provenance"]["encoding"]["skipped_pages"] == Encoder.metadata["skipped_pages"]
+    cached, _, _ = execute(tmp_path, visual_dataset, "index", "cached-index", *args)
+    assert json.loads((cached / "ids.json").read_text()) == ids
+    cached_manifest = json.loads((cached / "index-manifest.json").read_text())
+    assert cached_manifest["provenance"]["cache"]["document_hit"] is True
+    run, _, _ = execute(tmp_path, visual_dataset, "retrieve", "run", *args, f"paths.index={index}")
+    assert len((run / "corpus-ids.jsonl").read_text().splitlines()) == 2
+    assert len((run / "run.trec").read_text().splitlines()) == (0 if empty_all else 1)
+    evaluated, _, _ = execute(
+        tmp_path, visual_dataset, "evaluate", "evaluation", *args, f"paths.run={run}"
+    )
+    assert (evaluated / "metrics.csv").is_file()
 
 
 @pytest.mark.visual_live

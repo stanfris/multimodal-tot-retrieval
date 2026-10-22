@@ -5,3 +5,4 @@ defaults:
 
 name: qwen3_vl_pages
 document_input: pages
+page_overflow: skip

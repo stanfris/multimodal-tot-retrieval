@@ -59,6 +59,7 @@ def backend(monkeypatch, tmp_path):
     checkpoint.mkdir()
     (checkpoint / "config.json").write_text("pretrained ColBERT stub")
     monkeypatch.setattr(colbert, "checkpoint_path", lambda cfg: str(checkpoint))
+    monkeypatch.setattr(colbert, "prepare_cuda", lambda cfg: None)
 
     class Config:
         def __init__(self, **kwargs):
@@ -301,15 +302,59 @@ def test_local_model_content_enters_identity(tmp_path, backend):
     assert resolve_identity(cfg) != before
 
 
-def test_cuda_default_and_runtime_requirement(tmp_path, backend, monkeypatch):
+def test_cuda_default_and_runtime_requirement(tmp_path, monkeypatch):
     import torch
 
     cfg, _ = settings(tmp_path, "index", tmp_path / "index")
     assert cfg.launcher.device == "cuda"
-    assert colbert.run_config(cfg).gpus == 1
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     with pytest.raises(RuntimeError, match="NVIDIA GPU"):
-        colbert.library_config(cfg, tmp_path / "index")
+        colbert.prepare_cuda(cfg)
     cpu, _ = settings(tmp_path, "index", tmp_path / "index", "launcher=local_cpu")
     with pytest.raises(ValueError, match="require launcher.device=cuda"):
-        colbert.library_config(cpu, tmp_path / "index")
+        colbert.prepare_cuda(cpu)
+
+
+def test_cuda_toolkit_is_resolved_before_loading_extensions(tmp_path, monkeypatch):
+    import os
+
+    import torch
+    from torch.utils import cpp_extension
+
+    toolkit = tmp_path / "cuda"
+    (toolkit / "bin").mkdir(parents=True)
+    nvcc = toolkit / "bin/nvcc"
+    nvcc.write_text("#!/bin/sh\necho 'Cuda compilation tools, release 13.0, V13.0.1'\n")
+    nvcc.chmod(0o755)
+    monkeypatch.delenv("CUDA_HOME", raising=False)
+    monkeypatch.setenv("CUDA_PATH", str(toolkit))
+    monkeypatch.setenv("PATH", os.environ["PATH"])
+    monkeypatch.setenv("MAX_JOBS", "2")
+    monkeypatch.setenv("TORCH_EXTENSIONS_DIR", str(tmp_path / "old-cache"))
+    monkeypatch.setattr(cpp_extension, "CUDA_HOME", None)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.version, "cuda", "13.0")
+    monkeypatch.setattr(colbert.shutil, "which", lambda name: "/usr/bin/" + name)
+    loaded = []
+    monkeypatch.setitem(
+        sys.modules,
+        "colbert.indexing.codecs.residual",
+        SimpleNamespace(ResidualCodec=SimpleNamespace(try_load_torch_extensions=loaded.append)),
+    )
+    cfg, _ = settings(tmp_path, "index", tmp_path / "index")
+    colbert.prepare_cuda(cfg)
+    assert cpp_extension.CUDA_HOME == str(toolkit)
+    assert os.environ["CUDA_HOME"] == str(toolkit)
+    assert os.environ["TORCH_EXTENSIONS_DIR"] == str(
+        Path(cfg.launcher.cache_root) / "torch_extensions"
+    )
+    assert os.environ["MAX_JOBS"] == "2"
+    assert loaded == [True]
+    monkeypatch.setenv("CUDA_HOME", str(tmp_path / "missing"))
+    with pytest.raises(RuntimeError, match="compiler toolkit"):
+        colbert.prepare_cuda(cfg)
+    monkeypatch.setenv("CUDA_HOME", str(toolkit))
+    monkeypatch.setattr(torch.version, "cuda", "12.6")
+    with pytest.raises(RuntimeError, match="incompatible"):
+        colbert.prepare_cuda(cfg)
+    assert loaded == [True]

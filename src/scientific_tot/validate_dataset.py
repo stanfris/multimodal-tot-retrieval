@@ -22,8 +22,6 @@ def validate(cfg) -> dict:
         )
     adapter = configured_adapter(cfg)
     dataset = adapter.dataset
-    inventory = dataset.discover()
-    sizes = {file.path: file.size for file in inventory.files}
     split = dataset.load_split()
     domain = cfg.dataset.domains[0]
     figures = cfg.representation.name == "figures" or cfg.model.name == "qwen3_vl_multimodal"
@@ -65,18 +63,13 @@ def validate(cfg) -> dict:
         if cfg.representation.name == "pages":
             required.append(f"pdf_datasets/{row['source_pdf_relpath']}")
         if figures:
-            if (
-                not row["figures"]
-                and cfg.representation.name == "figures"
-                and cfg.model.name.startswith("qwen3")
-            ):
-                raise ValueError(f"{row['doc_id']}: figure-only input requires supplied figures")
             for figure in row["figures"]:
                 if not figure["image"]["available"]:
                     raise ValueError(f"{row['doc_id']}: missing image for {figure['figure_id']}")
                 required.append(figure["image"]["path"])
         for path in required:
-            if not sizes.get(path):
+            info = dataset.file_info(path)
+            if info is None or not info.size:
                 raise FileNotFoundError(f"{row['doc_id']}: missing or empty {path}")
     splits = (
         ("train", "test") if cfg.split.queries in {"all", "train+test"} else (cfg.split.queries,)
@@ -94,7 +87,7 @@ def validate(cfg) -> dict:
     if not count:
         raise ValueError(f"No selected queries for {domain}")
     # Validate the actual packaged PDF schema without reading the whole Parquet table.
-    if "metadata.parquet" in sizes:
+    if dataset.file_info("metadata.parquet") is not None:
         import pyarrow.parquet as pq
 
         table = pq.ParquetFile(Path(cfg.dataset.root) / "metadata.parquet")

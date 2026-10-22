@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import importlib
-import os
 import platform
-import shutil
-import subprocess
 import sys
 import tomllib
 from importlib.metadata import version
@@ -127,27 +124,9 @@ def check(profile: str, cfg) -> None:
         "The lock installs faiss-cpu; CUDA encoding does not require GPU FAISS.",
         flush=True,
     )
-    from torch.utils.cpp_extension import CUDA_HOME
+    from scientific_tot.integrations.colbert import prepare_cuda
 
-    nvcc = Path(CUDA_HOME) / "bin/nvcc" if CUDA_HOME else None
-    if nvcc is None or not nvcc.is_file() or shutil.which(os.environ.get("CXX", "c++")) is None:
-        raise RuntimeError(
-            "ColBERT requires a local CUDA toolkit (CUDA_HOME/bin/nvcc), "
-            "a compatible C++ compiler and Ninja. The Torch wheel supplies a runtime, "
-            "not nvcc. Load your site's toolkit/compiler matching torch.version.cuda."
-        )
-    subprocess.run([str(nvcc), "--version"], check=True)
-    from colbert.indexing.codecs.residual import ResidualCodec
-
-    os.environ["TORCH_EXTENSIONS_DIR"] = str(Path(cfg.launcher.cache_root) / "torch_extensions")
-    try:
-        ResidualCodec.try_load_torch_extensions(True)
-    except Exception as exc:
-        raise RuntimeError(
-            f"ColBERT CUDA extension compilation/loading failed: {exc}. "
-            "Check nvcc versus torch.version.cuda, compiler, Ninja and H200 sm_90 "
-            "support; rerun with COLBERT_LOAD_TORCH_EXTENSION_VERBOSE=True."
-        ) from exc
+    prepare_cuda(cfg)
     print(
         "ColBERT CUDA extensions compiled/loaded. Model inference remains to be tested.", flush=True
     )

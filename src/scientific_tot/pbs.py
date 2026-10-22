@@ -54,6 +54,8 @@ def submit(cfg, arguments: list[str], *, name: str, colqwen: bool = False) -> No
         for key in (
             "PATH",
             "CUDA_HOME",
+            "CUDA_PATH",
+            "TORCH_CUDA_ARCH_LIST",
             "CXX",
             "CC",
             "LD_LIBRARY_PATH",

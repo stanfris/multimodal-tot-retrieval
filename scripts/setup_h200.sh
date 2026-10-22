@@ -14,7 +14,5 @@ UV_PROJECT_ENVIRONMENT=.venv uv sync --locked --python 3.11 --no-python-download
 UV_PROJECT_ENVIRONMENT=.venv-colqwen uv sync --locked --python 3.11 --no-python-downloads \
   --no-default-groups --extra colqwen --group dev
 
-# Native compilation uses the same persistent directory as ColBERT execution.
-export MAX_JOBS="${MAX_JOBS:-4}"
 PATH="$PWD/.venv/bin:$PATH" .venv/bin/python -m scientific_tot.h200_check default "$@"
 PATH="$PWD/.venv-colqwen/bin:$PATH" .venv-colqwen/bin/python -m scientific_tot.h200_check colqwen "$@"
