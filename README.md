@@ -26,7 +26,7 @@ retrieval. Preparation and saved-run evaluation require no GPU.
 | OpenCLIP figures | Same OpenCLIP checkpoint | Individual extracted figure/table images, without added captions | One 512-dimensional vector per image; maximum image score per paper | `experiment=openclip_figures` | CUDA by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 | Qwen text | `Qwen/Qwen3-VL-Embedding-2B` | full original Markdown text | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_text` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 | Qwen figures | Same Qwen checkpoint | all extracted figure/table images together | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_figures` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
-| Qwen pages | Same Qwen checkpoint | leading rendered PDF pages that fit the token limit, in page order | ONE 2048-dimensional embedding per encoded paper; ranks papers directly | `experiment=qwen3_vl_pages` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
+| Qwen pages | Same Qwen checkpoint | First 18 PDF pages (or all if fewer), in page order, further limited by the token context | ONE 2048-dimensional embedding per encoded paper; ranks papers directly | `experiment=qwen3_vl_pages` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 | Qwen multimodal | Same Qwen checkpoint | all extracted figure/table images, followed by full original Markdown text | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_multimodal` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 
 Every Qwen configuration produces **ONE embedding per encoded paper** and ranks papers
@@ -82,7 +82,12 @@ E5's limit is loaded rather than hardcoded by the application; see its
 The standalone dense example offers `--max-seq-length`; the Hydra dense profile
 does not expose that override. Qwen allows a positive `model.max_length` up to
 32768, with right truncation required. Its official image processor uses
-4096–1843200 pixels per image. Page mode logs skipped page numbers in encoding
+4096–1843200 pixels per image. Page mode automatically selects at most the first
+18 pages before rendering or image preprocessing; later pages are never rendered.
+PDF decoding/rendering is prefetched while the previous batch is encoded, and
+processed tensors are reused for inference without a second preprocessing pass.
+The 18-page cap is recorded as `max_pages` in the document embedding cache identity.
+Page mode logs any additional pages skipped to fit the token context in encoding
 metadata under `skipped_pages`. If no page fits, the paper receives no embedding
 and remains in the evaluation corpus. `model.page_overflow=skip` is recorded in
 page index/cache identities. Figure/multimodal inputs can still exceed context;
@@ -347,15 +352,16 @@ library precision. E5/OpenCLIP/Qwen/ColQwen expose `model.batch_size`; ColBERT u
 `model.indexing.index_bsize`. ColQwen's query/scoring controls remain under
 `model.retrieval`. H200 does not imply a universal safe batch size.
 
-Qwen still produces **one embedding per paper**. All selected figures or pages
-must fit together. The processor's existing image resizing and text-prefix
+Qwen still produces **one embedding per paper**. Page mode selects the first
+18 pages and skips any additional trailing pages needed to fit the token context.
+All selected figures must fit together. The processor's existing image resizing and text-prefix
 truncation remain unchanged. The pinned processor rejects truncated image-token sequences before forward
 execution. Vision-processing failures no
 longer become placeholder inputs. Context failures identify the paper and counts;
 CUDA OOM errors retain their exception type and list the paper batch. Reduce
 `model.batch_size` for OOM; batch size cannot fix a single paper's image context
-overflow. No automatic image dropping, summarization, averaging or fallback is
-performed.
+overflow. Figure inputs are not dropped automatically; no summarization,
+averaging or fallback is performed.
 
 ### Logs, offline execution and interruption
 

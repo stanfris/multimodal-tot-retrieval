@@ -538,6 +538,39 @@ def test_qwen_page_rendering_is_part_of_identity(tmp_path, visual_dataset, model
     assert resolve_identity(cfg) != resolve_identity(resized)
 
 
+def test_qwen_pages_caps_before_rendering(tmp_path, visual_dataset, encoder, monkeypatch):
+    import pypdfium2 as pdfium
+
+    path = sorted(visual_dataset.glob("pdf_datasets/ACL/*.pdf"))[0]
+    with pdfium.PdfDocument.new() as pdf:
+        for number in range(23):
+            pdf.new_page(100 + number, 80).close()
+        pdf.save(path)
+
+    rendered = []
+    render_page = colqwen.render_page
+
+    def tracked_render(pdf, number, cfg):
+        rendered.append(number)
+        return render_page(pdf, number, cfg)
+
+    monkeypatch.setattr(colqwen, "render_page", tracked_render)
+    args = overrides("qwen3_vl_pages")
+    index, cfg, _ = execute(tmp_path, visual_dataset, "index", "capped-index", *args)
+    assert rendered == [*range(1, 19), 1]
+    assert [len(value["images"]) for _, values in encoder for value in values] == [18, 1]
+    units = [json.loads(line) for line in (index / "unit-mapping.jsonl").read_text().splitlines()]
+    assert [row["page_count"] for row in units] == [18, 1]
+    corpus = visual_dense.load_visual_corpus(configured_adapter(cfg), cfg)
+    assert [row["page_count"] for row in corpus] == [23, 1]
+
+    cached, _, _ = execute(tmp_path, visual_dataset, "index", "cached-capped-index", *args)
+    manifest = json.loads((cached / "index-manifest.json").read_text())
+    assert manifest["provenance"]["cache"]["document_hit"] is True
+    assert manifest["provenance"]["encoding"]["rendered_pages"] == 19
+    assert rendered == [*range(1, 19), 1]
+
+
 @pytest.mark.parametrize("model", ["qwen3_vl_figures", "qwen3_vl_multimodal"])
 def test_qwen_paper_without_figures(tmp_path, visual_dataset, model):
     import shutil

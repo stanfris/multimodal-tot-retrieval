@@ -23,6 +23,8 @@ from scientific_tot.integrations.dense import _read_cache, _write_cache
 from scientific_tot.records import Issue, Records, Report, records_digest
 from scientific_tot.reporting import package_version, phase
 
+QWEN_PAGE_LIMIT = 18
+
 
 def document_mapping(corpus, cfg) -> list[dict]:
     """Qwen indexes papers; OpenCLIP indexes individual pages or supplied images."""
@@ -38,7 +40,7 @@ def _document_mapping(corpus, model, strategy):
                 "domain": paper["domain"],
                 **(
                     {
-                        "page_count": paper["page_count"],
+                        "page_count": min(paper["page_count"], QWEN_PAGE_LIMIT),
                         "pdf_path": paper["pdf_path"],
                         "pdf_sha256": paper["pdf_sha256"],
                     }
@@ -414,8 +416,8 @@ class QwenEmbeddingEncoder:
             ]
             conversations.append(conversation)
         pages = task == "document" and self.cfg.model.document_input == "pages"
-        # Page inputs are tokenized in full on CPU, then shortened at image
-        # boundaries before any tensors are sent to the GPU.
+        # Only the first QWEN_PAGE_LIMIT pages reach preprocessing. Shorten at image
+        # boundaries if they still exceed the configured context length.
         preview = (
             self._preprocess(conversations, truncation=False)
             if pages
@@ -551,6 +553,8 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
     model_settings = OmegaConf.to_container(cfg.model, resolve=True)
     if task == "document":
         model_settings.pop("query_instruction", None)
+        if cfg.model.name == "qwen3_vl_pages":
+            model_settings["max_pages"] = QWEN_PAGE_LIMIT
     else:
         model_settings.pop("document_input")
         model_settings.pop("page_overflow", None)
