@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib.util
+import json
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -72,33 +73,43 @@ def document_mapping(corpus, cfg) -> list[dict]:
             for paper in corpus
             for figure in paper["figures"]
         ]
-    from scientific_tot.integrations.colqwen import page_mapping
+    from scientific_tot.integrations.colqwen import iter_page_mapping
 
-    return [
-        {
-            **page,
-            "docno": page["page_id"],
-            "pdf_path": paper["pdf_path"],
-            "pdf_sha256": paper["pdf_sha256"],
-        }
-        for paper in corpus
-        for page in page_mapping((paper,))
-    ]
+    result = []
+    for paper in corpus:
+        for page in iter_page_mapping((paper,)):
+            page.update(
+                docno=page["page_id"],
+                pdf_path=paper["pdf_path"],
+                pdf_sha256=paper["pdf_sha256"],
+            )
+            result.append(page)
+    return result
 
 
 def visual_corpus_digest(corpus, cfg) -> str:
     # Retain the full document collection, including papers with zero visual elements.
     documents = []
-
-    def papers():
-        for paper in corpus:
-            documents.append({"doc_id": paper["doc_id"], "domain": paper["domain"]})
-            yield paper
-
-    units = document_mapping(papers(), cfg)
-    for unit in units:
-        unit.pop("pdf_path", None)
-    return records_digest([{"documents": documents}, {"units": units}])
+    chunks = []
+    encoder = json.JSONEncoder(ensure_ascii=False, sort_keys=True, allow_nan=False)
+    for paper in corpus:
+        documents.append({"doc_id": paper["doc_id"], "domain": paper["domain"]})
+        units = document_mapping((paper,), cfg)
+        for unit in units:
+            unit.pop("pdf_path", None)
+        if units:
+            chunks.append(encoder.encode(units)[1:-1].encode())
+    # Match records_digest's two JSON rows exactly, without retaining every unit
+    # dictionary or allocating a corpus-sized JSON string and UTF-8 copy.
+    checksum = hashlib.sha256()
+    checksum.update(encoder.encode({"documents": documents}).encode())
+    checksum.update(b'\n{"units": [')
+    for number, chunk in enumerate(chunks):
+        if number:
+            checksum.update(b", ")
+        checksum.update(chunk)
+    checksum.update(b"]}\n")
+    return checksum.hexdigest()
 
 
 def load_visual_corpus(adapter, cfg) -> Records:
@@ -126,42 +137,53 @@ def load_visual_corpus(adapter, cfg) -> Records:
         skipped=selected.report.skipped,
         issues=list(selected.report.issues),
     )
-    rows = []
-    for paper in tqdm(
-        selected, desc="Fingerprinting figure inputs for cache identity", unit="paper"
-    ):
-        figures = []
-        for figure in paper["figures"]:
-            try:
-                data = store.read_bytes(figure["image"]["path"])
-                figure["image_sha256"] = hashlib.sha256(data).hexdigest()
-            except DatasetFormatError:
-                raise
-            except (OSError, ValueError) as exc:
-                if cfg.dataset.missing == "error" or cfg.model.name in QWEN_MODELS:
-                    raise ValueError(f"Unusable image for {paper['doc_id']}: {exc}") from exc
-                report.issues.append(
-                    Issue(
-                        "unusable_image", figure["image"]["path"] or "", str(exc), paper["doc_id"]
+
+    def papers():
+        with store.reader() as read_bytes:
+            for paper in tqdm(
+                selected, desc="Fingerprinting figure inputs for cache identity", unit="paper"
+            ):
+                figures = []
+                for figure in paper["figures"]:
+                    try:
+                        data = read_bytes(figure["image"]["path"])
+                        figure["image_sha256"] = hashlib.sha256(data).hexdigest()
+                    except DatasetFormatError:
+                        raise
+                    except (OSError, ValueError) as exc:
+                        if cfg.dataset.missing == "error" or cfg.model.name in QWEN_MODELS:
+                            raise ValueError(
+                                f"Unusable image for {paper['doc_id']}: {exc}"
+                            ) from exc
+                        report.issues.append(
+                            Issue(
+                                "unusable_image",
+                                figure["image"]["path"] or "",
+                                str(exc),
+                                paper["doc_id"],
+                            )
+                        )
+                        continue
+                    figures.append(figure)
+                paper["figures"] = figures
+                if not figures and cfg.model.name == "qwen3_vl_figures":
+                    raise ValueError(
+                        f"{paper['doc_id']}: figure-only input requires supplied figures"
                     )
-                )
-                continue
-            figures.append(figure)
-        paper["figures"] = figures
-        if not figures and cfg.model.name == "qwen3_vl_figures":
-            raise ValueError(f"{paper['doc_id']}: figure-only input requires supplied figures")
-        if not figures and strategy == "figures":
-            report.issues.append(
-                Issue(
-                    "no_visual_elements",
-                    paper["doc_id"],
-                    "Retained for evaluation; not retrievable by the figures baseline",
-                    paper["doc_id"],
-                )
-            )
-        rows.append(paper)
-    report.emitted = len(rows)
-    return Records("corpus", rows, report, selected.provenance)
+                if not figures and strategy == "figures":
+                    report.issues.append(
+                        Issue(
+                            "no_visual_elements",
+                            paper["doc_id"],
+                            "Retained for evaluation; not retrievable by the figures baseline",
+                            paper["doc_id"],
+                        )
+                    )
+                yield paper
+
+    corpus = Records("corpus", papers(), report, selected.provenance)
+    report.emitted = len(corpus)
+    return corpus
 
 
 def dependency_versions(cfg) -> dict:
@@ -367,6 +389,7 @@ def _load_batch(rows, cfg, task, store):
     values = []
     try:
         with ExitStack() as resources:
+            read_bytes = resources.enter_context(store.reader()) if store is not None else None
             document = None
             pdf = None
             for row in rows:
@@ -384,14 +407,14 @@ def _load_batch(rows, cfg, task, store):
                                 value["images"].append(render_page(paper_pdf, number, cfg))
                     else:
                         for image in row["images"]:
-                            data = store.read_bytes(image["image_path"])
+                            data = read_bytes(image["image_path"])
                             with Image.open(BytesIO(data)) as source:
                                 value["images"].append(source.convert("RGB"))
                     if "text" in row:
                         value["text"] = row["text"]
                     continue
                 if cfg.model.get("document_input") == "figures":
-                    data = store.read_bytes(row["image_path"])
+                    data = read_bytes(row["image_path"])
                     with Image.open(BytesIO(data)) as source:
                         image = source.convert("RGB")
                 else:

@@ -1,6 +1,6 @@
 # @package _global_
 defaults:
   - override /model: dense
-  - override /representation: passages
+  - override /representation: page_text
   - override /stage: index
   - _self_

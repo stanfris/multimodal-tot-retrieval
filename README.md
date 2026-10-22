@@ -20,7 +20,7 @@ retrieval. Preparation and saved-run evaluation require no GPU.
 | --- | --- | --- | --- | --- | --- |
 | BM25 fulltext | PyTerrier/Terrier BM25; no neural checkpoint | Full original Markdown text | One text document per paper; ranks papers directly | `experiment=bm25_fulltext` | CPU, bundled Java; default environment |
 | E5 fulltext | `intfloat/e5-small-v2` | Full original Markdown text | One 384-dimensional vector per paper; ranks papers directly | `model=dense representation=fulltext` | CUDA encoding required; FAISS search as below; default environment |
-| E5 passages | `intfloat/e5-small-v2` | Overlapping passages of original Markdown | One vector per passage; maximum score across all passages per paper by default | `experiment=dense_passages` | CUDA encoding required; FAISS search as below; default environment |
+| E5 passages | `intfloat/e5-small-v2` | Overlapping passages of original Markdown | One vector per passage; maximum score across all passages per paper by default | `experiment=dense_pages` | CUDA encoding required; FAISS search as below; default environment |
 | ColBERT fulltext | `colbert-ir/colbertv2.0` | Original Markdown, token-truncated | One paper PID with token multi-vectors; ColBERT late interaction ranks papers directly | `experiment=colbert_fulltext` | CUDA required; CUDA toolkit, compiler and Ninja; default environment |
 | ColQwen pages | `vidore/colqwen2.5-v0.2` with `vidore/colqwen2.5-base` | Individually rendered original PDF pages | One multi-vector set per page; exact MaxSim per page, then maximum page score per paper | `experiment=colqwen_pages` | CUDA encoding and scoring required; CPU PDF rendering/storage; ColQwen environment |
 | OpenCLIP pages | `laion/CLIP-ViT-B-32-laion2B-s34B-b79K` (`ViT-B-32`, `laion2b_s34b_b79k`) | Individually rendered original PDF pages | One 512-dimensional vector per page; maximum page score per paper | `experiment=openclip_pages` | CUDA by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
@@ -57,7 +57,7 @@ as their parent methods.
 | --- | --- | --- | --- | --- |
 | BM25 title and abstract | Available original `title` and `abstract`, joined with a blank line | One paper document; direct BM25 ranking | `model=bm25 representation=title_abstract` | CPU/Java, default environment; implemented |
 | E5 title and abstract | Same original metadata fields | One vector per paper; direct ranking | `model=dense representation=title_abstract` | CUDA encoding, default environment; implemented |
-| E5 passages with mean aggregation | Same passages and E5 checkpoint as the core passage method | Mean score across **all** indexed passages per paper | `experiment=dense_passages representation.aggregation.method=mean` | CUDA encoding, default environment; implemented |
+| E5 passages with mean aggregation | Same passages and E5 checkpoint as the core passage method | Mean score across **all** indexed passages per paper | `experiment=dense_pages representation.aggregation.method=mean` | CUDA encoding, default environment; implemented |
 | Alternate dense encoders | Selected text representation and explicit model-specific prompts | Same single-vector FAISS pipeline | `model=dense model.model_id=... model.revision=...` with appropriate `model.encoding` prompts | CUDA; supported Sentence Transformers Hub models only; local checkpoint paths unsupported; not a separate benchmark method |
 | BM25 passages | Declared passage representation | No BM25 passage execution path | `model=bm25 representation=passages` | **Configuration can compose, execution unimplemented**; passage execution is supported only for dense retrieval |
 | Legacy Byaldi/ColPali profile | Declared pages or figures | No executable index/retrieval implementation | `model=visual` or `experiment=visual_pages` | **Configuration-only, not runnable**; declared `vidore/colpali-v1.3` is not an implemented baseline |
@@ -272,14 +272,14 @@ and is optional; indexing does not consume a separate prepared-data implementati
 ```bash
 # Submit ONE PBS job: optional prepare, index, retrieve, evaluate in sequence.
 ./scripts/run_benchmark.sh launcher=h200 benchmark.prepare=true \
-  'benchmark.experiments=[dense_passages]' 'benchmark.domains=[ACL]'
+  'benchmark.experiments=[dense_pages]' 'benchmark.domains=[ACL]'
 
 # Submit a standalone index stage. The command prints its PBS job ID.
-./scripts/02_index.sh launcher=h200 experiment=dense_passages 'dataset.domains=[ACL]'
+./scripts/02_index.sh launcher=h200 experiment=dense_pages 'dataset.domains=[ACL]'
 # Wait for that job to finish successfully before submitting retrieval/evaluation.
-./scripts/03_retrieve.sh launcher=h200 experiment=dense_passages 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh launcher=h200 experiment=dense_pages 'dataset.domains=[ACL]'
 # Submit after retrieval finishes:
-./scripts/04_evaluate.sh launcher=h200 experiment=dense_passages 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh launcher=h200 experiment=dense_pages 'dataset.domains=[ACL]'
 
 # ONE PBS job: all ten profiles, each domain independently, sequentially.
 ./scripts/run_benchmark.sh
@@ -294,7 +294,7 @@ and is optional; indexing does not consume a separate prepared-data implementati
   'benchmark.domains=[ACL]' model.batch_size=1
 
 # E5 fulltext retains its existing selector (also works with each stage script).
-./scripts/run_benchmark.sh 'benchmark.experiments=[dense_passages]' \
+./scripts/run_benchmark.sh 'benchmark.experiments=[dense_pages]' \
   model=dense representation=fulltext
 
 # Configuration/command validation only: no stages, downloads, or inference.
@@ -375,7 +375,7 @@ at the first stage error. The default PBS log root in isolated mode is
 # Use the submission directory printed by the command:
 tail -f /path/to/submission/index.log
 # Or follow one method within a benchmark job:
-tail -f "$TOT_OUTPUT_ROOT/logs/pbs/dense_passages/ACL/index.log"
+tail -f "$TOT_OUTPUT_ROOT/logs/pbs/dense_pages/ACL/index.log"
 ```
 
 Inspect `manifest.json` for completion and
@@ -385,9 +385,9 @@ Rerun the same command to reuse compatible **completed** indexes/retrieval/evalu
 artifacts. Explicit artifact selection works through the original scripts:
 
 ```bash
-./scripts/03_retrieve.sh launcher=h200 experiment=dense_passages \
+./scripts/03_retrieve.sh launcher=h200 experiment=dense_pages \
   'dataset.domains=[ACL]' paths.index=/results/scientific-tot/indexes/EXACT_INDEX
-./scripts/04_evaluate.sh launcher=h200 experiment=dense_passages \
+./scripts/04_evaluate.sh launcher=h200 experiment=dense_pages \
   'dataset.domains=[ACL]' paths.run=/results/scientific-tot/models/EXACT_RUN
 ```
 
@@ -412,7 +412,7 @@ with a connected smoke run, explicitly disable network transfers:
 
 ```bash
 export HF_HUB_OFFLINE=1
-./scripts/run_benchmark.sh 'benchmark.experiments=[bm25_fulltext,dense_passages]'
+./scripts/run_benchmark.sh 'benchmark.experiments=[bm25_fulltext,dense_pages]'
 ```
 
 The wrappers propagate offline mode to Hugging Face, Transformers, uv and the
@@ -565,9 +565,9 @@ The scripts discover compatible saved artifacts and print the paths selected.
 ./scripts/04_evaluate.sh model=dense representation=fulltext split=test 'dataset.domains=[ACL]'
 
 # 3. E5 passages
-./scripts/02_index.sh experiment=dense_passages split=test 'dataset.domains=[ACL]'
-./scripts/03_retrieve.sh experiment=dense_passages split=test 'dataset.domains=[ACL]'
-./scripts/04_evaluate.sh experiment=dense_passages split=test 'dataset.domains=[ACL]'
+./scripts/02_index.sh experiment=dense_pages split=test 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh experiment=dense_pages split=test 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh experiment=dense_pages split=test 'dataset.domains=[ACL]'
 
 # 4. ColBERT fulltext
 ./scripts/02_index.sh experiment=colbert_fulltext split=test 'dataset.domains=[ACL]'
@@ -844,7 +844,7 @@ downloads pretrained weights; subsequent runs reuse the cache.
 No fine-tuning is performed.
 
 Dense embedding generation requires CUDA. Both the example script and Hydra
-`model=dense` (including `experiment=dense_passages`) select CUDA by default.
+`model=dense` (including `experiment=dense_pages`) select CUDA by default.
 If no NVIDIA GPU is available to PyTorch, execution raises an error instead of
 falling back to CPU, even when embeddings are cached. Hydra FAISS retrieval selects
 CUDA when the installed FAISS build exposes a GPU, and reports CPU execution otherwise.

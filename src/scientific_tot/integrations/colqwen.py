@@ -76,37 +76,38 @@ def load_pdf_corpus(adapter, cfg) -> Records:
         skipped=selected.report.skipped,
         issues=list(selected.report.issues),
     )
-    rows = []
-    for row in tqdm(selected, desc="Reading original PDFs", unit="paper"):
-        try:
-            path = adapter.resolve_pdf(row)
-            reference = artifact_reference(path)
-            with pdfium.PdfDocument(path) as pdf:
-                if not len(pdf):
-                    raise ValueError("PDF contains no pages")
-                count = len(pdf)
-        except DatasetFormatError:
-            raise
-        except (OSError, pdfium.PdfiumError, ValueError) as exc:
-            report.skipped += 1
-            report.issues.append(
-                Issue("unusable_pdf", row["source_pdf_relpath"] or "", str(exc), row["doc_id"])
-            )
-            continue
-        rows.append(
-            {
+
+    def papers():
+        for row in tqdm(selected, desc="Reading original PDFs", unit="paper"):
+            try:
+                path = adapter.resolve_pdf(row)
+                reference = artifact_reference(path)
+                with pdfium.PdfDocument(path) as pdf:
+                    if not len(pdf):
+                        raise ValueError("PDF contains no pages")
+                    count = len(pdf)
+            except DatasetFormatError:
+                raise
+            except (OSError, pdfium.PdfiumError, ValueError) as exc:
+                report.skipped += 1
+                report.issues.append(
+                    Issue("unusable_pdf", row["source_pdf_relpath"] or "", str(exc), row["doc_id"])
+                )
+                continue
+            yield {
                 **row,
                 "pdf_path": reference["path"],
                 "pdf_sha256": reference["sha256"],
                 "page_count": count,
             }
-        )
-    report.emitted = len(rows)
+
+    corpus = Records("corpus", papers(), report, selected.provenance)
+    report.emitted = len(corpus)
     if report.skipped and cfg.dataset.missing == "error":
         raise IncompleteCorpusError(report)
-    if not rows:
+    if not corpus:
         raise ValueError("No usable original PDFs selected")
-    return Records("corpus", rows, report, selected.provenance)
+    return corpus
 
 
 def pdf_corpus_digest(corpus) -> str:
@@ -120,16 +121,19 @@ def pdf_corpus_digest(corpus) -> str:
 
 
 def page_mapping(corpus) -> list[dict]:
-    return [
-        {
-            "page_id": page_id(row["doc_id"], number),
-            "doc_id": row["doc_id"],
-            "domain": row["domain"],
-            "page_number": number,
-        }
-        for row in corpus
-        for number in range(1, row["page_count"] + 1)
-    ]
+    return list(iter_page_mapping(corpus))
+
+
+def iter_page_mapping(corpus):
+    for row in corpus:
+        prefix = quote(row["doc_id"], safe="")
+        for number in range(1, row["page_count"] + 1):
+            yield {
+                "page_id": f"{prefix}%p{number}",
+                "doc_id": row["doc_id"],
+                "domain": row["domain"],
+                "page_number": number,
+            }
 
 
 def load_model(cfg):

@@ -74,7 +74,7 @@ def test_model_representation_matrix(tmp_path, model, rep):
     "profile,model,rep",
     [
         ("bm25_fulltext", "bm25", "fulltext"),
-        ("dense_passages", "dense", "passages"),
+        ("dense_pages", "dense", "passages"),
         ("colbert_fulltext", "colbert", "fulltext"),
         ("visual_pages", "visual", "pages"),
     ],
@@ -201,7 +201,7 @@ def test_symlink_overlap_and_run_index_separation(tmp_path):
 
 
 def test_dry_run_does_not_dispatch_or_write_provenance(tmp_path):
-    result = cli(tmp_path, "dry_run=true", "experiment=dense_passages")
+    result = cli(tmp_path, "dry_run=true", "experiment=dense_pages")
     assert result.returncode == 0, result.stderr
     cfg = OmegaConf.create(result.stdout)
     assert cfg.model.name == "dense"
@@ -225,7 +225,7 @@ def test_real_multirun(tmp_path):
         tmp_path,
         "--multirun",
         "dry_run=true",
-        "experiment=bm25_fulltext,dense_passages,visual_pages",
+        "experiment=bm25_fulltext,dense_pages,visual_pages",
         "split=train,test",
         f"hydra.sweep.dir={tmp_path / 'sweep'}",
     )
@@ -368,7 +368,7 @@ def test_new_invalid_settings(tmp_path, overrides, message):
 
 def test_names_follow_effective_groups_and_splits(tmp_path):
     cfg = resolve_config(
-        config("experiment=dense_passages", "representation=fulltext", "split.queries=train+test"),
+        config("experiment=dense_pages", "representation=fulltext", "split.queries=train+test"),
         tmp_path,
     )
     assert cfg.run.name == "dense_fulltext_c-all_q-train+test"

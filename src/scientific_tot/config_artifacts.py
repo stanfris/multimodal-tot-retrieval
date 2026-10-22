@@ -44,8 +44,6 @@ def index_settings(cfg: DictConfig, provenance: dict | None = None) -> dict:
     if model["name"] in VISUAL_DENSE_MODELS - OPENCLIP_MODELS:
         model.pop("query_instruction")
     representation = data["representation"]
-    if representation["name"] == "passages":
-        representation.pop("aggregation")
     dataset = data["dataset"]
     dataset = {
         k: dataset[k]

@@ -2,11 +2,10 @@
 
 import json
 import shutil
+from contextlib import closing
 from dataclasses import asdict
-from importlib.metadata import version
 from pathlib import Path
 from time import perf_counter
-from urllib.parse import quote, unquote
 
 import pandas as pd
 from omegaconf import OmegaConf
@@ -31,41 +30,36 @@ from scientific_tot.records import Records, Report, records_digest
 from scientific_tot.reporting import phase
 
 
-def project_passages(corpus: Records, cfg) -> Records:
-    """Use the YAML-selected LangChain splitter; canonical paper IDs remain separate."""
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
+def load_page_text_corpus(adapter, cfg) -> Records:
+    """Extract text within original PDF page boundaries using the existing PDF loader."""
+    import pypdfium2 as pdfium
 
+    from scientific_tot.integrations.colqwen import load_pdf_corpus, page_id
     from scientific_tot.reporting import tqdm
 
-    splitter = RecursiveCharacterTextSplitter(
-        **OmegaConf.to_container(cfg.representation.chunking, resolve=True),
-        strip_whitespace=cfg.representation.preprocessing.strip_whitespace,
-        add_start_index=True,
-    )
-    rows = []
-    for paper in tqdm(corpus, desc="Splitting papers", unit="doc"):
-        chunks = splitter.create_documents([paper["text"]])
-        if not chunks:
-            raise ValueError(f"Splitter emitted no passages for selected paper: {paper['doc_id']}")
-        for number, chunk in enumerate(chunks):
-            rows.append(
-                {
-                    "passage_id": f"{quote(paper['doc_id'], safe='')}%p{number}",
-                    "doc_id": paper["doc_id"],
-                    "domain": paper["domain"],
-                    "text": chunk.page_content,
-                    "start_index": chunk.metadata["start_index"],
-                }
-            )
-    return Records(
-        "passages",
-        rows,
-        Report(selected=len(rows), emitted=len(rows)),
-        {
-            **corpus.provenance,
-            "representation": OmegaConf.to_container(cfg.representation, resolve=True),
-        },
-    )
+    corpus = load_pdf_corpus(adapter, cfg)
+
+    def papers():
+        for paper in tqdm(corpus, desc="Extracting PDF page text", unit="paper"):
+            pages = []
+            with pdfium.PdfDocument(paper["pdf_path"]) as pdf:
+                for number in range(1, len(pdf) + 1):
+                    with closing(pdf[number - 1]) as page, closing(page.get_textpage()) as textpage:
+                        text = textpage.get_text_bounded().strip()
+                    if not text:
+                        raise ValueError(f"{paper['doc_id']}: PDF page {number} contains no text")
+                    pages.append(
+                        {
+                            "page_id": page_id(paper["doc_id"], number),
+                            "doc_id": paper["doc_id"],
+                            "domain": paper["domain"],
+                            "page_number": number,
+                            "text": text,
+                        }
+                    )
+            yield {**paper, "text": "\n\n".join(p["text"] for p in pages), "pages": pages}
+
+    return Records("corpus", papers(), corpus.report, corpus.provenance)
 
 
 def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
@@ -84,12 +78,12 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
             {"vector_id": row["docno"], "doc_id": row["doc_id"], "domain": row["domain"]}
             for row in documents
         ]
-    elif cfg.representation.name == "passages":
-        passages = project_passages(corpus, cfg)
-        documents = [{"docno": row["passage_id"], "text": row["text"]} for row in passages]
+    elif cfg.representation.name == "page_text":
+        pages = [page for paper in corpus for page in paper["pages"]]
+        documents = [{"docno": row["page_id"], "text": row["text"]} for row in pages]
         mapping = [
-            {"vector_id": row["passage_id"], "doc_id": row["doc_id"], "domain": row["domain"]}
-            for row in passages
+            {"vector_id": row["page_id"], "doc_id": row["doc_id"], "domain": row["domain"]}
+            for row in pages
         ]
     else:
         documents = list(inputs.documents)
@@ -163,6 +157,10 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         for name in ("unit-mapping.jsonl", "unit-mapping.jsonl.manifest.json"):
             files[name] = artifact_reference(target / name)
             (target / name).chmod(0o444)
+    elif cfg.representation.name == "page_text":
+        from scientific_tot.integrations.colqwen import pdf_corpus_digest
+
+        corpus_sha256 = pdf_corpus_digest(corpus)
     else:
         corpus_sha256 = records_digest(inputs.documents)
     provenance = {
@@ -187,12 +185,14 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         "encoding": cached["encoding"],
         "versions": cached["configuration"]["versions"],
         "cache": {"documents": str(entry), "document_hit": hit},
-        "aggregation": OmegaConf.to_container(cfg.representation.get("aggregation"), resolve=True)
-        if cfg.representation.name == "passages"
+        "aggregation": {"method": "max", "scope": "all_indexed_units"}
+        if cfg.representation.name == "page_text"
         else None,
     }
-    if cfg.representation.name == "passages":
-        provenance["versions"]["langchain-text-splitters"] = version("langchain-text-splitters")
+    if cfg.representation.name == "page_text":
+        from scientific_tot.reporting import package_version
+
+        provenance["versions"]["pypdfium2"] = package_version("pypdfium2")
     provenance["efficiency"] = {
         "indexed_units": index.ntotal,
         "retrievable_documents": len({row["doc_id"] for row in mapping}),
@@ -284,8 +284,8 @@ def retrieve_dense(cfg, target: Path) -> dict:
         )
     if vectors.shape[1] != index.d:
         raise ValueError("Query embedding dimension differs from the saved FAISS index")
-    passage_mode = cfg.representation.name == "passages"
-    depth = len(ids) if passage_mode else min(cfg.retrieval.top_k, len(ids))
+    page_mode = cfg.representation.name == "page_text" or cfg.model.name in OPENCLIP_MODELS
+    depth = min(cfg.retrieval.top_k, len(ids))
     target_documents = min(cfg.retrieval.top_k, mapping.doc_id.nunique())
     max_depth = depth
     started = perf_counter()
@@ -305,8 +305,6 @@ def retrieve_dense(cfg, target: Path) -> dict:
             for offset in range(len(initial_scores)):
                 number = start + offset
                 qid = inputs.topics.qid.iloc[number]
-                # Scoring/ranking belong to FAISS. All passages are considered before aggregation,
-                # so top_k always counts papers and mean/max have their full-corpus semantics.
                 search_depth = depth
                 while True:
                     rows = []
@@ -331,7 +329,7 @@ def retrieve_dense(cfg, target: Path) -> dict:
                             if position >= 0
                         ]
                     result = pd.DataFrame(rows, columns=["qid", "docno", "rank", "score"])
-                    if cfg.model.name not in OPENCLIP_MODELS or result.empty:
+                    if not page_mode or result.empty:
                         break
                     from scientific_tot.integrations.colqwen import aggregate_pages
 
@@ -345,16 +343,6 @@ def retrieve_dense(cfg, target: Path) -> dict:
                         break
                     search_depth = min(2 * search_depth, len(ids))
                 max_depth = max(max_depth, search_depth)
-                if passage_mode:
-                    import pyterrier as pt
-
-                    method = cfg.representation.aggregation.method
-                    aggregator = (
-                        pt.text.max_passage() if method == "max" else pt.text.mean_passage()
-                    )
-                    result = aggregator.transform(result)
-                    result["docno"] = result.docno.map(unquote)
-                    result = result[result["rank"] < cfg.retrieval.top_k]
                 batches.append(result)
                 progress.update(1)
     run = pd.concat(batches, ignore_index=True)
@@ -399,13 +387,7 @@ def retrieve_dense(cfg, target: Path) -> dict:
             ),
         },
         "aggregation": {"method": "max", "scope": "all_indexed_units"}
-        if cfg.model.name in OPENCLIP_MODELS
-        else {
-            "method": cfg.representation.aggregation.method,
-            "library": f"pyterrier.text.{cfg.representation.aggregation.method}_passage",
-            "scope": "all_indexed_passages",
-        }
-        if passage_mode
+        if page_mode
         else None,
         "ranking_level": "paper",
         "versions": cached["configuration"]["versions"],

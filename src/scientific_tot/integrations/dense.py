@@ -327,8 +327,8 @@ def dense_experiment(
         if config is not None:
             raise ValueError("Pass Hydra settings or EncodingConfig, not both")
         settings = resolve_config(settings, Path.cwd(), Path(output).resolve())
-        if settings.representation.name == "passages":
-            raise NotImplementedError("Passage execution requires the separate Hydra stages")
+        if settings.representation.name == "page_text":
+            raise NotImplementedError("Page text execution requires the separate Hydra stages")
         require_corpus_settings(settings, corpus, queries)
         if Path(cache).resolve() != Path(settings.launcher.cache_root) / "embeddings":
             raise ValueError("Hydra settings require cache=launcher.cache_root/embeddings")

@@ -433,6 +433,59 @@ def test_visual_identity_preserves_hash_with_one_record_pass(tmp_path, visual_da
     assert visual_dense.visual_corpus_digest(SinglePass(), cfg) == expected
 
 
+@pytest.mark.parametrize("model", MODELS)
+@pytest.mark.parametrize("empty", [False, True])
+def test_chunked_visual_identity_preserves_empty_units_and_unicode(model, empty):
+    from scientific_tot.records import records_digest
+
+    strategy = (
+        "pages"
+        if model in {"openclip", "qwen3_vl_pages"}
+        else "text"
+        if model == "qwen3_vl_text"
+        else "multimodal"
+        if model == "qwen3_vl_multimodal"
+        else "figures"
+    )
+    cfg = SimpleNamespace(model=SimpleNamespace(name=model, document_input=strategy))
+    rows = (
+        []
+        if empty
+        else [
+            {
+                "doc_id": '日本語 /%p"\\' + str(number),
+                "domain": "ACL",
+                "text": '文献\n"quoted"',
+                "pdf_path": "/unused.pdf",
+                "pdf_sha256": "a" * 64,
+                "page_count": number,
+                "figures": []
+                if number % 2 == 0
+                else [
+                    {
+                        "figure_id": None,
+                        "image": {"path": 'preprocessed/ACL/日本語/images/a".png'},
+                        "image_sha256": "b" * 64,
+                    }
+                ],
+            }
+            for number in (0, 1, 0, 3, 0)
+        ]
+    )
+    expected = records_digest(
+        [
+            {"documents": [{"doc_id": r["doc_id"], "domain": r["domain"]} for r in rows]},
+            {
+                "units": [
+                    {key: value for key, value in unit.items() if key != "pdf_path"}
+                    for unit in visual_dense.document_mapping(rows, cfg)
+                ]
+            },
+        ]
+    )
+    assert visual_dense.visual_corpus_digest(iter(rows), cfg) == expected
+
+
 @pytest.mark.parametrize("model", ["qwen3_vl_pages"])
 def test_qwen_pdf_identity_and_missing_pdf(tmp_path, visual_dataset, model):
     from scientific_tot.records import IncompleteCorpusError

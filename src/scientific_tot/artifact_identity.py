@@ -65,8 +65,8 @@ def index_identity(cfg, provenance: dict) -> dict:
         settings["encoding_threads"] = cfg.launcher.threads.encoding
         settings["faiss_threads"] = cfg.launcher.threads.faiss
         names = ["sentence-transformers", "torch", "faiss", "numpy"]
-        if cfg.representation.name == "passages":
-            names.append("langchain-text-splitters")
+        if cfg.representation.name == "page_text":
+            names.append("pypdfium2")
         settings["versions"] = {name: package_version(name) for name in names}
     elif cfg.model.name in VISUAL_DENSE_MODELS:
         from scientific_tot.integrations.visual_dense import dependency_versions
@@ -156,7 +156,7 @@ def _resolve_identity(cfg) -> dict:
         from scientific_tot.integrations.visual_dense import visual_corpus_digest
 
         provenance["corpus_sha256"] = visual_corpus_digest(corpus, cfg)
-    elif cfg.model.name == "colqwen":
+    elif cfg.model.name == "colqwen" or cfg.representation.name == "page_text":
         from scientific_tot.integrations.colqwen import pdf_corpus_digest
 
         provenance["corpus_sha256"] = pdf_corpus_digest(corpus)
