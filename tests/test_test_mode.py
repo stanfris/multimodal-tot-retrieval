@@ -66,7 +66,12 @@ def test_incomplete_test_split_is_rejected(tmp_path, monkeypatch):
         configured_corpus(cfg, configured_adapter(cfg))
 
 
-def test_100_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "method", ["model=dense", "experiment=openclip_figures", "experiment=qwen3_vl_figures"]
+)
+def test_100_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypatch, method):
+    from PIL import Image
+
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("TOT_TEST_ROOT", raising=False)
     dataset = tmp_path / "data"
@@ -87,6 +92,15 @@ def test_100_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypa
             )
         )
         (target / "markdown.md").write_text("target" if number == 1 else "distractor")
+        if "figures" in method:
+            # Reproduce a restored lean corpus with no per-paper/figure metadata.
+            (target / "paper.json").unlink()
+            (target / "images").mkdir()
+            Image.new("RGB", (16 if number == 1 else 8, 8)).save(target / "images/figure.png")
+    for number in range(10):
+        unrelated = papers / f"ACL_2026.findings-acl.{number}" / "images"
+        unrelated.mkdir(parents=True)
+        (unrelated / "figure.png").write_bytes(b"unrelated image must never be read")
     (dataset / "splits/pdf_dataset_split.json").write_text(
         json.dumps({"train": sources[100:], "test": sources[:100]})
     )
@@ -97,9 +111,29 @@ def test_100_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypa
         return np.asarray(values, dtype=np.float32), {"dimension": 2}
 
     monkeypatch.setattr("scientific_tot.integrations.dense._encode_task", encode)
+
+    class VisualEncoder:
+        metadata = {}
+        truncated = 0
+
+        def __init__(self, cfg):
+            self.dimension = cfg.model.dimension
+
+        def encode(self, values, task):
+            import torch
+
+            vectors = torch.zeros(len(values), self.dimension)
+            for number, value in enumerate(values):
+                vectors[number, 0 if task == "query" or value["image"].width == 16 else 1] = 1
+            return vectors
+
+    monkeypatch.setattr("scientific_tot.integrations.visual_dense.load_model", VisualEncoder)
+    arguments = ["--test", method, f"dataset.root={dataset}"]
+    if "figures" in method:
+        arguments.extend(["launcher=local_cpu", "model.precision=fp32"])
     outputs = {}
     for stage in ("index", "retrieve", "evaluate"):
-        cfg, command = plan(stage, ["--test", "model=dense", f"dataset.root={dataset}"])
+        cfg, command = plan(stage, arguments)
         target = artifact_directory(cfg, resolve_identity(cfg))
         target.mkdir(parents=True)
         run_stage(cfg, target, OmegaConf.create({"overrides": {"task": command}}), ROOT)
@@ -120,7 +154,7 @@ def test_100_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypa
     normal, _ = plan(
         "retrieve",
         [
-            "model=dense",
+            method,
             "split.corpus=test",
             f"dataset.root={dataset}",
             f"paths.index={outputs['index']}",

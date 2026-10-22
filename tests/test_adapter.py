@@ -120,6 +120,33 @@ def test_split_all_includes_distractors(complete):
     assert len(load_corpus(local_dir=complete, domain="ACL", split="train+test")) == 2
 
 
+@pytest.mark.parametrize("representation", ["fulltext", "figures", "pages"])
+def test_split_ignores_unmapped_lean_directories(complete, representation):
+    (complete / PAPER / "paper.json").unlink()
+    images = complete / PAPER / "images"
+    images.mkdir()
+    (images / "figure.png").write_bytes(b"image bytes are not decoded by the adapter")
+    for number in range(10):
+        extra = complete / f"preprocessed/ACL/ACL_2026.findings-acl.{number}"
+        (extra / "images").mkdir(parents=True)
+        (extra / "images/figure.png").write_bytes(b"unrelated image")
+        (extra / "markdown.md").write_text("Unrelated paper")
+    corpus = load_corpus(
+        local_dir=complete, domain="ACL", split="test", representation=representation
+    )
+    assert [row["doc_id"] for row in corpus] == [Path(PAPER).name]
+    assert corpus.report.selected == corpus.report.emitted == 1
+    assert corpus.report.skipped == 0
+    assert "unresolved_source_path" not in {issue.code for issue in corpus.report.issues}
+
+    # Ignoring unrelated directories must not conceal a missing required paper.
+    shutil.rmtree(complete / PAPER)
+    with pytest.raises(IncompleteCorpusError) as error:
+        load_corpus(local_dir=complete, domain="ACL", split="test", representation=representation)
+    assert error.value.report.selected == error.value.report.skipped == 1
+    assert {issue.code for issue in error.value.report.issues} == {"missing_extraction"}
+
+
 def test_title_metadata_and_licensing_without_pdf(complete, monkeypatch):
     pa = pytest.importorskip("pyarrow")
     pq = pytest.importorskip("pyarrow.parquet")

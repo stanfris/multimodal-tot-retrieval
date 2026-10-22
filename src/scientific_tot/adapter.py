@@ -337,18 +337,8 @@ class DatasetAdapter:
                 raise DatasetFormatError(f"{directory}: source domain disagrees with artifact path")
             if source_path is not None and source_path.split("/")[0] != domain_name:
                 raise DatasetFormatError(f"{directory}: source_pdf_relpath disagrees with domain")
-            if expected is not None and source_path is None:
-                report.issues.append(
-                    Issue(
-                        "unresolved_source_path",
-                        directory,
-                        "Cannot establish split membership",
-                        paper_id,
-                    )
-                )
-                report.selected += 1
-                report.skipped += 1
-                continue
+            # Unmatched directories are outside a split selection. Missing required
+            # papers are reported by the authoritative coverage check below.
             if expected is not None and source_path not in expected:
                 continue
             report.selected += 1
