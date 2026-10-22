@@ -517,13 +517,13 @@ batch; PDFium work stays on one worker. Qwen validates and reuses its official
 preprocessed tensors instead of processing each batch twice. These changes do not
 add distributed model execution or automatic batch-size tuning.
 
-## Isolated 100-document test runs
+## Isolated test-split runs
 
-Attach `--test` to run only the **100 documents in the official test split** and
-that split's queries. The mode rejects a different corpus/query split, a test
-corpus with a different document count, or skipped papers. All pages, passages
-or figures belonging to those 100 papers remain available to their respective
-methods; the limit counts papers rather than images or passages.
+Attach `--test` to run only the **documents in the official test split** and
+that split's queries. There is no fixed document count: a split containing 110
+papers uses all 110. The mode rejects a different corpus/query split or skipped
+papers. All pages, passages or figures belonging to those papers remain available
+to their respective methods.
 
 Run indexing, retrieval and evaluation together with one command per method:
 

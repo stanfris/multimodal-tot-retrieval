@@ -19,11 +19,9 @@ def configured_corpus(cfg: DictConfig, adapter):
         corpus = load_pdf_corpus(adapter, cfg)
     else:
         corpus = adapter.load_corpus(**corpus_arguments(cfg))
-    if cfg.get("test_mode", False) and (
-        len(corpus) != 100 or corpus.report.selected != 100 or corpus.report.skipped
-    ):
+    if cfg.get("test_mode", False) and corpus.report.skipped:
         raise ValueError(
-            "Test mode requires exactly 100 test-split documents with no skipped papers; "
+            "Test mode requires the complete test split with no skipped papers; "
             f"selected={corpus.report.selected}, loaded={len(corpus)}, "
             f"skipped={corpus.report.skipped}"
         )

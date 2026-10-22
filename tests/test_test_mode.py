@@ -1,4 +1,4 @@
-"""Opt-in test isolation and a real 100-document FAISS retrieval/evaluation pipeline."""
+"""Opt-in split isolation and a real FAISS retrieval/evaluation pipeline."""
 
 import json
 import shutil
@@ -59,17 +59,17 @@ def test_flag_is_required_and_outside_artifacts_are_rejected(tmp_path, monkeypat
             plan(stage, ["--test", f"paths.{key}={tmp_path / 'normal'}"])
 
 
-def test_incomplete_test_split_is_rejected(tmp_path, monkeypatch):
+def test_official_test_split_has_no_fixed_size(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg, _ = plan("index", ["--test", f"dataset.root={ROOT / 'tests/fixtures/adapter'}"])
-    with pytest.raises(ValueError, match="exactly 100 test-split documents"):
-        configured_corpus(cfg, configured_adapter(cfg))
+    corpus = configured_corpus(cfg, configured_adapter(cfg))
+    assert len(corpus) == 1 and corpus.report.skipped == 0
 
 
 @pytest.mark.parametrize(
     "method", ["model=dense", "experiment=openclip_figures", "experiment=qwen3_vl_figures"]
 )
-def test_100_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypatch, method):
+def test_110_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypatch, method):
     from PIL import Image
 
     monkeypatch.chdir(tmp_path)
@@ -79,8 +79,9 @@ def test_100_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypa
     papers = dataset / "preprocessed/ACL"
     template = json.loads(next(papers.glob("*/paper.json")).read_text())
     shutil.rmtree(papers)
+    test_count = 110
     sources = []
-    for number in range(1, 102):
+    for number in range(1, test_count + 2):
         doc_id = f"ACL_2022.example-1.{number}"
         source = f"ACL/2022.example-1.{number}.pdf"
         sources.append(source)
@@ -102,7 +103,7 @@ def test_100_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypa
         unrelated.mkdir(parents=True)
         (unrelated / "figure.png").write_bytes(b"unrelated image must never be read")
     (dataset / "splits/pdf_dataset_split.json").write_text(
-        json.dumps({"train": sources[100:], "test": sources[:100]})
+        json.dumps({"train": sources[test_count:], "test": sources[:test_count]})
     )
     monkeypatch.setattr("scientific_tot.integrations.dense.require_cuda", lambda: None)
 
@@ -141,11 +142,12 @@ def test_100_document_pipeline_is_separate_and_excludes_train(tmp_path, monkeypa
         assert target.is_relative_to(tmp_path / "test/results")
         assert json.loads((target / "manifest.json").read_text())["status"] == "completed"
     index = json.loads((outputs["index"] / "index-manifest.json").read_text())
-    assert index["provenance"]["documents"] == index["provenance"]["vectors"] == 100
+    assert index["provenance"]["documents"] == index["provenance"]["vectors"] == test_count
     assert index["index_settings"]["test_mode"] is True
     assert Path(index["provenance"]["cache"]["documents"]).is_relative_to(tmp_path / "test/cache")
     corpus = pd.read_json(outputs["retrieve"] / "corpus-ids.jsonl", lines=True)
-    assert len(corpus) == 100 and "ACL_2022.example-1.101" not in set(corpus.doc_id)
+    assert len(corpus) == test_count
+    assert f"ACL_2022.example-1.{test_count + 1}" not in set(corpus.doc_id)
     assert len((outputs["retrieve"] / "run.trec").read_text().splitlines()) == 100
     assert pd.read_csv(outputs["evaluate"] / "metrics.csv")["RR@10"].iloc[0] == 1.0
     assert not (tmp_path / "results").exists() and not (tmp_path / "cache").exists()

@@ -113,7 +113,7 @@ def main() -> None:
     if not args or "--help" in args or "-h" in args:
         print(
             "Usage: scripts/0N_STAGE.sh [--test] [Hydra key=value ...]\n"
-            "--test: exactly 100 test-split documents; isolated ./test/ outputs and caches.\n"
+            "--test: official test-split documents; isolated ./test/ outputs and caches.\n"
             "Defaults: BM25/fulltext, ACL, all corpus documents, test queries, CPU, top-100.\n"
             "Examples: scripts/02_index.sh experiment=dense_passages\n"
             "          scripts/03_retrieve.sh retrieval.top_k=200\n"

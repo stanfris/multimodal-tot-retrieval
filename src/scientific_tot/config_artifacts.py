@@ -132,8 +132,6 @@ def verify_index(index: Path, cfg: DictConfig, *, allow_building: bool = False) 
     if digest(configuration) != manifest["configuration_sha256"]:
         raise ValueError("Index configuration snapshot checksum differs")
     provenance = manifest.get("provenance", {})
-    if cfg.get("test_mode", False) and provenance.get("documents") != 100:
-        raise ValueError("Test mode requires an index containing exactly 100 test documents")
     built_config = OmegaConf.create(configuration)
     _validate_provenance(built_config, provenance)
     built = index_settings(built_config, provenance)
