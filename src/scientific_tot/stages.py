@@ -127,10 +127,4 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
             run_dir / "unit-mapping.jsonl"
         )
         result["units"] = len(units)
-    if cfg.representation.name == "passages":
-        from scientific_tot.integrations.dense_batch import project_passages
-
-        passages = project_passages(corpus, cfg)
-        passages.write_jsonl(run_dir / "passages.jsonl")
-        result["passages"] = len(passages)
     return result

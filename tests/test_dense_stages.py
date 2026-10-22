@@ -1,4 +1,4 @@
-"""Fast offline dense stages: real FAISS/splitting/aggregation, stubbed neural encoding."""
+"""Fast offline dense stages: real FAISS, stubbed neural encoding."""
 
 import json
 import shutil
@@ -61,7 +61,7 @@ def execute(base, dataset, stage, name, *overrides):
             config_name="config",
             return_hydra_config=True,
             overrides=[
-                "model=dense",
+                "experiment=dense_fulltext",
                 f"stage={stage}",
                 f"dataset.root={dataset}",
                 "model.encoding.normalize_embeddings=false",
@@ -97,6 +97,9 @@ def test_fulltext_document_and_query_encoding_are_independent_and_cached(
     )
     assert config.similarity == "dot" and config.model_revision == revision
     assert tasks["document"]["kwargs"] == {"prompt": ""}
+    assert tasks["document"]["texts"] == ["zebra top\n\nnoise low", "whale mid"]
+    assert built["artifacts"]["index_provenance"]["vectors"] == 2
+    assert built["artifacts"]["index_provenance"]["aggregation"] is None
     assert built["artifacts"]["index_provenance"]["index_device"] == "cpu"
     encoder.clear()
     _, reused, _ = execute(
@@ -158,64 +161,6 @@ def test_fulltext_document_and_query_encoding_are_independent_and_cached(
     assert encoder == []
     assert pd.read_csv(metrics / "metrics.csv")["RR@2"].iloc[0] == 1.0
     assert evaluated["artifacts"]["ranking_level"] == "paper"
-
-
-PASSAGES = [
-    "representation=passages",
-    "representation.chunking.chunk_size=14",
-    "representation.chunking.chunk_overlap=0",
-]
-
-
-@pytest.mark.parametrize(
-    "method,first,rr", [("max", "ACL_2022.example-1.1", 1.0), ("mean", "ACL_2022.example-1.2", 0.5)]
-)
-def test_passage_aggregation_ranks_and_evaluates_canonical_papers(
-    tmp_path, dataset, encoder, method, first, rr
-):
-    preparation, _, _ = execute(tmp_path, dataset, "prepare", "prepared", *PASSAGES)
-    passages = [
-        json.loads(line) for line in (preparation / "passages.jsonl").read_text().splitlines()
-    ]
-    assert [row["text"] for row in passages] == ["zebra top", "noise low", "whale mid"]
-    assert encoder == []
-    index, _, _ = execute(tmp_path, dataset, "index", "built", *PASSAGES)
-    assert [list(call[2]) for call in encoder] == [["document"]]
-    encoder.clear()
-    output, manifest, _ = execute(
-        tmp_path,
-        dataset,
-        "retrieve",
-        "ranked",
-        *PASSAGES,
-        f"representation.aggregation.method={method}",
-        f"paths.index={index}",
-    )
-    rows = [line.split() for line in (output / "run.trec").read_text().splitlines()]
-    assert len(rows) == 2
-    assert rows[0][2] == first
-    assert {row[2] for row in rows} == {"ACL_2022.example-1.1", "ACL_2022.example-1.2"}
-    assert manifest["artifacts"]["aggregation"]["method"] == method
-    assert manifest["artifacts"]["vector_search_depth"] == 3
-    assert manifest["artifacts"]["ranking_level"] == "paper"
-    encoder.clear()
-    evaluated, result, _ = execute(
-        tmp_path,
-        dataset,
-        "evaluate",
-        "metrics",
-        *PASSAGES,
-        f"representation.aggregation.method={method}",
-        f"paths.run={output}",
-    )
-    assert encoder == []
-    assert pd.read_csv(evaluated / "metrics.csv")["RR@2"].iloc[0] == rr
-    assert result["artifacts"]["aggregation"]["method"] == method
-    _, rebuilt, _ = execute(
-        tmp_path, dataset, "index", "reused", *PASSAGES, "representation.aggregation.method=mean"
-    )
-    assert encoder == []
-    assert rebuilt["artifacts"]["index_provenance"]["cache"]["document_hit"] is True
 
 
 def test_corrupt_dense_index_and_changed_document_prompt_fail_before_inference(

@@ -107,25 +107,6 @@ def test_dense_identity_pins_encoder_and_excludes_query_settings(tmp_path, datas
     ):
         assert identity(tmp_path, "model=dense", change)[0] != original[0]
         assert identity(tmp_path, "model=dense", change)[1] == original[1]
-    passages = identity(tmp_path, "model=dense", "representation=passages")
-    assert (
-        identity(
-            tmp_path,
-            "model=dense",
-            "representation=passages",
-            "representation.aggregation.method=mean",
-        )
-        == passages
-    )
-    assert (
-        identity(
-            tmp_path,
-            "model=dense",
-            "representation=passages",
-            "representation.chunking.chunk_size=400",
-        )
-        != passages
-    )
 
 
 def test_index_identity_and_stage_do_not_read_queries(tmp_path, dataset, monkeypatch):

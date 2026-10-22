@@ -3,10 +3,8 @@
 import json
 import shutil
 from dataclasses import asdict
-from importlib.metadata import version
 from pathlib import Path
 from time import perf_counter
-from urllib.parse import quote, unquote
 
 import pandas as pd
 from omegaconf import OmegaConf
@@ -31,50 +29,12 @@ from scientific_tot.records import Records, Report, records_digest
 from scientific_tot.reporting import phase
 
 
-def project_passages(corpus: Records, cfg) -> Records:
-    """Use the YAML-selected LangChain splitter; canonical paper IDs remain separate."""
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-    from scientific_tot.reporting import tqdm
-
-    splitter = RecursiveCharacterTextSplitter(
-        **OmegaConf.to_container(cfg.representation.chunking, resolve=True),
-        strip_whitespace=cfg.representation.preprocessing.strip_whitespace,
-        add_start_index=True,
-    )
-    rows = []
-    for paper in tqdm(corpus, desc="Splitting papers", unit="doc"):
-        chunks = splitter.create_documents([paper["text"]])
-        if not chunks:
-            raise ValueError(f"Splitter emitted no passages for selected paper: {paper['doc_id']}")
-        for number, chunk in enumerate(chunks):
-            rows.append(
-                {
-                    "passage_id": f"{quote(paper['doc_id'], safe='')}%p{number}",
-                    "doc_id": paper["doc_id"],
-                    "domain": paper["domain"],
-                    "text": chunk.page_content,
-                    "start_index": chunk.metadata["start_index"],
-                }
-            )
-    return Records(
-        "passages",
-        rows,
-        Report(selected=len(rows), emitted=len(rows)),
-        {
-            **corpus.provenance,
-            "representation": OmegaConf.to_container(cfg.representation, resolve=True),
-        },
-    )
-
-
 def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
     """Encode documents only, reuse verified cached vectors/index, and publish a fresh index."""
     import faiss
 
     require_corpus_settings(cfg, corpus)
     representation = OmegaConf.to_container(cfg.representation, resolve=True)
-    representation.pop("aggregation", None)  # Aggregation affects ranking, not document embeddings.
     visual = cfg.model.name in VISUAL_DENSE_MODELS
     if visual:
         from scientific_tot.integrations.visual_dense import document_mapping
@@ -83,13 +43,6 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         mapping = [
             {"vector_id": row["docno"], "doc_id": row["doc_id"], "domain": row["domain"]}
             for row in documents
-        ]
-    elif cfg.representation.name == "passages":
-        passages = project_passages(corpus, cfg)
-        documents = [{"docno": row["passage_id"], "text": row["text"]} for row in passages]
-        mapping = [
-            {"vector_id": row["passage_id"], "doc_id": row["doc_id"], "domain": row["domain"]}
-            for row in passages
         ]
     else:
         documents = list(inputs.documents)
@@ -187,12 +140,8 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         "encoding": cached["encoding"],
         "versions": cached["configuration"]["versions"],
         "cache": {"documents": str(entry), "document_hit": hit},
-        "aggregation": OmegaConf.to_container(cfg.representation.get("aggregation"), resolve=True)
-        if cfg.representation.name == "passages"
-        else None,
+        "aggregation": None,
     }
-    if cfg.representation.name == "passages":
-        provenance["versions"]["langchain-text-splitters"] = version("langchain-text-splitters")
     provenance["efficiency"] = {
         "indexed_units": index.ntotal,
         "retrievable_documents": len({row["doc_id"] for row in mapping}),
@@ -284,8 +233,8 @@ def retrieve_dense(cfg, target: Path) -> dict:
         )
     if vectors.shape[1] != index.d:
         raise ValueError("Query embedding dimension differs from the saved FAISS index")
-    passage_mode = cfg.representation.name == "passages"
-    depth = len(ids) if passage_mode else min(cfg.retrieval.top_k, len(ids))
+    page_mode = cfg.model.name in OPENCLIP_MODELS
+    depth = min(cfg.retrieval.top_k, len(ids))
     target_documents = min(cfg.retrieval.top_k, mapping.doc_id.nunique())
     max_depth = depth
     started = perf_counter()
@@ -305,8 +254,6 @@ def retrieve_dense(cfg, target: Path) -> dict:
             for offset in range(len(initial_scores)):
                 number = start + offset
                 qid = inputs.topics.qid.iloc[number]
-                # Scoring/ranking belong to FAISS. All passages are considered before aggregation,
-                # so top_k always counts papers and mean/max have their full-corpus semantics.
                 search_depth = depth
                 while True:
                     rows = []
@@ -331,7 +278,7 @@ def retrieve_dense(cfg, target: Path) -> dict:
                             if position >= 0
                         ]
                     result = pd.DataFrame(rows, columns=["qid", "docno", "rank", "score"])
-                    if cfg.model.name not in OPENCLIP_MODELS or result.empty:
+                    if not page_mode or result.empty:
                         break
                     from scientific_tot.integrations.colqwen import aggregate_pages
 
@@ -345,16 +292,6 @@ def retrieve_dense(cfg, target: Path) -> dict:
                         break
                     search_depth = min(2 * search_depth, len(ids))
                 max_depth = max(max_depth, search_depth)
-                if passage_mode:
-                    import pyterrier as pt
-
-                    method = cfg.representation.aggregation.method
-                    aggregator = (
-                        pt.text.max_passage() if method == "max" else pt.text.mean_passage()
-                    )
-                    result = aggregator.transform(result)
-                    result["docno"] = result.docno.map(unquote)
-                    result = result[result["rank"] < cfg.retrieval.top_k]
                 batches.append(result)
                 progress.update(1)
     run = pd.concat(batches, ignore_index=True)
@@ -398,15 +335,7 @@ def retrieve_dense(cfg, target: Path) -> dict:
                 "index transfer, vector search and paper aggregation; excludes query encoding"
             ),
         },
-        "aggregation": {"method": "max", "scope": "all_indexed_units"}
-        if cfg.model.name in OPENCLIP_MODELS
-        else {
-            "method": cfg.representation.aggregation.method,
-            "library": f"pyterrier.text.{cfg.representation.aggregation.method}_passage",
-            "scope": "all_indexed_passages",
-        }
-        if passage_mode
-        else None,
+        "aggregation": {"method": "max", "scope": "all_indexed_units"} if page_mode else None,
         "ranking_level": "paper",
         "versions": cached["configuration"]["versions"],
     }

@@ -300,7 +300,7 @@ class DatasetAdapter:
             )
         # Include image-only directories in coverage reports, without opening image data.
         directories = {
-            str(PurePosixPath(p).parent)
+            p.rpartition("/")[0]
             for p in store.files
             if p.endswith(("/paper.json", "/markdown.md", "/_SUCCESS"))
         }
@@ -314,7 +314,7 @@ class DatasetAdapter:
             full = meta_path in store.files
             paper = store.read_json(meta_path) if full else {}
             paper_id = identifier(
-                paper.get("paper_id") if full else PurePosixPath(directory).name,
+                paper.get("paper_id") if full else directory.rsplit("/", 1)[-1],
                 f"{directory}: paper_id",
             )
             domain_name = directory.split("/")[1]

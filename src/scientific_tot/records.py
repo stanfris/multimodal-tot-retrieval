@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import tempfile
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, overload
@@ -75,7 +75,7 @@ class Records(Sequence[dict[str, Any]]):
     """
 
     def __init__(
-        self, kind: str, rows: Sequence[dict[str, Any]], report: Report, provenance: dict[str, Any]
+        self, kind: str, rows: Iterable[dict[str, Any]], report: Report, provenance: dict[str, Any]
     ) -> None:
         self.kind = kind
         encoder = json.JSONEncoder(ensure_ascii=False, allow_nan=False)

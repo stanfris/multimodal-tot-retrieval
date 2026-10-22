@@ -36,7 +36,6 @@ BACKENDS = {
 REPRESENTATIONS = {
     "title_abstract": ("text", "original_metadata"),
     "fulltext": ("text", "original_extracted_text"),
-    "passages": ("text", "original_extracted_text"),
     "figures": ("image", "original_extracted_figures"),
     "pages": ("image", "original_pdf_pages"),
 }
@@ -280,29 +279,6 @@ def _validate(cfg: DictConfig) -> None:
         )
     if rep.name == "figures":
         _require(type(rep.include_captions) is bool, "include_captions must be boolean")
-    if rep.name == "passages":
-        _require(
-            rep.aggregation.method in {"max", "mean"}, "Unsupported passage aggregation method"
-        )
-        _require(
-            type(rep.preprocessing.strip_whitespace) is bool, "strip_whitespace must be boolean"
-        )
-        _require(
-            OmegaConf.is_list(rep.chunking.separators)
-            and len(rep.chunking.separators) > 0
-            and all(isinstance(x, str) for x in rep.chunking.separators),
-            "chunking.separators must be a nonempty list of strings",
-        )
-        _require(
-            rep.preprocessing.library == "langchain_text_splitters.RecursiveCharacterTextSplitter",
-            "Unsupported passage splitter",
-        )
-        _require(_positive(rep.chunking.chunk_size), "chunking.chunk_size must be positive")
-        _require(
-            type(rep.chunking.chunk_overlap) is int
-            and 0 <= rep.chunking.chunk_overlap < rep.chunking.chunk_size,
-            "chunking.chunk_overlap must be nonnegative and smaller than chunk_size",
-        )
     if rep.name == "pages":
         _require(rep.rendering.library == "pypdfium2", "Unsupported page rendering library")
         _require(

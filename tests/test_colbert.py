@@ -212,7 +212,6 @@ def test_independent_lifecycle_and_parameter_propagation(tmp_path, backend, monk
 @pytest.mark.parametrize(
     "override",
     [
-        "representation=passages",
         "representation=title_abstract",
         "representation=figures",
         "model.revision=main",

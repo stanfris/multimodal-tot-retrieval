@@ -7,7 +7,7 @@ defaults:
 benchmark:
   experiments:
     - bm25_fulltext
-    - dense_passages
+    - dense_fulltext
     - colbert_fulltext
     - colqwen_pages
     - openclip_pages

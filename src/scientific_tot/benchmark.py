@@ -64,8 +64,6 @@ def jobs(overrides: list[str]):
                 resolved, _ = plan(stage, [*arguments, "dry_run=true"])
                 if resolved.model.name == "visual":
                     raise ValueError("The Byaldi visual profile has no execution implementation")
-                if resolved.model.name == "bm25" and resolved.representation.name == "passages":
-                    raise ValueError("BM25 passages have no execution implementation")
                 log_root = (
                     Path(resolved.launcher.log_root)
                     if resolved.launcher.kind == "pbs"

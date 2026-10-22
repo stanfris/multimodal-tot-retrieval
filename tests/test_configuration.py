@@ -54,7 +54,7 @@ def test_default_composition(tmp_path):
     list(
         itertools.product(
             ["bm25", "dense", "colbert", "visual"],
-            ["title_abstract", "fulltext", "passages", "figures", "pages"],
+            ["title_abstract", "fulltext", "figures", "pages"],
         )
     ),
 )
@@ -74,7 +74,7 @@ def test_model_representation_matrix(tmp_path, model, rep):
     "profile,model,rep",
     [
         ("bm25_fulltext", "bm25", "fulltext"),
-        ("dense_passages", "dense", "passages"),
+        ("dense_fulltext", "dense", "fulltext"),
         ("colbert_fulltext", "colbert", "fulltext"),
         ("visual_pages", "visual", "pages"),
     ],
@@ -167,7 +167,6 @@ def test_invalid_settings(tmp_path, override, message):
         (["model=colbert", "model.indexing.nbits=3"], "nbits"),
         (["model=visual", "representation=pages", "model.model_id=null"], "model_id"),
         (["model=visual", "representation=pages", "model.indexing.overwrite=true"], "overwrite"),
-        (["representation=passages", "representation.chunking.chunk_overlap=1000"], "overlap"),
         (["stage=evaluate"], "paths.run"),
     ],
 )
@@ -201,7 +200,7 @@ def test_symlink_overlap_and_run_index_separation(tmp_path):
 
 
 def test_dry_run_does_not_dispatch_or_write_provenance(tmp_path):
-    result = cli(tmp_path, "dry_run=true", "experiment=dense_passages")
+    result = cli(tmp_path, "dry_run=true", "experiment=dense_fulltext")
     assert result.returncode == 0, result.stderr
     cfg = OmegaConf.create(result.stdout)
     assert cfg.model.name == "dense"
@@ -225,7 +224,7 @@ def test_real_multirun(tmp_path):
         tmp_path,
         "--multirun",
         "dry_run=true",
-        "experiment=bm25_fulltext,dense_passages,visual_pages",
+        "experiment=bm25_fulltext,dense_fulltext,visual_pages",
         "split=train,test",
         f"hydra.sweep.dir={tmp_path / 'sweep'}",
     )
@@ -349,7 +348,6 @@ def test_invalid_sweep_paths_cannot_bypass_output_guard(tmp_path, override, exis
         (["model=bm25", "model.retrieval.controls={bm25.b:nan,bm25.k_1:1.2}"], "nonnegative"),
         (["model=colbert", "model.indexing.nbits=true"], "nbits"),
         (["representation=title_abstract", "representation.fields=[title]"], "fields"),
-        (["representation=passages", "representation.chunking.separators=[]"], "separators"),
         (["model=visual", "representation=pages", "representation.rendering.scale=.inf"], "scale"),
         (["launcher.threads.encoding=true"], "positive"),
         (["launcher.cache_root=results/hydra/cache"], "cache overlap"),
@@ -368,7 +366,7 @@ def test_new_invalid_settings(tmp_path, overrides, message):
 
 def test_names_follow_effective_groups_and_splits(tmp_path):
     cfg = resolve_config(
-        config("experiment=dense_passages", "representation=fulltext", "split.queries=train+test"),
+        config("experiment=dense_fulltext", "representation=fulltext", "split.queries=train+test"),
         tmp_path,
     )
     assert cfg.run.name == "dense_fulltext_c-all_q-train+test"

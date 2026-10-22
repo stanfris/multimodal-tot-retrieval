@@ -88,7 +88,6 @@ def check(profile: str, cfg) -> None:
             "open_clip",
             "qwen_vl_utils",
             "colbert",
-            "langchain_text_splitters",
             "jdk4py",
         ]
     )

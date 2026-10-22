@@ -54,7 +54,6 @@ colbert = [
     "ir-measures>=0.4,<1",
 ]
 dense = [
-    "langchain-text-splitters>=0.3,<2",
     "faiss-cpu>=1.10,<2",
     "numpy>=1.26,<3",
     "pandas>=2.2,<4",
@@ -85,7 +84,6 @@ examples = [
     "pillow==12.3.0",
     "colbert-ai==0.2.22",
     "transformers==4.57.6",
-    "langchain-text-splitters>=0.3,<2",
     "faiss-cpu>=1.10,<2",
     "numpy>=1.26,<3",
     "pandas>=2.2,<4",

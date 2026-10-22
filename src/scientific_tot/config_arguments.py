@@ -147,8 +147,6 @@ def configured_adapter(cfg: DictConfig):
 
 def corpus_arguments(cfg: DictConfig) -> dict:
     representation = cfg.representation.name
-    if representation == "passages" and cfg.model.name == "dense":
-        representation = "fulltext"
     if representation not in {"fulltext", "title_abstract", "pages", "figures"}:
         raise NotImplementedError(f"representation={cfg.representation.name} is not implemented")
     return {

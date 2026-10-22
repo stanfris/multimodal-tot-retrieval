@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import tarfile
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,7 @@ from scientific_tot.data.hub import Dataset, MissingComponentError
 from scientific_tot.data.validation import DatasetFormatError, object_record, relative_path
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Artifact:
     path: str
     file: str
@@ -64,7 +65,9 @@ class Artifacts:
         try:
             with tarfile.open(local, "r:") as archive:
                 seen = set()
-                for member in archive:
+                for member in iter(archive.next, None):
+                    # Offsets are retained below; TarInfo objects are no longer needed.
+                    archive.members.clear()
                     relative = relative_path(
                         member.name.rstrip("/") if member.isdir() else member.name
                     )
@@ -88,17 +91,39 @@ class Artifacts:
 
     def read_bytes(self, name: str) -> bytes:
         artifact = self.files.get(name)
-        if artifact is None:
-            raise MissingComponentError(f"Missing extracted artifact: {name}")
-        local = self._local(artifact.file)
-        if artifact.member is None:
-            return local.read_bytes()
-        with local.open("rb") as stream:
-            stream.seek(artifact.offset)
-            data = stream.read(artifact.size)
-            if len(data) != artifact.size:
-                raise DatasetFormatError(f"{name}: truncated TAR member")
-            return data
+        if artifact is not None and artifact.member is None:
+            return self._local(artifact.file).read_bytes()
+        with self.reader() as read:
+            return read(name)
+
+    @contextmanager
+    def reader(self):
+        """Reuse one scoped archive handle; use a separate reader in each thread."""
+        with ExitStack() as resources:
+            current = None
+            stream = None
+
+            def read(name: str) -> bytes:
+                nonlocal current, stream
+                artifact = self.files.get(name)
+                if artifact is None:
+                    raise MissingComponentError(f"Missing extracted artifact: {name}")
+                local = self._local(artifact.file)
+                if artifact.member is None:
+                    return local.read_bytes()
+                if artifact.file != current:
+                    resources.close()
+                    current = None
+                    stream = resources.enter_context(local.open("rb"))
+                    current = artifact.file
+                assert stream is not None
+                stream.seek(artifact.offset)
+                data = stream.read(artifact.size)
+                if len(data) != artifact.size:
+                    raise DatasetFormatError(f"{name}: truncated TAR member")
+                return data
+
+            yield read
 
     def read_text(self, name: str) -> str:
         try:
