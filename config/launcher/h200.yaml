@@ -2,8 +2,26 @@ defaults:
   - local_gpu
   - _self_
 
-# Storage roots and launcher contracts are inherited from local_cpu via local_gpu.
-# These are CPU workers, not concurrent GPU model processes.
+kind: pbs
+project: ${oc.env:VTT_PBS_PROJECT,gcb50357}
+queue: ${oc.env:VTT_PBS_QUEUE,rt_HG}
+gpus: 1
+cpus: 16
+memory: 160gb
+walltime: 03:00:00
+dataset_root: ${oc.env:TOT_DATA_ROOT,${oc.env:VTT_DATA_ROOT,./data}}
+cache_root: ${oc.env:TOT_CACHE_ROOT,${oc.env:VTT_CACHE_ROOT,./cache}}
+log_root: ${oc.env:TOT_LOG_ROOT,${launcher.output_root}/logs/pbs}
+python: ${oc.env:TOT_PYTHON,${oc.env:VTT_PYTHON,./.venv/bin/python}}
+colqwen_python: ${oc.env:TOT_COLQWEN_PYTHON,./.venv-colqwen/bin/python}
+environment:
+  OMP_NUM_THREADS: ${launcher.threads.encoding}
+  MKL_NUM_THREADS: ${launcher.threads.encoding}
+  OPENBLAS_NUM_THREADS: ${launcher.threads.encoding}
+  NUMEXPR_NUM_THREADS: ${launcher.threads.encoding}
+  PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+
+# CPU threads within the single PBS GPU job.
 threads:
   indexing: ${oc.decode:${oc.env:TOT_INDEXING_THREADS,8}}
   encoding: ${oc.decode:${oc.env:TOT_ENCODING_THREADS,8}}

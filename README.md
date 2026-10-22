@@ -124,11 +124,18 @@ UV_PROJECT_ENVIRONMENT=.venv-colqwen uv run --locked \
 
 ## H200 deployment
 
-Use Linux, Python **3.11**, uv, one allocated NVIDIA H200, and enough separate
-storage for the restored data, reusable caches, and results. ColBERT also requires
-a local CUDA toolkit with `nvcc`, a compatible C++ compiler, and Ninja (locked
-Python dependency). Run inside your site's GPU allocation; these scripts make no
-scheduler assumption. Expose one GPU with your allocation's `CUDA_VISIBLE_DEVICES`.
+`launcher=h200` **submits a PBS job using `qsub`** from the submission host.
+It follows the generation repository's PBS adapter: project `gcb50357`, queue
+`rt_HG`, one GPU, 16 CPUs, 160 GB RAM, and walltime `03:00:00`. Override resources
+with ordinary Hydra options such as `launcher.walltime=06:00:00` (within queue
+limits), `launcher.project=...`, or `launcher.queue=...`. `VTT_PBS_PROJECT` and
+`VTT_PBS_QUEUE` set the corresponding defaults.
+
+Use Linux, Python **3.11**, uv and a shared checkout/environments visible to the
+PBS compute node. Data, caches and results must also be visible there. ColBERT
+requires a local CUDA toolkit with `nvcc`, a compatible C++ compiler, and Ninja.
+The scheduler supplies GPU visibility; the adapter does not hardcode a GPU ID.
+`launcher=local_gpu` executes directly when already inside an allocation.
 
 ### Install and check the machine
 
@@ -142,6 +149,18 @@ export TOT_TEST_ROOT=/results/scientific-tot-test
 export HF_HOME="$TOT_CACHE_ROOT/huggingface"
 export PYTERRIER_HOME="$TOT_CACHE_ROOT/pyterrier"
 unset UV_PROJECT_ENVIRONMENT
+# Install the locked environments on the shared filesystem from the submission host.
+uv sync --locked --python 3.11
+UV_PROJECT_ENVIRONMENT=.venv-colqwen uv sync --locked --python 3.11 \
+  --no-default-groups --extra colqwen --group dev
+```
+
+Run hardware/compilation checks on an allocated H200 node, for example:
+
+```bash
+qsub -I -P "${VTT_PBS_PROJECT:-gcb50357}" -q "${VTT_PBS_QUEUE:-rt_HG}" \
+  -l select=1:ncpus=16:mem=160gb:ngpus=1 -l walltime=00:30:00
+# In the allocated shell, return to the shared retrieval checkout:
 ./scripts/setup_h200.sh
 ```
 
@@ -175,7 +194,7 @@ UV_PROJECT_ENVIRONMENT=.venv-colqwen uv run --no-sync \
   python -m scientific_tot.h200_check colqwen
 ```
 
-### Stage once, then run locally
+### Stage once, then submit retrieval jobs
 
 The producer's README, packager and downloader agree on
 [`kasys/multimodal-tip-of-the-tongue-retrieval-for-scientific-documents`](https://huggingface.co/datasets/kasys/multimodal-tip-of-the-tongue-retrieval-for-scientific-documents).
@@ -251,13 +270,18 @@ These use the existing stage entry points. Preparation exports canonical records
 and is optional; indexing does not consume a separate prepared-data implementation.
 
 ```bash
-# One baseline/domain. Use the same overrides for every stage.
-./scripts/01_prepare.sh launcher=h200 experiment=dense_passages 'dataset.domains=[ACL]'
+# Submit ONE PBS job: optional prepare, index, retrieve, evaluate in sequence.
+./scripts/run_benchmark.sh launcher=h200 benchmark.prepare=true \
+  'benchmark.experiments=[dense_passages]' 'benchmark.domains=[ACL]'
+
+# Submit a standalone index stage. The command prints its PBS job ID.
 ./scripts/02_index.sh launcher=h200 experiment=dense_passages 'dataset.domains=[ACL]'
+# Wait for that job to finish successfully before submitting retrieval/evaluation.
 ./scripts/03_retrieve.sh launcher=h200 experiment=dense_passages 'dataset.domains=[ACL]'
+# Submit after retrieval finishes:
 ./scripts/04_evaluate.sh launcher=h200 experiment=dense_passages 'dataset.domains=[ACL]'
 
-# All ten implemented experiment profiles, each domain independently, sequentially.
+# ONE PBS job: all ten profiles, each domain independently, sequentially.
 ./scripts/run_benchmark.sh
 
 # Selected experiments/domains; include optional preparation.
@@ -284,8 +308,8 @@ and caches/results under `TOT_TEST_ROOT`; it is not the paper benchmark.
 `visual_pages`/Byaldi is a configuration-only profile and is rejected by the runner.
 
 `config/launcher/h200.yaml` inherits `local_gpu`, which inherits `local_cpu`.
-It keeps the existing local execution contract, CUDA device and environment-driven
-storage roots, overriding only CPU thread defaults (8 each). Adjust via
+It adds the PBS resources and worker interpreters while retaining the CUDA device
+and environment-driven storage roots. CPU thread defaults are eight each. Adjust via
 `TOT_INDEXING_THREADS`, `TOT_ENCODING_THREADS`, `TOT_FAISS_THREADS`, or normal
 `launcher.threads.*` overrides. The launcher owns execution/storage resources;
 `dataset` owns source/selection; `model` owns pinned checkpoints, precision and
@@ -293,8 +317,17 @@ batch sizes; `representation` owns document inputs; `experiment` selects baselin
 combinations; `split` owns corpus/query membership; `stage` owns the operation.
 `config/benchmark.yaml` composes the same config and adds only experiment/domain
 lists and optional preparation. It validates each selected stage with Hydra and
-calls the ordinary scripts with identical shared overrides. No GPU jobs overlap
-within one runner; use one runner per allocated GPU.
+submits one worker that calls the ordinary scripts with identical shared overrides.
+Artifact discovery and all model work happen on the compute node. Worker stages do
+not submit nested jobs; errors stop the chain. `00_test.sh --test launcher=h200`
+also submits one job for its complete index/retrieve/evaluate sequence. Direct
+`python -m scientific_tot.hydra_entry launcher=h200 ...` submits PBS as well.
+Hydra's plugin remains `basic`, matching the producer; the application adapter
+performs the `qsub` submission. Use the benchmark runner instead of Hydra `-m`.
+
+The default three-hour walltime applies to the entire submitted sequence. Split a
+large matrix into smaller experiment/domain selections or request an allowed longer
+walltime; the full matrix is not guaranteed to fit in three hours.
 
 Qwen stays BF16, E5/OpenCLIP keep FP32, and ColBERT/ColQwen keep their existing
 library precision. E5/OpenCLIP/Qwen/ColQwen expose `model.batch_size`; ColBERT uses
@@ -315,7 +348,12 @@ performed.
 
 Artifacts remain in `results/{prepared,indexes,models,evaluations}/`, with the
 existing model/representation/domain/split/input identities, manifests and checksums.
-The runner prints exact commands, streams console output, appends independent logs
+Submission prints the exact `qsub` command and returned job ID. Each submission
+retains `job.sh`, resolved `config.yaml`, `submission.json`, `submission.log`,
+`stdout.log`, and `stderr.log` under `TOT_OUTPUT_ROOT/logs/pbs/` (override with
+`launcher.log_root` or `TOT_LOG_ROOT`). Inspect queue state with `qstat JOB_ID`.
+`dry_run=true` prints the submission and worker script without calling `qsub` or
+creating files. Inside the job, the runner prints exact stage commands and appends logs
 to `TOT_OUTPUT_ROOT/logs/<experiment>/<domain>/<stage>.log`, and stops at the first
 stage error. In isolated mode logs use `TOT_TEST_ROOT/results/logs/`. Existing
 logs and results are retained. Inspect `manifest.json` for completion and
@@ -332,7 +370,9 @@ artifacts. Explicit artifact selection works through the original scripts:
 ```
 
 Evaluation consumes saved topics, qrels and rankings; it does not need source
-documents, model weights or a GPU. The unchanged defaults are RR@10, R@1, R@10,
+documents, model weights or a GPU. Use `launcher=h200 launcher.kind=local` to
+evaluate on the submission host while preserving the saved neural model settings;
+`launcher=h200` alone submits an allocated job just like any other selected stage. The unchanged defaults are RR@10, R@1, R@10,
 R@100 and nDCG@10 with the existing relevance/aggregation definitions.
 
 An incomplete artifact is never accepted as completed. ColQwen's existing recovery
@@ -375,8 +415,9 @@ TOT_OUTPUT_ROOT="$(mktemp -d /tmp/tot-bm25-smoke.XXXXXX)" \
   'benchmark.experiments=[bm25_fulltext]' 'benchmark.domains=[ACL]'
 ```
 
-Use the official isolated test setup for a GPU smoke run after staging; it uses
-**every official test paper**, so it may still be substantial:
+Submit the official isolated test setup for a GPU smoke run after staging. Each
+command below submits one PBS job containing all three stages. It uses **every
+official test paper**, so it may still be substantial:
 
 ```bash
 ./scripts/00_test.sh --test launcher=h200 experiment=qwen3_vl_figures \

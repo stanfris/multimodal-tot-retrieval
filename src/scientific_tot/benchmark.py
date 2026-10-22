@@ -13,6 +13,7 @@ from omegaconf import OmegaConf
 
 from scientific_tot.configuration import CONFIG_DIR
 from scientific_tot.data.schemas import DOMAINS
+from scientific_tot.pbs import is_worker, submit
 from scientific_tot.stage_cli import plan
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,6 +75,15 @@ def jobs(overrides: list[str]):
 
 def main() -> None:
     dry_run, commands = jobs(sys.argv[1:])
+    # One allocation owns the complete sequential benchmark, including artifact
+    # discovery after preceding stages complete. Do not queue independent stages.
+    stage = next(key for key, script in SCRIPTS.items() if commands[0][1][0].endswith(script))
+    cfg, _ = plan(stage, [*commands[0][1][1:], "dry_run=true"])
+    if cfg.launcher.kind == "pbs" and not is_worker():
+        cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
+        cfg.dry_run = dry_run
+        submit(cfg, ["scientific_tot.benchmark", *sys.argv[1:]], name="tot-benchmark")
+        return
     for log, command in commands:
         exact = shlex.join(command)
         print(f"$ {exact}\nLog (append): {log}", flush=True)

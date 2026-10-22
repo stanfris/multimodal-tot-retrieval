@@ -82,6 +82,12 @@ class FreshOutput(Callback):
 
     def on_run_start(self, config: DictConfig, **kwargs) -> None:
         try:
+            from scientific_tot.pbs import is_worker
+
+            if config.launcher.kind == "pbs" and not is_worker():
+                raise ValueError(
+                    "PBS jobs must be submitted through the standard single-run entry point"
+                )
             task = OmegaConf.masked_copy(config, [key for key in config if key != "hydra"])
             resolve_config(task, Path.cwd(), absolute(config.hydra.run.dir, Path.cwd()))
             self._check_hydra(config)
@@ -92,6 +98,8 @@ class FreshOutput(Callback):
 
     def on_multirun_start(self, config: DictConfig, **kwargs) -> None:
         try:
+            if config.launcher.kind == "pbs":
+                raise ValueError("PBS benchmarks use scripts/run_benchmark.sh instead of Hydra -m")
             self._check_hydra(config)
             subdir = OmegaConf.to_container(config.hydra.sweep, resolve=False)["subdir"]
             if subdir != "${artifact_dir:}":

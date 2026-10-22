@@ -1,0 +1,212 @@
+"""Exercise real CLI submission with a fake qsub executable; never require a PBS server."""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from scientific_tot import benchmark, stage_cli
+from scientific_tot.pbs import is_worker
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture
+def submission(tmp_path, monkeypatch):
+    monkeypatch.chdir(ROOT)
+    monkeypatch.delenv("TOT_PBS_WORKER", raising=False)
+    monkeypatch.delenv("PBS_JOBID", raising=False)
+    monkeypatch.setenv("TOT_DATA_ROOT", str(tmp_path / "not-mounted-on-login"))
+    monkeypatch.setenv("TOT_CACHE_ROOT", str(tmp_path / "cache"))
+    monkeypatch.setenv("TOT_OUTPUT_ROOT", str(tmp_path / "results"))
+    monkeypatch.setenv("TOT_TEST_ROOT", str(tmp_path / "test"))
+    monkeypatch.setenv("HF_TOKEN", "must-not-be-written-to-job-script")
+    for key in ("VTT_PBS_PROJECT", "VTT_PBS_QUEUE", "TOT_LOG_ROOT"):
+        monkeypatch.delenv(key, raising=False)
+    executable = tmp_path / "bin/qsub"
+    executable.parent.mkdir()
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import json, pathlib, sys\n"
+        f"pathlib.Path({str(tmp_path / 'qsub-args.json')!r}).write_text(json.dumps(sys.argv[1:]))\n"
+        "print('12345.server')\n"
+    )
+    executable.chmod(0o755)
+    monkeypatch.setenv("PATH", str(executable.parent) + os.pathsep + os.environ["PATH"])
+    return tmp_path
+
+
+@pytest.mark.parametrize("stage", ["prepare", "index", "retrieve", "evaluate"])
+def test_stage_submits_without_loading_sources_or_artifacts(submission, monkeypatch, stage):
+    monkeypatch.setattr(stage_cli, "find_artifact", lambda *args: pytest.fail("Login-node I/O"))
+    monkeypatch.setattr(sys, "argv", ["stage", stage, "launcher=h200", "experiment=dense_passages"])
+    stage_cli.main()
+    args = json.loads((submission / "qsub-args.json").read_text())
+    assert args[:6] == ["-N", f"{stage}-dense-ACL", "-P", "gcb50357", "-q", "rt_HG"]
+    assert "select=1:ncpus=16:mem=160gb:ngpus=1" in args
+    assert "walltime=03:00:00" in args
+    script = Path(args[-1])
+    body = script.read_text()
+    assert "scientific_tot.stage_cli " + stage in body
+    assert "TOT_PBS_WORKER=1 UV_NO_SYNC=1" in body
+    assert "must-not-be-written-to-job-script" not in body
+    assert ".artifact-selection-placeholder" not in body
+    assert json.loads((script.parent / "submission.json").read_text())["job_id"] == "12345.server"
+    assert not (submission / "results/indexes").exists()
+    subprocess.run(["bash", "-n", str(script)], check=True)
+
+
+def test_colqwen_uses_its_venv_without_resolving_python_symlink(submission, monkeypatch):
+    monkeypatch.setattr(
+        sys, "argv", ["stage", "index", "launcher=h200", "experiment=colqwen_pages"]
+    )
+    stage_cli.main()
+    args = json.loads((submission / "qsub-args.json").read_text())
+    body = Path(args[-1]).read_text()
+    assert str(ROOT / ".venv-colqwen/bin/python") in body
+
+
+def test_benchmark_submits_one_worker_for_all_sequential_stages(submission, monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark",
+            "launcher=h200",
+            "benchmark.experiments=[bm25_fulltext,dense_passages]",
+            "benchmark.domains=[ACL,Physics]",
+        ],
+    )
+    benchmark.main()
+    args = json.loads((submission / "qsub-args.json").read_text())
+    body = Path(args[-1]).read_text()
+    assert "-m scientific_tot.benchmark" in body
+    assert "benchmark.experiments=[bm25_fulltext,dense_passages]" in body
+    assert len(list((submission / "results/logs/pbs").glob("*/submission.json"))) == 1
+    assert not (submission / "results/indexes").exists()
+
+
+def test_test_chain_is_one_pbs_job(submission, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["stage", "test", "--test", "launcher=h200"])
+    stage_cli.main()
+    args = json.loads((submission / "qsub-args.json").read_text())
+    assert "scientific_tot.stage_cli test --test" in Path(args[-1]).read_text()
+    assert Path(args[-1]).is_relative_to(submission / "test/results/logs/pbs")
+
+
+def test_worker_discovers_artifacts_and_does_not_submit_again(submission, monkeypatch):
+    monkeypatch.setenv("TOT_PBS_WORKER", "1")
+    monkeypatch.setenv("PBS_JOBID", "12345.server")
+    index = submission / "completed-index"
+    selected = []
+    monkeypatch.setattr(stage_cli, "find_artifact", lambda *args: selected.append(args) or index)
+    monkeypatch.setattr(
+        stage_cli.subprocess,
+        "run",
+        lambda command: selected.append(command) or subprocess.CompletedProcess(command, 0),
+    )
+    monkeypatch.setattr(sys, "argv", ["stage", "retrieve", "launcher=h200"])
+    with pytest.raises(SystemExit) as result:
+        stage_cli.main()
+    assert result.value.code == 0
+    assert len(selected) == 2
+    assert any("paths.index=" in part and str(index) in part for part in selected[1])
+    assert not (submission / "qsub-args.json").exists()
+
+
+def test_direct_hydra_entry_also_submits(submission):
+    result = subprocess.run(
+        [sys.executable, "-m", "scientific_tot.hydra_entry", "launcher=h200", "stage=retrieve"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Submitted PBS job 12345.server" in result.stdout
+    assert not (submission / "results/models").exists()
+
+
+def test_dry_run_prints_qsub_and_worker_without_writes(submission, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["stage", "index", "launcher=h200", "dry_run=true"])
+    stage_cli.main()
+    output = capsys.readouterr().out
+    assert "$ qsub " in output and "-q rt_HG" in output
+    assert "-m scientific_tot.stage_cli index" in output
+    assert not (submission / "qsub-args.json").exists()
+    assert not (submission / "results").exists()
+
+
+def test_qsub_failure_is_fatal(submission, monkeypatch):
+    executable = submission / "bin/qsub"
+    executable.write_text("#!/bin/sh\necho 'invalid project' >&2\nexit 2\n")
+    monkeypatch.setattr(sys, "argv", ["stage", "index", "launcher=h200"])
+    with pytest.raises(RuntimeError, match=r"qsub failed \(2\): invalid project"):
+        stage_cli.main()
+
+
+def test_pbs_worker_runs_real_offline_bm25_chain(submission, monkeypatch):
+    pt = pytest.importorskip("pyterrier")
+    jars = Path(pt.io.pyterrier_home())
+    if not (jars / "terrier-assemblies-5.11-jar-with-dependencies.jar").is_file() or not list(
+        jars.glob("terrier-python-helper-*.jar")
+    ):
+        pytest.skip("Real offline worker test requires cached Terrier jars")
+    monkeypatch.setenv("TOT_DATA_ROOT", str(ROOT / "tests/fixtures/adapter"))
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark",
+            "launcher=h200",
+            "benchmark.experiments=[bm25_fulltext]",
+            "benchmark.domains=[ACL]",
+            "launcher.threads.indexing=1",
+            "launcher.threads.encoding=1",
+            "launcher.threads.faiss=1",
+        ],
+    )
+    benchmark.main()
+    args = json.loads((submission / "qsub-args.json").read_text())
+    script = Path(args[-1])
+    original_submission = (submission / "qsub-args.json").read_text()
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=ROOT,
+        env=dict(os.environ, PBS_JOBID="12345.server", KMP_DUPLICATE_LIB_OK="TRUE"),
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Submitted PBS job" not in result.stdout
+    assert (submission / "qsub-args.json").read_text() == original_submission
+    for directory in ("indexes", "models", "evaluations"):
+        manifests = list((submission / "results" / directory).glob("*/manifest.json"))
+        assert len(manifests) == 1
+        assert json.loads(manifests[0].read_text())["status"] == "completed"
+
+
+def test_worker_flag_requires_scheduler_allocation(monkeypatch):
+    monkeypatch.setenv("TOT_PBS_WORKER", "1")
+    monkeypatch.delenv("PBS_JOBID", raising=False)
+    with pytest.raises(RuntimeError, match="PBS_JOBID"):
+        is_worker()
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        "launcher.cpus=0",
+        "launcher.gpus=2",
+        "launcher.memory=invalid",
+        "launcher.walltime=bad",
+        "launcher.queue='queue\\nextra'",
+    ],
+)
+def test_invalid_scheduler_resources_fail_before_submission(override):
+    with pytest.raises(ValueError, match="launcher|PBS"):
+        stage_cli.plan("index", ["launcher=h200", override])

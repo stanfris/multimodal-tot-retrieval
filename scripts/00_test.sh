@@ -13,6 +13,6 @@ if [[ "$test_enabled" != true ]]; then
     exit 2
 fi
 
-./scripts/02_index.sh "$@"
-./scripts/03_retrieve.sh "$@"
-./scripts/04_evaluate.sh "$@"
+source scripts/defaults.sh
+source scripts/environment.sh --
+exec uv run --locked python -m scientific_tot.stage_cli test "$@"

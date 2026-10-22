@@ -13,6 +13,7 @@ from omegaconf.errors import OmegaConfBaseException
 
 from scientific_tot.config_artifacts import verify_index, verify_retrieval
 from scientific_tot.configuration import CONFIG_DIR, VISUAL_DENSE_MODELS, resolve_config
+from scientific_tot.pbs import is_worker, submit
 
 
 def find_artifact(cfg, stage: str) -> Path | None:
@@ -84,7 +85,7 @@ def plan(stage: str, overrides: list[str]):
         )
     resolved = resolve_config(cfg, Path.cwd())
     command = [*overrides, f"stage={stage}"]
-    if automatic:
+    if automatic and (resolved.launcher.kind != "pbs" or is_worker()):
         if not resolved.dry_run:
             print(f"Selecting compatible {key} artifact...", flush=True)
         artifact = (
@@ -121,7 +122,25 @@ def main() -> None:
         )
         return
     stage, *overrides = args
-    cfg, command = plan(stage, overrides)
+    cfg, command = plan("index" if stage == "test" else stage, overrides)
+    if stage == "test" and not cfg.test_mode:
+        raise ValueError("The test stage chain requires --test or mode=test")
+    if cfg.launcher.kind == "pbs" and not is_worker():
+        submit(
+            cfg,
+            ["scientific_tot.stage_cli", stage, *overrides],
+            name=f"{stage}-{cfg.model.name}-{cfg.dataset.domains[0]}",
+            colqwen=cfg.model.name == "colqwen",
+        )
+        return
+    if stage == "test":
+        for script in ("02_index.sh", "03_retrieve.sh", "04_evaluate.sh"):
+            result = subprocess.run(
+                [str(Path(__file__).resolve().parents[2] / "scripts" / script), *overrides]
+            )
+            if result.returncode:
+                raise SystemExit(result.returncode)
+        return
     if not cfg.dry_run and stage in {"prepare", "index"} and cfg.dataset.source == "local":
         if not Path(cfg.dataset.root).is_dir():
             raise ValueError(

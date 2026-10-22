@@ -78,6 +78,8 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
         resolved.test_root = str(absolute(resolved.test_root, base_dir))
     for key in ("dataset_root", "cache_root", "output_root"):
         resolved.launcher[key] = str(absolute(resolved.launcher[key], base_dir))
+    if resolved.launcher.kind == "pbs":
+        resolved.launcher.log_root = str(absolute(resolved.launcher.log_root, base_dir))
     for key in ("root", "cache_dir"):
         resolved.dataset[key] = str(absolute(resolved.dataset[key], base_dir))
     # Explicit local checkpoint references share the original invocation base.
@@ -95,6 +97,7 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
         for value in (
             resolved.launcher.output_root,
             resolved.launcher.cache_root,
+            resolved.launcher.get("log_root"),
             resolved.dataset.cache_dir,
             resolved.paths.index,
             resolved.paths.run,
@@ -116,6 +119,8 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
         Path(resolved.dataset.cache_dir),
         Path(resolved.launcher.cache_root),
     ]
+    if resolved.launcher.kind == "pbs":
+        writable.append(Path(resolved.launcher.log_root))
     if run_dir is not None:
         writable.append(run_dir)
     for output in writable:
@@ -126,6 +131,8 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
             )
     caches = [Path(resolved.launcher.cache_root), Path(resolved.dataset.cache_dir)]
     outputs = [Path(resolved.launcher.output_root)]
+    if resolved.launcher.kind == "pbs":
+        outputs.append(Path(resolved.launcher.log_root))
     if run_dir is not None:
         outputs.append(run_dir)
     if resolved.stage.name == "index" and resolved.paths.index is not None:
@@ -216,7 +223,37 @@ def _validate(cfg: DictConfig) -> None:
     for key in ("indexing", "encoding", "faiss"):
         _require(_positive(cfg.launcher.threads[key]), f"launcher.threads.{key} must be positive")
     _require(_text(cfg.launcher.terrier_version), "launcher.terrier_version must be text")
-    _require(cfg.launcher.kind == "local", "Only local launcher profiles are implemented")
+    _require(cfg.launcher.kind in {"local", "pbs"}, "launcher.kind must be local or pbs")
+    if cfg.launcher.kind == "pbs":
+        launcher = cfg.launcher
+        for key in ("project", "queue"):
+            _require(
+                isinstance(launcher[key], str) and re.fullmatch(r"[A-Za-z0-9_.@-]+", launcher[key]),
+                f"launcher.{key} must be a PBS identifier",
+            )
+        _require(_positive(launcher.cpus), "launcher.cpus must be positive")
+        _require(type(launcher.gpus) is int and launcher.gpus == 1, "PBS requires one GPU")
+        _require(
+            isinstance(launcher.memory, str)
+            and re.fullmatch(r"[1-9][0-9]*(kb|mb|gb|tb)", launcher.memory),
+            "launcher.memory must be a positive PBS size such as 160gb",
+        )
+        _require(
+            isinstance(launcher.walltime, str)
+            and re.fullmatch(r"[0-9]+:[0-5][0-9]:[0-5][0-9]", launcher.walltime),
+            "launcher.walltime must be HH:MM:SS",
+        )
+        for key in ("log_root", "python", "colqwen_python"):
+            _require(_text(launcher[key]), f"launcher.{key} must be a nonempty path")
+        _require(OmegaConf.is_dict(launcher.environment), "launcher.environment must be a mapping")
+        for key, value in launcher.environment.items():
+            _require(
+                isinstance(key, str)
+                and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
+                and type(value) in {str, int, float, bool}
+                and "\x00" not in str(value),
+                "launcher.environment requires valid variable names and scalar values",
+            )
     _require(cfg.launcher.device in {"cpu", "cuda", "mps"}, "Unsupported launcher.device")
     rep, model = cfg.representation, cfg.model
     _require(rep.name in REPRESENTATIONS, f"Unsupported representation: {rep.name}")

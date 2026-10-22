@@ -162,11 +162,19 @@ def test_benchmark_stops_on_failure_and_appends_logs(tmp_path, monkeypatch):
     log = tmp_path / "logs/index.log"
     log.parent.mkdir()
     log.write_text("previous attempt\n")
+    failing = tmp_path / "02_index.sh"
+    failing.write_text("#!/usr/bin/env bash\necho failure\nexit 7\n")
+    failing.chmod(0o755)
     commands = [
-        (log, ["bash", "-c", "echo failure; exit 7"]),
+        (log, [str(failing)]),
         (tmp_path / "later.log", ["bash", "-c", "echo must-not-run"]),
     ]
     monkeypatch.setattr(benchmark, "jobs", lambda args: (False, commands))
+    monkeypatch.setattr(
+        benchmark,
+        "plan",
+        lambda *args: (SimpleNamespace(launcher=SimpleNamespace(kind="local")), []),
+    )
     with pytest.raises(SystemExit) as error:
         benchmark.main()
     assert error.value.code == 7
