@@ -1,22 +1,13 @@
-# scientific-tot-retrieval
+# Scientific Tip of the Tongue Retrieval.
 
-Canonical dataset adapters for the
-[scientific tip-of-the-tongue dataset](https://huggingface.co/datasets/kasys/open-source-scientific-documents).
-Load selected original-content corpus records, queries, and validated relevance
-judgments, then export standard JSONL for existing retrieval frameworks.
+This repository is the retrieval model implementation for **Multimodal Tip-of-the-Tongue Retrieval for Scientific Papers**, which introduces a
+[multimodal scientific tip-of-the-tongue dataset](https://huggingface.co/datasets/kasys/open-source-scientific-documents). 
+In this repository we provide implementations of retrieval models to be used for evaluation.
 
-The published dataset is the source of truth. The
-[generation repository](https://github.com/stanfris/multimodal-tip-of-tongue-retrieval-for-scientific-papers)
-creates the artifacts; this package does not depend on that pipeline at runtime
+Please first download the dataset from the [generation repository](https://github.com/stanfris/multimodal-tip-of-tongue-retrieval-for-scientific-papers)
+creates the artifact. This package does not depend on that pipeline at runtime
 and delegates ranking, pretrained encoding, and evaluation to PyTerrier,
 Sentence Transformers, FAISS, Stanford ColBERT, Qdrant, and ir_measures.
-
-**Publication status rechecked 2026-10-11:** revision
-`3b764a4c6855925ec802a2560712c4f5cc96f980` contains query collections only.
-Corpus archives, `metadata.parquet`, and `splits/` are absent. Queries can be
-loaded from the Hub now; full corpus/qrel conversion requires appropriate local
-artifacts or a future publication containing them. Missing data is reported,
-never fabricated. [Evidence and data contract](docs/dataset-schema.md).
 
 ## Install and run
 
@@ -29,9 +20,6 @@ locked `.venv-colqwen` environment because Transformers 5 conflicts with ColBERT
 
 ```sh
 uv sync --locked
-# Fully offline two-document synthetic example:
-uv run python examples/convert_dataset.py \
-  --local-dir tests/fixtures/adapter --domain ACL --output /tmp/scientific-tot-example
 ```
 
 From Python, use a shared source to keep all reads on one revision:
@@ -50,43 +38,9 @@ qrels.write_jsonl("/tmp/qrels.jsonl")
 print(corpus.report.to_dict())
 ```
 
-`missing="error"` is the default; `missing="skip"` explicitly
-excludes unusable records with a report. Unresolved relevance targets always
-raise. Figure metadata and file/archive paths are exposed without loading images.
-
-[API documentation](docs/api.md) covers component downloads, metadata-only reads,
-Hub revisions, archive granularity, lean extractions, missing-data policy, and
-record schemas. [Architecture](docs/architecture.md) records design decisions.
-
-## Hydra configuration CLI
-
-The four independent stages write directly into deterministic artifact directories:
-
-```text
-results/
-  indexes/bm25_fulltext_d-ACL_c-all/
-    .hydra/{config,hydra,overrides}.yaml
-    manifest.json
-    index-manifest.json
-    data.properties                 # plus Terrier files
-  models/bm25_fulltext_c-all_q-test_<retrieval-hash>/
-    .hydra/  manifest.json  run.trec  topics.jsonl  qrels.tsv
-    query-ids.jsonl  corpus-ids.jsonl
-  evaluations/bm25_fulltext_c-all_q-test_<evaluation-hash>/
-    .hydra/  manifest.json  metrics.csv  per-query.csv
-  prepared/bm25_fulltext_c-all_q-test_<prepare-hash>/
-    .hydra/  manifest.json  corpus.jsonl  queries.jsonl  qrels.jsonl
-```
-
-Dense indexes use the same layout with `dense_fulltext` or `dense_passages`
-and FAISS/vector files. ColBERT indexes store the upstream compressed index
-under `colbert/` with a canonical PID mapping. `models/` contains retrieval outputs; pretrained weights
-and embeddings stay in the existing `cache/` hierarchy. There are no timestamped
-artifact wrappers.
-
 ### Run BM25 and dense baselines on the test set
 
-After `uv sync --locked`, point `TOT_DATA_ROOT` at your restored dataset. These
+After `uv sync --locked` and downloading the dataset, please set `TOT_DATA_ROOT`to the dataset location. These
 commands index every available ACL document and evaluate all test queries from
 the `visual-and-text` query collection, using original fulltext for both baselines:
 
