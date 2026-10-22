@@ -1,6 +1,6 @@
 # @package _global_
 defaults:
-  - override /model: qwen3_vl_figures
+  - override /model: qwen3_vl_images
   - override /representation: figures
   - override /stage: index
   - _self_

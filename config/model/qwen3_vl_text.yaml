@@ -1,13 +1,13 @@
 defaults:
   - override /launcher@_global_.launcher: local_gpu
-  - override /representation@_global_.representation: pages
+  - override /representation@_global_.representation: fulltext
   - _self_
 
-name: qwen3_vl_page
+name: qwen3_vl_text
 backend: visual_faiss
 model_id: Qwen/Qwen3-VL-Embedding-2B
 revision: 9f2f7e710d6d81056aa5c0a4f04764fec6bb7bda
-document_input: pages
+document_input: text
 dimension: 2048
 batch_size: 2
 device: ${launcher.device}

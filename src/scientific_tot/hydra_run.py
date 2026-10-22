@@ -9,6 +9,7 @@ from pathlib import Path
 from hydra.experimental.callback import Callback
 from omegaconf import DictConfig, OmegaConf
 
+from scientific_tot.config_arguments import reuse_prepared_corpus
 from scientific_tot.config_artifacts import (
     artifact_reference,
     digest,
@@ -189,7 +190,18 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
     # Hydra creates directories but automatic snapshots/logging are disabled.
     cfg = resolve_config(cfg, Path.cwd(), run_dir)
     print(f"Starting {cfg.stage.name}: {cfg.run.name}; output={run_dir}", flush=True)
-    from scientific_tot.artifact_identity import INDEX_EXISTENCE
+    from scientific_tot.artifact_identity import (
+        INDEX_EXISTENCE,
+        STARTUP_INDEX_INPUTS,
+        index_request_key,
+        prepare_index_inputs,
+    )
+
+    prepared = (
+        STARTUP_INDEX_INPUTS.pop(index_request_key(cfg), None)
+        if cfg.stage.name == "index"
+        else None
+    )
 
     contents = {path.name for path in run_dir.iterdir()}
     if cfg.stage.name == "index" and cfg.model.name == "colqwen":
@@ -268,7 +280,16 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
         from scientific_tot.artifact_identity import PLANNED_IDENTITIES, resolve_identity
 
         with phase("1/4 Resolve and verify source identity"):
-            identity = resolve_identity(cfg)
+            if cfg.stage.name == "index":
+                if prepared is None:
+                    prepared = prepare_index_inputs(cfg)
+                else:
+                    print(
+                        "Using prepared startup corpus and source identity (no rescan)", flush=True
+                    )
+                identity = prepared["identity"]
+            else:
+                identity = resolve_identity(cfg)
         if run_dir in PLANNED_IDENTITIES and PLANNED_IDENTITIES[run_dir] != identity:
             raise ValueError("Source inputs differ from the reserved artifact identity")
         manifest.update(artifact_identity=identity, artifact_sha256=digest(identity))
@@ -285,10 +306,15 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
             manifest["index_provenance"] = verify_index(Path(cfg.paths.index), cfg)
         if cfg.stage.name == "evaluate":
             manifest["retrieval_provenance"] = verify_retrieval(Path(cfg.paths.run), cfg)
-        with phase(
-            f"2/4 {cfg.stage.name.capitalize()} — {cfg.model.name}/{cfg.representation.name}"
+        with (
+            phase(
+                f"2/4 {cfg.stage.name.capitalize()} — {cfg.model.name}/{cfg.representation.name}"
+            ),
+            reuse_prepared_corpus(prepared),
         ):
             result = execute_stage(cfg, run_dir=run_dir)
+        # Release the build inventory before loading a fresh one for verification.
+        prepared = None
         if result is not None:
             manifest["artifacts"] = result
         with phase("3/4 Verify completed outputs and unchanged sources"):

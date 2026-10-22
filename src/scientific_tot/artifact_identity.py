@@ -15,6 +15,7 @@ from scientific_tot.config_arguments import (
     configured_corpus,
     dense_arguments,
     query_arguments,
+    reuse_prepared_corpus,
 )
 from scientific_tot.config_artifacts import (
     artifact_reference,
@@ -29,6 +30,24 @@ from scientific_tot.reporting import package_version, phase
 
 PLANNED_IDENTITIES: dict[Path, dict] = {}
 INDEX_EXISTENCE: dict[Path, bool] = {}
+STARTUP_INDEX_INPUTS: dict[str, dict] = {}
+
+
+def index_request_key(cfg) -> str:
+    """Identify an index request before/after Hydra fills its output path."""
+    request = OmegaConf.to_container(cfg, resolve=True)
+    request["paths"]["index"] = None
+    return digest(request)
+
+
+def prepare_index_inputs(cfg) -> dict:
+    """Read the source once and keep its immutable records and dataset inventory."""
+    assert cfg.stage.name == "index"
+    adapter = configured_adapter(cfg)
+    inputs = {"adapter": adapter, "corpus": configured_corpus(cfg, adapter)}
+    with reuse_prepared_corpus(inputs):
+        inputs["identity"] = resolve_identity(cfg)
+    return inputs
 
 
 def index_identity(cfg, provenance: dict) -> dict:
@@ -188,8 +207,18 @@ def hydra_directory(*, _root_) -> str:
     if cfg.stage.name == "index":
         identity = {}
         if cfg.model.name in {"colqwen"} | VISUAL_DENSE_MODELS:
-            with phase(f"Startup: identify {cfg.model.name} corpus before selecting index output"):
-                identity = resolve_identity(cfg)
+            key = index_request_key(cfg)
+            if key not in STARTUP_INDEX_INPUTS:
+                with phase(
+                    f"Startup: identify {cfg.model.name} corpus before selecting index output"
+                ):
+                    STARTUP_INDEX_INPUTS[key] = prepare_index_inputs(cfg)
+            else:
+                print(
+                    "Reusing prepared index inputs for output selection (no source rescan)",
+                    flush=True,
+                )
+            identity = STARTUP_INDEX_INPUTS[key]["identity"]
         directory = artifact_directory(cfg, identity)
         # Hydra creates the directory before dispatch; remember whether it already existed.
         INDEX_EXISTENCE.setdefault(directory, directory.exists())

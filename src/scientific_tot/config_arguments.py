@@ -1,14 +1,31 @@
 """Explicit parameter bindings for existing implementations, without loading backends."""
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
+
+_prepared_corpus = ContextVar("prepared_corpus", default=None)
+
+
+@contextmanager
+def reuse_prepared_corpus(inputs):
+    """Reuse one index input snapshot only inside the initial identity/build calls."""
+    token = _prepared_corpus.set(inputs)
+    try:
+        yield
+    finally:
+        _prepared_corpus.reset(token)
 
 
 def configured_corpus(cfg: DictConfig, adapter):
     """Load the configured representation and enforce the opt-in test corpus boundary."""
     from scientific_tot.configuration import VISUAL_DENSE_MODELS
 
+    prepared = _prepared_corpus.get()
+    if prepared is not None:
+        return prepared["corpus"]
     if cfg.model.name in VISUAL_DENSE_MODELS:
         from scientific_tot.integrations.visual_dense import load_visual_corpus
 
@@ -115,6 +132,9 @@ def configured_adapter(cfg: DictConfig):
             raise NotImplementedError("The existing adapter requires canonical dataset.artifacts")
     if cfg.dataset.source == "hub" and not cfg.dataset.download.enabled:
         raise ValueError("Hub adapter reads require dataset.download.enabled=true")
+    prepared = _prepared_corpus.get()
+    if prepared is not None:
+        return prepared["adapter"]
     return DatasetAdapter(
         Dataset(
             repo_id=cfg.dataset.repo_id,
@@ -136,7 +156,7 @@ def corpus_arguments(cfg: DictConfig) -> dict:
         "split": cfg.split.corpus,
         "representation": representation,
         "missing": cfg.dataset.missing,
-        "include_figures": representation == "figures",
+        "include_figures": representation == "figures" or cfg.model.name == "qwen3_vl_multimodal",
         "include_metadata": cfg.representation.name in {"title_abstract", "pages"},
     }
 

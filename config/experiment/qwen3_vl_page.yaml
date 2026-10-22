@@ -1,6 +1,0 @@
-# @package _global_
-defaults:
-  - override /model: qwen3_vl_page
-  - override /representation: pages
-  - override /stage: index
-  - _self_

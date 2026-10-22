@@ -1,6 +1,6 @@
 defaults:
-  - qwen3_vl_page
-  - override /representation@_global_.representation: pages
+  - qwen3_vl_text
+  - override /representation@_global_.representation: fulltext
   - _self_
 
 name: qwen3_vl_multimodal

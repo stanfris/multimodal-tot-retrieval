@@ -1,6 +1,9 @@
 """Real PDFium/FAISS/stage lifecycle; pretrained inference is opt-in."""
 
 import json
+import os
+import subprocess
+import sys
 import tarfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,19 +18,109 @@ from scientific_tot.artifact_identity import resolve_identity
 from scientific_tot.config_arguments import configured_adapter
 from scientific_tot.config_artifacts import verify_retrieval
 from scientific_tot.configuration import OPENCLIP_MODELS
-from scientific_tot.data.validation import DatasetFormatError
 from scientific_tot.integrations import colqwen, visual_dense
 from scientific_tot.integrations.visual_dense import OpenCLIPEncoder, QwenEmbeddingEncoder
 from scientific_tot.stage_cli import find_artifact
 
 pdf_dataset = _pdf_dataset
-QWEN_MODELS = ["qwen3_vl_page", "qwen3_vl_multimodal", "qwen3_vl_figures"]
+QWEN_MODELS = ["qwen3_vl_text", "qwen3_vl_multimodal", "qwen3_vl_images"]
 MODELS = ["openclip", "openclip_figures", *QWEN_MODELS]
 
 
 def overrides(model):
     experiment = "openclip_pages" if model == "openclip" else model
     return (f"experiment={experiment}", "launcher=local_cpu", "model.precision=fp32")
+
+
+@pytest.mark.parametrize(
+    "model,change_source",
+    [("openclip_figures", False), ("qwen3_vl_images", False), ("qwen3_vl_images", True)],
+)
+def test_actual_hydra_reuses_startup_inputs_and_rechecks_sources(
+    tmp_path, visual_dataset, model, change_source
+):
+    script = """
+import json, os, socket
+from pathlib import Path
+import torch
+from PIL import Image
+from scientific_tot.data.hub import Dataset
+from scientific_tot.integrations import visual_dense
+from scientific_tot.hydra_entry import main
+
+counts = {"inventories": 0, "corpus_loads": 0, "encoded_units": 0}
+discover = Dataset.discover
+load_corpus = visual_dense.load_visual_corpus
+def counted_discover(self):
+    if self._inventory is None:
+        counts["inventories"] += 1
+    return discover(self)
+def counted_corpus(*args, **kwargs):
+    counts["corpus_loads"] += 1
+    return load_corpus(*args, **kwargs)
+class Encoder:
+    metadata = {}
+    def __init__(self, cfg):
+        self.dimension = cfg.model.dimension
+    def encode(self, values, task):
+        assert task == "document"
+        counts["encoded_units"] += len(values)
+        if os.environ["TOT_REGRESSION_MUTATE"] == "1":
+            path = next(Path(os.environ["TOT_REGRESSION_DATASET"]).glob(
+                "preprocessed/ACL/*/images/visual-0.png"))
+            Image.new("RGB", (8, 8), "red").save(path)
+        return torch.ones(len(values), self.dimension)
+def blocked(*args, **kwargs):
+    raise AssertionError("Startup reuse regression must not access the network")
+Dataset.discover = counted_discover
+visual_dense.load_visual_corpus = counted_corpus
+visual_dense.load_model = Encoder
+socket.socket.connect = blocked
+socket.create_connection = blocked
+try:
+    main()
+finally:
+    Path("input-counts.json").write_text(json.dumps(counts))
+"""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            script,
+            *overrides(model),
+            "stage=index",
+            f"dataset.root={visual_dataset}",
+            f"launcher.output_root={tmp_path / 'results'}",
+            f"launcher.cache_root={tmp_path / 'cache'}",
+        ],
+        cwd=tmp_path,
+        env=dict(
+            os.environ,
+            PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src"),
+            TOT_REGRESSION_DATASET=str(visual_dataset),
+            TOT_REGRESSION_MUTATE=str(int(change_source)),
+            HYDRA_FULL_ERROR="1",
+        ),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    counts = json.loads((tmp_path / "input-counts.json").read_text())
+    assert counts == {
+        "inventories": 2,
+        "corpus_loads": 2,
+        "encoded_units": 4 if model in OPENCLIP_MODELS else 2,
+    }
+    assert result.stdout.count("▶ Startup: identify") == 1
+    manifest_path = next((tmp_path / "results/indexes").glob("*/manifest.json"))
+    manifest = json.loads(manifest_path.read_text())
+    if change_source:
+        assert result.returncode != 0
+        assert "Source inputs changed during artifact construction" in result.stderr
+        assert manifest["status"] == "failed"
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert manifest["status"] == "completed"
 
 
 @pytest.fixture
@@ -51,20 +144,8 @@ def visual_dataset(pdf_dataset):
                 }
             )
         paper["figures"] = figures
-        paper["structured_outputs"] = {"paper_content_list.json": "mineru/paper_content_list.json"}
-        target = path.parent / "mineru/paper_content_list.json"
-        target.parent.mkdir()
-        target.write_text(
-            json.dumps(
-                [
-                    {
-                        "type": "text",
-                        "page_idx": number,
-                        "text": f"Original page {number + 1}.\nUnmodified.",
-                    }
-                    for number in range(count - 1)  # Last page intentionally has no extracted text.
-                ]
-            )
+        (path.parent / "markdown.md").write_text(
+            f"Full original paper {ordinal}.\nUnmodified text."
         )
         path.write_text(json.dumps(paper))
     return pdf_dataset
@@ -89,13 +170,29 @@ def encoder(monkeypatch):
                     task,
                     values
                     if task == "query"
-                    else [{**value, "image": value["image"].size} for value in values],
+                    else [
+                        {
+                            **{k: v for k, v in value.items() if k not in {"image", "images"}},
+                            **({"image": value["image"].size} if "image" in value else {}),
+                            **(
+                                {"images": [image.size for image in value["images"]]}
+                                if "images" in value
+                                else {}
+                            ),
+                        }
+                        for value in values
+                    ],
                 )
             )
             result = torch.zeros(len(values), self.dimension)
             result[:, 0] = 1
             if task == "document":
-                result[:, 1] = torch.tensor([1 / value["image"].width for value in values])
+                result[:, 1] = torch.tensor(
+                    [
+                        1 / value["image"].width if "image" in value else 1 / (i + 2)
+                        for i, value in enumerate(values)
+                    ]
+                )
             return result
 
     monkeypatch.setattr(visual_dense, "load_model", Encoder)
@@ -109,25 +206,37 @@ def test_visual_stages(tmp_path, visual_dataset, monkeypatch, encoder, model):
     units = [
         json.loads(line) for line in (prepared / "unit-mapping.jsonl").read_text().splitlines()
     ]
-    assert len(units) == 4 and not encoder
-    if model == "qwen3_vl_multimodal":
+    count = 4 if model in OPENCLIP_MODELS else 2
+    assert len(units) == count and not encoder
+    if model in {"qwen3_vl_text", "qwen3_vl_multimodal"}:
         assert [unit["text"] for unit in units] == [
-            "Original page 1.\nUnmodified.",
-            "Original page 2.\nUnmodified.",
-            "",
-            "",
+            f"Full original paper {i}.\nUnmodified text." for i in range(2)
         ]
+    if model in QWEN_MODELS:
+        assert [unit["docno"] for unit in units] == [unit["doc_id"] for unit in units]
+        assert [len(unit["images"]) for unit in units] == (
+            [0, 0] if model == "qwen3_vl_text" else [3, 1]
+        )
     (tmp_path / "results/indexes").mkdir(parents=True)
     index, _, _ = execute(tmp_path, visual_dataset, "index", "results/indexes/first", *args)
     provenance = json.loads((index / "index-manifest.json").read_text())["provenance"]
-    assert provenance["vectors"] == 4 and provenance["documents"] == 2
+    assert provenance["vectors"] == count and provenance["documents"] == 2
     assert all(task == "document" for task, _ in encoder)
     values = [value for _, batch in encoder for value in batch]
-    assert all(("text" in value) == (model == "qwen3_vl_multimodal") for value in values)
-    widths = [200, 201, 202, 100] if model.endswith("figures") else [200, 202, 204, 100]
-    assert [value["image"] for value in values] == [(width, 160) for width in widths]
+    assert all(
+        ("text" in value) == (model in {"qwen3_vl_text", "qwen3_vl_multimodal"}) for value in values
+    )
+    if model in OPENCLIP_MODELS:
+        widths = [200, 201, 202, 100] if model.endswith("figures") else [200, 202, 204, 100]
+        assert [value["image"] for value in values] == [(width, 160) for width in widths]
+    else:
+        assert [value["images"] for value in values] == (
+            [[], []]
+            if model == "qwen3_vl_text"
+            else [[(200, 160), (201, 160), (202, 160)], [(100, 160)]]
+        )
     vectors = np.load(Path(provenance["cache"]["documents"]) / "embeddings.npy")
-    assert vectors.shape == (4, 512 if model in OPENCLIP_MODELS else 2048)
+    assert vectors.shape == (count, 512 if model in OPENCLIP_MODELS else 2048)
     assert np.isfinite(vectors).all() and np.allclose(np.linalg.norm(vectors, axis=1), 1)
     encoder.clear()
     execute(tmp_path, visual_dataset, "index", "results/indexes/second", *args)
@@ -153,15 +262,17 @@ def test_visual_stages(tmp_path, visual_dataset, monkeypatch, encoder, model):
     assert len(ranks) == len({row[2] for row in ranks}) == 2
     assert [int(row[3]) for row in ranks] == [1, 2]
     report = json.loads((run / "manifest.json").read_text())["artifacts"]
-    assert report["vector_search_depth"] == 4
-    assert report["aggregation"]["method"] == "max"
+    assert report["vector_search_depth"] == count
+    assert report["aggregation"] == (
+        {"method": "max", "scope": "all_indexed_units"} if model in OPENCLIP_MODELS else None
+    )
     assert report["efficiency"]["search_seconds"] >= 0
     smaller_run, _, _ = execute(
         tmp_path, visual_dataset, "retrieve", "smaller-run", *args, f"paths.index={index}"
     )
     smaller = json.loads((smaller_run / "manifest.json").read_text())["artifacts"]
     assert smaller["retrieval_cutoff"] == 2 and smaller["rankings"] == 2
-    assert smaller["vector_search_depth"] == 4
+    assert smaller["vector_search_depth"] == count
     assert smaller["cache"]["query_hit"] is True
     cfg, _ = settings(tmp_path, visual_dataset, "retrieve", None, *args, f"paths.index={index}")
     with pytest.raises(ValueError, match="Multiple compatible"):
@@ -179,7 +290,7 @@ def test_visual_stages(tmp_path, visual_dataset, monkeypatch, encoder, model):
     assert (evaluated / "metrics.csv").is_file()
 
 
-@pytest.mark.parametrize("model", ["openclip_figures", "qwen3_vl_figures"])
+@pytest.mark.parametrize("model", ["openclip_figures"])
 @pytest.mark.parametrize("empty_all", [False, True])
 def test_papers_without_figures_stay_in_evaluation(
     tmp_path, visual_dataset, encoder, empty_all, model
@@ -227,7 +338,7 @@ def test_queries_are_shared_but_document_indexes_differ(tmp_path, visual_dataset
             visual_dataset,
             "evaluate",
             None,
-            *overrides("qwen3_vl_figures"),
+            *overrides("qwen3_vl_images"),
             f"paths.run={run}",
             "model.query_instruction='Different query instruction.'",
         )
@@ -235,60 +346,47 @@ def test_queries_are_shared_but_document_indexes_differ(tmp_path, visual_dataset
             verify_retrieval(run, cfg)
 
 
-def test_mineru_alignment_requires_explicit_pages(tmp_path, visual_dataset):
-    cfg, _ = settings(tmp_path, visual_dataset, "index", None, *overrides("qwen3_vl_multimodal"))
-    source = next(visual_dataset.glob("preprocessed/ACL/*/mineru/*content_list.json"))
-    source.write_text(json.dumps([{"type": "text", "text": "Unaligned text"}]))
-    with pytest.raises(DatasetFormatError, match="page_idx"):
-        resolve_identity(cfg)
-    source.unlink()
-    with pytest.raises(FileNotFoundError, match="Missing extracted artifact"):
-        resolve_identity(cfg)
+@pytest.mark.parametrize("model", QWEN_MODELS)
+def test_qwen_needs_only_selected_document_inputs(tmp_path, visual_dataset, model):
+    import shutil
 
-
-def test_mineru_v2_alignment_and_lean_limitation(tmp_path, visual_dataset):
-    cfg, _ = settings(tmp_path, visual_dataset, "index", None, *overrides("qwen3_vl_multimodal"))
-    paper_path = sorted(visual_dataset.glob("preprocessed/ACL/*/paper.json"))[0]
-    paper = json.loads(paper_path.read_text())
-    source = paper_path.parent / "mineru/paper_content_list.json"
-    source.write_text(
-        json.dumps(
-            [
-                [
-                    {
-                        "type": "paragraph",
-                        "content": {
-                            "paragraph_content": [
-                                {"type": "text", "content": "First "},
-                                {"type": "text", "content": "page"},
-                            ]
-                        },
-                    }
-                ],
-                [
-                    {
-                        "type": "table",
-                        "content": {
-                            "html": "<table>Second page</table>",
-                            "image_source": {"path": "not text"},
-                        },
-                    }
-                ],
-                [],
-            ]
-        )
-    )
+    # These modes must not open PDFs, content lists or per-page associations.
+    shutil.rmtree(visual_dataset / "pdf_datasets")
+    for path in visual_dataset.glob("preprocessed/ACL/*/paper.json"):
+        paper = json.loads(path.read_text())
+        paper.pop("structured_outputs", None)
+        path.write_text(json.dumps(paper))
+        if model == "qwen3_vl_text":
+            shutil.rmtree(path.parent / "images")
+        elif model == "qwen3_vl_images":
+            (path.parent / "markdown.md").unlink()
+    cfg, _ = settings(tmp_path, visual_dataset, "index", None, *overrides(model))
     corpus = visual_dense.load_visual_corpus(configured_adapter(cfg), cfg)
-    assert corpus[0]["page_texts"] == ["First page", "<table>Second page</table>", ""]
-    paper.pop("structured_outputs")
-    paper_path.write_text(json.dumps(paper))
-    source.unlink()
-    with pytest.raises(ValueError, match="alignment unavailable"):
-        resolve_identity(cfg)
+    assert len(visual_dense.document_mapping(corpus, cfg)) == len(corpus) == 2
+
+
+@pytest.mark.parametrize("model", ["qwen3_vl_images", "qwen3_vl_multimodal"])
+def test_qwen_documents_without_images(tmp_path, visual_dataset, model):
+    path = next(visual_dataset.glob("preprocessed/ACL/*/paper.json"))
+    paper = json.loads(path.read_text())
+    paper["figures"] = []
+    path.write_text(json.dumps(paper))
+    for image in (path.parent / "images").iterdir():
+        image.unlink()
+    cfg, _ = settings(tmp_path, visual_dataset, "index", None, *overrides(model))
+    if model == "qwen3_vl_images":
+        with pytest.raises(ValueError, match="image-only document input requires supplied images"):
+            resolve_identity(cfg)
+    else:
+        corpus = visual_dense.load_visual_corpus(configured_adapter(cfg), cfg)
+        mapping = visual_dense.document_mapping(corpus, cfg)
+        row = next(row for row in mapping if row["doc_id"] == paper["paper_id"])
+        assert row["images"] == [] and row["text"]
+        assert len(mapping) == 2
 
 
 def test_figure_archive_and_content_identity(tmp_path, visual_dataset):
-    args = overrides("qwen3_vl_figures")
+    args = overrides("qwen3_vl_images")
     cfg, _ = settings(tmp_path, visual_dataset, "index", None, *args)
     before = resolve_identity(cfg)
     image = next(visual_dataset.glob("preprocessed/ACL/*/images/*.png"))
@@ -302,7 +400,7 @@ def test_figure_archive_and_content_identity(tmp_path, visual_dataset):
                 archive.add(path, arcname=str(path.relative_to(base)))
                 path.unlink()
     corpus = visual_dense.load_visual_corpus(configured_adapter(cfg), cfg)
-    assert len(visual_dense.document_mapping(corpus, cfg)) == 4
+    assert len(visual_dense.document_mapping(corpus, cfg)) == 2
 
 
 def test_openclip_standard_long_query_tokenization():
@@ -328,13 +426,34 @@ def test_qwen_full_query_and_combined_context():
         model=SimpleNamespace(query_instruction="Retrieve relevant images.")
     )
     seen = []
+
+    def format_input(image=None, text=None, instruction=None):
+        content = []
+        if image is not None:
+            content.append({"type": "image", "image": image})
+        if text is not None:
+            content.append({"type": "text", "text": text})
+        return [
+            {"role": "system", "content": instruction},
+            {"role": "user", "content": content},
+        ]
+
+    def preprocess(rows):
+        seen.extend(rows)
+        count = sum(item["type"] == "image" for row in rows for item in row[1]["content"])
+        return {
+            "attention_mask": torch.ones(len(rows), 9000),
+            **(
+                {"pixel_values": torch.ones(count), "image_grid_thw": torch.ones(count, 3)}
+                if count
+                else {}
+            ),
+        }
+
     encoder.model = SimpleNamespace(
         max_length=32768,
-        format_model_input=lambda **row: seen.append(row) or row,
-        _preprocess_inputs=lambda rows: {
-            "attention_mask": torch.ones(len(rows), 9000),
-            "pixel_values": torch.ones(1),
-        },
+        format_model_input=format_input,
+        _preprocess_inputs=preprocess,
         model=SimpleNamespace(device="cpu"),
         forward=lambda values: {
             "last_hidden_state": torch.ones(len(values["attention_mask"]), 2, 2),
@@ -344,26 +463,40 @@ def test_qwen_full_query_and_combined_context():
     )
     query = "original ToT text " * 1000
     encoder.encode([query], "query")
-    assert seen == [{"text": query, "instruction": "Retrieve relevant images."}]
-    image = Image.new("RGB", (8, 8))
-    encoder.encode([{"image": image, "text": "Exact page text"}], "document")
-    assert seen[-1] == {"image": image, "text": "Exact page text"}
+    assert seen[-1] == format_input(text=query, instruction="Retrieve relevant images.")
+    images = [Image.new("RGB", (8, 8)) for _ in range(3)]
+    for text in (None, "Full original paper text"):
+        row = {"images": images, "doc_id": "paper", **({"text": text} if text else {})}
+        result = encoder.encode([row], "document")
+        assert result.shape == (1, 2)
+        assert seen[-1][1]["content"] == [
+            *[{"type": "image", "image": image} for image in images],
+            *([{"type": "text", "text": text}] if text else []),
+        ]
+    encoder.encode([{"images": [], "text": "Full original paper text"}], "document")
+    assert seen[-1][1]["content"] == [{"type": "text", "text": "Full original paper text"}]
     encoder.model.max_length = 8192
     with pytest.raises(ValueError, match="refusing truncation"):
         encoder.encode([query], "query")
     assert encoder.model.max_length == 8192
-    with pytest.raises(ValueError, match="shared context"):
-        encoder.encode([{"image": image, "text": "Too much combined input"}], "document")
+    with pytest.raises(ValueError, match="paper.*refusing truncation"):
+        encoder.encode([{"images": images, "text": "Long text", "doc_id": "paper"}], "document")
     encoder.model.max_length = 32768
-    encoder.model._preprocess_inputs = lambda rows: {"attention_mask": torch.ones(len(rows), 2)}
-    with pytest.raises(ValueError, match="image modality"):
-        encoder.encode([{"image": image, "text": "Page text"}], "document")
+    encoder.model._preprocess_inputs = lambda rows: {
+        "attention_mask": torch.ones(len(rows), 2),
+        "pixel_values": torch.ones(1),
+        "image_grid_thw": torch.ones(1, 3),
+    }
+    with pytest.raises(ValueError, match="every image"):
+        encoder.encode([{"images": images, "text": "Full text"}], "document")
+    for image in images:
+        image.close()
 
 
 @pytest.mark.visual_live
 @pytest.mark.parametrize("model", MODELS)
 def test_real_checkpoint_stages(tmp_path, visual_dataset, model):
-    """Four small indexed units, original ToT query, persistent index and shared evaluation."""
+    """Two papers, original ToT query, persistent index and shared evaluation."""
     query_file = next(visual_dataset.glob("query_collections/**/queries.jsonl"))
     query = json.loads(query_file.read_text())
     query["query"] += " I remember a scientific diagram with several colored panels." * 20

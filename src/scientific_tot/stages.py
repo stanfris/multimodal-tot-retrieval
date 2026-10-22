@@ -58,7 +58,7 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
                 mode=cfg.dataset.query_mode,
             )
     print(
-        f"Loading corpus: domains={','.join(cfg.dataset.domains)}, split={cfg.split.corpus}, "
+        f"Corpus selection: domains={','.join(cfg.dataset.domains)}, split={cfg.split.corpus}, "
         f"representation={cfg.representation.name}",
         flush=True,
     )

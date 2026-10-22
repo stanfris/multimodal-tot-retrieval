@@ -49,7 +49,7 @@ def identity(base, *overrides):
     return value, artifact_directory(cfg, value)
 
 
-@pytest.mark.parametrize("model", ["openclip_figures", "qwen3_vl_figures"])
+@pytest.mark.parametrize("model", ["openclip_figures", "qwen3_vl_images"])
 def test_figure_startup_logs_precede_source_reads(tmp_path, monkeypatch, capsys, model):
     from scientific_tot.artifact_identity import hydra_directory
 
@@ -59,7 +59,7 @@ def test_figure_startup_logs_precede_source_reads(tmp_path, monkeypatch, capsys,
         assert f"Startup: identify {model} corpus" in capsys.readouterr().out
         raise FileNotFoundError("source unavailable during startup")
 
-    monkeypatch.setattr("scientific_tot.artifact_identity.resolve_identity", unavailable_source)
+    monkeypatch.setattr("scientific_tot.artifact_identity.prepare_index_inputs", unavailable_source)
     with pytest.raises(FileNotFoundError, match="source unavailable"):
         hydra_directory(_root_=cfg)
     assert "failed after" in capsys.readouterr().out

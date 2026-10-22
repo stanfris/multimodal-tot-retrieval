@@ -18,7 +18,7 @@ from scientific_tot.config_arguments import (
     require_corpus_settings,
 )
 from scientific_tot.config_artifacts import artifact_reference, verify_index, write_index_manifest
-from scientific_tot.configuration import VISUAL_DENSE_MODELS
+from scientific_tot.configuration import OPENCLIP_MODELS, VISUAL_DENSE_MODELS
 from scientific_tot.integrations.bm25_batch import _read_jsonl, save_batch
 from scientific_tot.integrations.dense import (
     EncodingConfig,
@@ -219,7 +219,7 @@ def retrieve_dense(cfg, target: Path) -> dict:
     print(f"Verifying FAISS index: {location}", flush=True)
     manifest = verify_index(location, cfg)
     provenance = manifest["provenance"]
-    figures = cfg.model.name in VISUAL_DENSE_MODELS and cfg.model.document_input == "figures"
+    figures = cfg.model.name == "openclip_figures"
     names = ("index.faiss", "ids.json", "vectors.jsonl", "vectors.jsonl.manifest.json")
     for name in names:
         if provenance.get("index_files", {}).get(name) != artifact_reference(location / name):
@@ -294,7 +294,7 @@ def retrieve_dense(cfg, target: Path) -> dict:
         index, device=cfg.retrieval.search_device, threads=cfg.launcher.threads.faiss, depth=depth
     )
     with (
-        phase("Search exact vectors and aggregate paper rankings"),
+        phase("Search exact vectors and rank papers"),
         tqdm(
             total=len(inputs.topics), desc=f"Retrieving queries ({search.device})", unit="query"
         ) as progress,
@@ -331,7 +331,7 @@ def retrieve_dense(cfg, target: Path) -> dict:
                             if position >= 0
                         ]
                     result = pd.DataFrame(rows, columns=["qid", "docno", "rank", "score"])
-                    if not visual or result.empty:
+                    if cfg.model.name not in OPENCLIP_MODELS or result.empty:
                         break
                     from scientific_tot.integrations.colqwen import aggregate_pages
 
@@ -399,7 +399,7 @@ def retrieve_dense(cfg, target: Path) -> dict:
             ),
         },
         "aggregation": {"method": "max", "scope": "all_indexed_units"}
-        if visual
+        if cfg.model.name in OPENCLIP_MODELS
         else {
             "method": cfg.representation.aggregation.method,
             "library": f"pyterrier.text.{cfg.representation.aggregation.method}_passage",

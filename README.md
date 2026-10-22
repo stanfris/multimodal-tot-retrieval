@@ -389,25 +389,35 @@ identity, resource requirements, and the selectable real-checkpoint test, and th
 
 ## OpenCLIP and Qwen3-VL-Embedding baselines
 
-Five experiments use single-vector FAISS retrieval with maximum-score document
-aggregation: `openclip_pages`, `openclip_figures`, `qwen3_vl_page`, `qwen3_vl_multimodal` (page plus
-aligned MinerU text), and `qwen3_vl_figures` (supplied figures/table images).
-They share the existing stage scripts and document-level evaluation, reporting
-MRR@10, Recall@1/10/100, and NDCG@10. Qwen query embeddings are shared across its three
-strategies; document embeddings and indexes remain separate.
+OpenCLIP indexes individual pages (`openclip_pages`) or supplied figure/table
+images (`openclip_figures`) and takes the maximum score per paper.
+Qwen3-VL produces exactly one 2048-dimensional embedding per paper:
+
+- `qwen3_vl_images`: all supplied images together in one input.
+- `qwen3_vl_text`: the full original `markdown.md`, as used by the text baselines.
+- `qwen3_vl_multimodal`: all supplied images, followed by the full Markdown text,
+  together in one input.
+
+Qwen ranks paper embeddings directly, without page/figure score aggregation.
+All profiles share the existing stage scripts and evaluation, reporting MRR@10,
+Recall@1/10/100 and NDCG@10. Qwen query embeddings are shared across its three
+profiles; document embeddings and indexes remain separate.
 
 ```sh
-for experiment in openclip_pages openclip_figures qwen3_vl_page qwen3_vl_multimodal qwen3_vl_figures; do
+for experiment in openclip_pages openclip_figures qwen3_vl_text qwen3_vl_multimodal qwen3_vl_images; do
   ./scripts/02_index.sh "experiment=$experiment"
   ./scripts/03_retrieve.sh "experiment=$experiment"
   ./scripts/04_evaluate.sh "experiment=$experiment"
 done
 ```
 
-All run in the default locked environment. Multimodal page-text alignment
-requires original MinerU content-list JSON, which lean Markdown/image staging
-omits. The [visual dense retrieval guide](docs/visual-dense-retrieval.md) documents
-inputs, dimensions, per-domain commands, preprocessing, efficiency and smoke tests.
+All run in the default locked environment. Qwen needs no PDF rendering or
+page-level text alignment; lean `markdown.md` + `images/` staging is sufficient.
+Inputs exceeding Qwen's shared 32768-token context fail explicitly without
+silently dropping images or text. Image-only Qwen requires at least one image
+per paper; multimodal papers without images use their full text.
+The old Qwen page/figure profiles have been replaced; rebuild their indexes using
+the new profiles. See the [visual dense retrieval guide](docs/visual-dense-retrieval.md).
 
 ## Discovery and Hub use
 
@@ -466,6 +476,11 @@ opaque native calls show the active phase and elapsed time every 30 seconds.
 ColBERT batches query encoding and shows completed query counts. Evaluation computes
 aggregate and per-query metrics together, with progress for query/metric pairs.
 Cache hits and reused artifacts are explicitly announced.
+
+Index startup prepares the corpus and dataset inventory once. Repeated Hydra
+output-path resolution and the index build reuse that snapshot. After indexing,
+one fresh source scan verifies that inputs did not change; a second fingerprinting
+progress bar in this final verification phase is expected. Image encoding runs once.
 
 Each new stage's `manifest.json` contains a common `performance` section, including
 UTC timestamps, elapsed and process CPU seconds, phase timings, throughput, output
@@ -542,12 +557,12 @@ Run indexing, retrieval and evaluation together with one command per method:
 ./scripts/00_test.sh --test experiment=openclip_pages
 # OpenCLIP figures
 ./scripts/00_test.sh --test experiment=openclip_figures
-# Qwen3-VL pages
-./scripts/00_test.sh --test experiment=qwen3_vl_page
-# Qwen3-VL pages with extracted text
+# Qwen3-VL full document text
+./scripts/00_test.sh --test experiment=qwen3_vl_text
+# Qwen3-VL all images followed by full text
 ./scripts/00_test.sh --test experiment=qwen3_vl_multimodal
-# Qwen3-VL figures
-./scripts/00_test.sh --test experiment=qwen3_vl_figures
+# Qwen3-VL all supplied images
+./scripts/00_test.sh --test experiment=qwen3_vl_images
 ```
 
 `00_test.sh` requires `--test` and stops if any stage fails. It reuses the existing

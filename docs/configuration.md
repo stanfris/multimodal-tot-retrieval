@@ -27,12 +27,12 @@ figure strategies through the same stages; see the [visual dense guide](visual-d
 | `model` | `colbert` | Stanford Indexer/Searcher; fulltext with token truncation |
 | `model` | `visual` | Configuration-only compatibility validation |
 | `model` | `colqwen` | ST 6 MultiVectorEncoder with pinned adapter/base and official processor; persistent Qdrant DOT/MAX_SIM |
-| `model` | `openclip`, `openclip_figures`, `qwen3_vl_page`, `qwen3_vl_multimodal`, `qwen3_vl_figures` | Official single-vector encoders, shared dense FAISS stages and maximum-score document aggregation |
+| `model` | `openclip`, `openclip_figures`, `qwen3_vl_text`, `qwen3_vl_multimodal`, `qwen3_vl_images` | Official encoders and shared dense FAISS stages; Qwen has one vector per paper, OpenCLIP aggregates page/figure scores |
 | `retrieval` | `default` | PyTerrier `Retriever.num_results` / FAISS `Index.search` depth in the existing functions; BM25/dense retrieve; search remains unimplemented |
 | `evaluation` | `default` | `evaluate_run` → `ir_measures.parse_measure` and PyTerrier `Experiment.eval_metrics` |
 | `launcher` | `local_cpu`, `local_gpu` | Path normalization, output guards, model device, PyTorch/FAISS/Terrier threads and Terrier version |
 | `stage` | `prepare`, `index`, `retrieve`, `evaluate`, `search`, `export` | `run_stage` artifact preflight / provenance, then BM25/dense prepare/index/retrieve/evaluate dispatch |
-| `experiment` | `bm25_fulltext`, `dense_passages`, `colbert_fulltext`, `visual_pages`, `colqwen_pages`, `openclip_pages`, `openclip_figures`, `qwen3_vl_page`, `qwen3_vl_multimodal`, `qwen3_vl_figures` | Hydra defaults-list composition; Qwen strategies share checkpoint/query settings |
+| `experiment` | `bm25_fulltext`, `dense_passages`, `colbert_fulltext`, `visual_pages`, `colqwen_pages`, `openclip_pages`, `openclip_figures`, `qwen3_vl_text`, `qwen3_vl_multimodal`, `qwen3_vl_images` | Hydra defaults-list composition; Qwen strategies share checkpoint/query settings |
 
 `model` owns algorithm/library parameters. `representation` owns source content
 and prospective transformations. `retrieval.top_k` owns ranking depth;

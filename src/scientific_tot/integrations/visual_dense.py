@@ -15,7 +15,7 @@ import numpy as np
 from omegaconf import OmegaConf
 
 from scientific_tot.config_arguments import configured_adapter, corpus_arguments
-from scientific_tot.configuration import OPENCLIP_MODELS
+from scientific_tot.configuration import OPENCLIP_MODELS, QWEN_MODELS
 from scientific_tot.data.artifacts import Artifacts
 from scientific_tot.data.validation import DatasetFormatError
 from scientific_tot.integrations.dense import _read_cache, _write_cache
@@ -24,7 +24,25 @@ from scientific_tot.reporting import package_version, phase
 
 
 def document_mapping(corpus, cfg) -> list[dict]:
-    """Preserve page/figure identity; lean images use paths as internal vector keys."""
+    """Qwen indexes papers; OpenCLIP indexes individual pages or supplied images."""
+    if cfg.model.name in QWEN_MODELS:
+        return [
+            {
+                "docno": paper["doc_id"],
+                "doc_id": paper["doc_id"],
+                "domain": paper["domain"],
+                "images": [
+                    {
+                        "figure_id": figure["figure_id"],
+                        "image_path": figure["image"]["path"],
+                        "image_sha256": figure["image_sha256"],
+                    }
+                    for figure in paper["figures"]
+                ],
+                **({"text": paper["text"]} if cfg.model.document_input != "images" else {}),
+            }
+            for paper in corpus
+        ]
     if cfg.model.document_input == "figures":
         return [
             {
@@ -48,11 +66,6 @@ def document_mapping(corpus, cfg) -> list[dict]:
             "docno": page["page_id"],
             "pdf_path": papers[page["doc_id"]]["pdf_path"],
             "pdf_sha256": papers[page["doc_id"]]["pdf_sha256"],
-            **(
-                {"text": papers[page["doc_id"]]["page_texts"][page["page_number"] - 1]}
-                if cfg.model.document_input == "multimodal"
-                else {}
-            ),
         }
         for page in page_mapping(corpus)
     ]
@@ -74,26 +87,16 @@ def visual_corpus_digest(corpus, cfg) -> str:
 
 
 def load_visual_corpus(adapter, cfg) -> Records:
-    """Use original PDFs or supplied images, with explicit MinerU alignment for mixed input."""
+    """Read original Markdown and/or supplied images; only OpenCLIP pages need PDFs."""
     from scientific_tot.reporting import tqdm
 
     strategy = cfg.model.document_input
-    if strategy != "figures":
+    if strategy == "pages":
         from scientific_tot.integrations.colqwen import load_pdf_corpus
 
-        selected = load_pdf_corpus(adapter, cfg)
-        if strategy == "pages":
-            return selected
-        from scientific_tot.integrations.mineru import page_texts
-
-        store = Artifacts(adapter.dataset, tuple(cfg.dataset.domains), archives=True)
-        rows = []
-        for paper in tqdm(selected, desc="Aligning MinerU page text", unit="paper"):
-            paper["page_texts"], paper["page_text_source"] = page_texts(store, paper)
-            rows.append(paper)
-        missing = sum(row["page_text_source"]["pages_without_text"] for row in rows)
-        print(f"Multimodal pages without extracted text: {missing:,}", flush=True)
-        return Records("corpus", rows, selected.report, selected.provenance)
+        return load_pdf_corpus(adapter, cfg)
+    if strategy == "text":
+        return adapter.load_corpus(**corpus_arguments(cfg))
 
     print(
         f"Loading figure metadata: domains={','.join(cfg.dataset.domains)}, "
@@ -119,7 +122,7 @@ def load_visual_corpus(adapter, cfg) -> Records:
             except DatasetFormatError:
                 raise
             except (OSError, ValueError) as exc:
-                if cfg.dataset.missing == "error":
+                if cfg.dataset.missing == "error" or cfg.model.name in QWEN_MODELS:
                     raise ValueError(f"Unusable image for {paper['doc_id']}: {exc}") from exc
                 report.issues.append(
                     Issue(
@@ -129,7 +132,11 @@ def load_visual_corpus(adapter, cfg) -> Records:
                 continue
             figures.append(figure)
         paper["figures"] = figures
-        if not figures:
+        if not figures and strategy == "images":
+            raise ValueError(
+                f"{paper['doc_id']}: image-only document input requires supplied images"
+            )
+        if not figures and strategy == "figures":
             report.issues.append(
                 Issue(
                     "no_visual_elements",
@@ -245,17 +252,44 @@ class QwenEmbeddingEncoder:
         # Probe the official processor with one extra token to detect overflow before
         # process() can silently truncate. This counts expanded image tokens as well
         # as text/template tokens, without moving the preview tensors to the GPU.
-        conversations = [self.model.format_model_input(**row) for row in inputs]
+        conversations = []
+        for row in inputs:
+            images = row.get("images", [])
+            conversation = self.model.format_model_input(
+                image=images[0] if images else None,
+                text=row.get("text"),
+                instruction=row.get("instruction"),
+            )
+            # The official formatter handles one image. Extend its user content
+            # with identically formatted image blocks before the full text block.
+            conversation[1]["content"][1:1] = [
+                self.model.format_model_input(image=image)[1]["content"][0] for image in images[1:]
+            ]
+            conversations.append(conversation)
         limit = self.model.max_length
         try:
             self.model.max_length = limit + 1
             preview = self.model._preprocess_inputs(conversations)
         finally:
             self.model.max_length = limit
-        if (preview["attention_mask"].sum(dim=1) > limit).any():
-            raise ValueError("Qwen input exceeds the shared context budget; refusing truncation")
-        if task == "document" and "pixel_values" not in preview:
-            raise ValueError("Official Qwen preprocessing did not retain the image modality")
+        overflow = preview["attention_mask"].sum(dim=1) > limit
+        if overflow.any():
+            labels = [
+                inputs[i].get("doc_id", f"input {i}") for i in overflow.nonzero().flatten().tolist()
+            ]
+            raise ValueError(
+                f"Qwen input exceeds the shared context budget ({', '.join(labels)}); "
+                "refusing truncation"
+            )
+        image_count = sum(len(row.get("images", [])) for row in inputs)
+        if image_count and (
+            "pixel_values" not in preview
+            or "image_grid_thw" not in preview
+            or len(preview["image_grid_thw"]) != image_count
+        ):
+            raise ValueError(
+                "Official Qwen preprocessing did not retain every image modality input"
+            )
         # Reuse the validated CPU tensors with the official forward/pooling methods.
         # Calling process(inputs) here would repeat image processing and tokenization.
         processed = {key: value.to(self.model.model.device) for key, value in preview.items()}
@@ -289,6 +323,17 @@ def _load_batch(rows, cfg, task, store):
             document = None
             pdf = None
             for row in rows:
+                if cfg.model.name in QWEN_MODELS:
+                    value = {"doc_id": row["doc_id"], "images": []}
+                    # Own decoded images even if a later image fails to decode.
+                    values.append(value)
+                    for image in row["images"]:
+                        data = store.read_bytes(image["image_path"])
+                        with Image.open(BytesIO(data)) as source:
+                            value["images"].append(source.convert("RGB"))
+                    if "text" in row:
+                        value["text"] = row["text"]
+                    continue
                 if cfg.model.get("document_input") == "figures":
                     data = store.read_bytes(row["image_path"])
                     with Image.open(BytesIO(data)) as source:
@@ -304,12 +349,17 @@ def _load_batch(rows, cfg, task, store):
                         pdf = resources.enter_context(pdfium.PdfDocument(row["pdf_path"]))
                     with closing(render_page(pdf, row["page_number"], cfg)) as rendered:
                         image = rendered.copy()
-                values.append({"image": image, **({"text": row["text"]} if "text" in row else {})})
+                values.append({"image": image})
         return values
     except BaseException:
-        for value in values:
-            value["image"].close()
+        _close_images(values)
         raise
+
+
+def _close_images(values):
+    for value in values:
+        for image in value.get("images", [value["image"]] if "image" in value else []):
+            image.close()
 
 
 def prefetched_batches(rows, cfg, task="document", store=None):
@@ -329,14 +379,12 @@ def prefetched_batches(rows, cfg, task="document", store=None):
                     yield start, values
                 finally:
                     if task == "document":
-                        for value in values:
-                            value["image"].close()
+                        _close_images(values)
         finally:
             if pending is not None and not pending.cancel():
                 values = pending.result()
                 if task == "document":
-                    for value in values:
-                        value["image"].close()
+                    _close_images(values)
 
 
 def cached_encoding(cfg, *, task, rows, dataset_revision):
@@ -393,9 +441,17 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
                 Artifacts(
                     configured_adapter(cfg).dataset, tuple(cfg.dataset.domains), archives=True
                 )
-                if task == "document" and cfg.model.document_input == "figures"
+                if task == "document"
+                and cfg.model.document_input in {"figures", "images", "multimodal"}
                 else None
             )
+            if task == "document" and cfg.model.name in QWEN_MODELS:
+                print(
+                    f"Qwen document input={cfg.model.document_input}: {len(rows):,} papers, "
+                    f"{sum(len(row['images']) for row in rows):,} supplied images, "
+                    f"{sum('text' in row for row in rows):,} full texts; one embedding per paper",
+                    flush=True,
+                )
             with phase(f"Encode {task} inputs on {cfg.model.device} ({cfg.model.precision})"):
                 with closing(prefetched_batches(rows, cfg, task, store)) as batches:
                     for start, values in tqdm(
@@ -422,6 +478,13 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
                 "generation_seconds": perf_counter() - started,
                 "units": len(rows),
             }
+            if cfg.model.name in QWEN_MODELS and task == "document":
+                metadata.update(
+                    embedding_level="paper",
+                    document_input=cfg.model.document_input,
+                    supplied_images=sum(len(row["images"]) for row in rows),
+                    full_texts=sum("text" in row for row in rows),
+                )
             if cfg.model.name in OPENCLIP_MODELS and task == "query":
                 metadata.update(
                     truncated_queries=encoder.truncated,
