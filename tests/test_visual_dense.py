@@ -777,3 +777,35 @@ def test_real_checkpoint_stages(tmp_path, visual_dataset, model):
         report = json.loads((run / "manifest.json").read_text())["artifacts"]
         assert report["encoding"]["truncation_proportion"] == 1.0
     assert (evaluated / "metrics.csv").is_file()
+
+
+@pytest.mark.parametrize("model", ["openclip_figures", "qwen3_vl_multimodal"])
+def test_figure_batch_reuses_one_archive_handle(tmp_path, visual_dataset, monkeypatch, model):
+    base = visual_dataset / "preprocessed/ACL"
+    paths = [path for path in base.rglob("*") if path.is_file()]
+    archive_path = base / "shard.tar"
+    with tarfile.open(archive_path, "w") as archive:
+        for path in paths:
+            archive.add(path, arcname=str(path.relative_to(base)))
+            path.unlink()
+    cfg, _ = settings(tmp_path, visual_dataset, "index", None, *overrides(model))
+    adapter = configured_adapter(cfg)
+    corpus = visual_dense.load_visual_corpus(adapter, cfg)
+    rows = visual_dense.document_mapping(corpus, cfg)
+    original = Path.open
+    opened = []
+
+    def tracked(self, *args, **kwargs):
+        stream = original(self, *args, **kwargs)
+        if self == archive_path:
+            opened.append(stream)
+        return stream
+
+    monkeypatch.setattr(Path, "open", tracked)
+    values = visual_dense._load_batch(rows, cfg, "document", adapter.artifacts)
+    try:
+        assert len(opened) == 1
+        assert opened[0].closed
+        assert sum(len(value.get("images", [None])) for value in values) == 4
+    finally:
+        visual_dense._close_images(values)

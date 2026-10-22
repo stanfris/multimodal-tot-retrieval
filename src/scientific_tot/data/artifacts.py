@@ -90,6 +90,9 @@ class Artifacts:
             raise DatasetFormatError(f"{name}: invalid uncompressed TAR: {exc}") from exc
 
     def read_bytes(self, name: str) -> bytes:
+        artifact = self.files.get(name)
+        if artifact is not None and artifact.member is None:
+            return self._local(artifact.file).read_bytes()
         with self.reader() as read:
             return read(name)
 

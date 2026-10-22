@@ -116,7 +116,7 @@ def main() -> None:
             "Usage: scripts/0N_STAGE.sh [--test] [Hydra key=value ...]\n"
             "--test: official test-split documents; isolated ./test/ outputs and caches.\n"
             "Defaults: BM25/fulltext, ACL, all corpus documents, test queries, CPU, top-100.\n"
-            "Examples: scripts/02_index.sh experiment=dense_pages\n"
+            "Examples: scripts/02_index.sh experiment=dense_fulltext\n"
             "          scripts/03_retrieve.sh retrieval.top_k=200\n"
             "          scripts/04_evaluate.sh 'evaluation.metrics=[RR@10,R@100]'"
         )

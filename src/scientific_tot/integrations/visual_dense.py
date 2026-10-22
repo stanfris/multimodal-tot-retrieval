@@ -26,7 +26,11 @@ from scientific_tot.reporting import package_version, phase
 
 def document_mapping(corpus, cfg) -> list[dict]:
     """Qwen indexes papers; OpenCLIP indexes individual pages or supplied images."""
-    if cfg.model.name in QWEN_MODELS:
+    return _document_mapping(corpus, cfg.model.name, cfg.model.document_input)
+
+
+def _document_mapping(corpus, model, strategy):
+    if model in QWEN_MODELS:
         return [
             {
                 "docno": paper["doc_id"],
@@ -38,7 +42,7 @@ def document_mapping(corpus, cfg) -> list[dict]:
                         "pdf_path": paper["pdf_path"],
                         "pdf_sha256": paper["pdf_sha256"],
                     }
-                    if cfg.model.document_input == "pages"
+                    if strategy == "pages"
                     else {
                         "page_count": 0,
                         "images": [
@@ -51,15 +55,11 @@ def document_mapping(corpus, cfg) -> list[dict]:
                         ],
                     }
                 ),
-                **(
-                    {"text": paper["text"]}
-                    if cfg.model.document_input in {"text", "multimodal"}
-                    else {}
-                ),
+                **({"text": paper["text"]} if strategy in {"text", "multimodal"} else {}),
             }
             for paper in corpus
         ]
-    if cfg.model.document_input == "figures":
+    if strategy == "figures":
         return [
             {
                 "docno": f"{quote(paper['doc_id'], safe='')}%p"
@@ -91,10 +91,11 @@ def visual_corpus_digest(corpus, cfg) -> str:
     # Retain the full document collection, including papers with zero visual elements.
     documents = []
     chunks = []
+    model, strategy = cfg.model.name, cfg.model.document_input
     encoder = json.JSONEncoder(ensure_ascii=False, sort_keys=True, allow_nan=False)
     for paper in corpus:
         documents.append({"doc_id": paper["doc_id"], "domain": paper["domain"]})
-        units = document_mapping((paper,), cfg)
+        units = _document_mapping((paper,), model, strategy)
         for unit in units:
             unit.pop("pdf_path", None)
         if units:

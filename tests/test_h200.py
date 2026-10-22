@@ -188,7 +188,7 @@ def test_benchmark_stops_on_failure_and_appends_logs(tmp_path, monkeypatch):
     [
         (["experiment=colqwen_pages"], ".venv-colqwen"),
         (["experiment=colqwen_pages", "model=dense"], "default"),
-        (["experiment=dense_pages", "model=colqwen"], ".venv-colqwen"),
+        (["experiment=dense_fulltext", "model=colqwen"], ".venv-colqwen"),
     ],
 )
 def test_stage_environment_and_offline(arguments, environment):

@@ -113,3 +113,19 @@ def test_readers_have_independent_thread_cursors_and_detect_truncation(tmp_path)
     with pytest.raises(DatasetFormatError, match="truncated TAR member"):
         with store.reader() as read:
             read(member.path)
+
+
+def test_fresh_inventory_rejects_changed_headers_and_duplicate_members(tmp_path):
+    path = archive(tmp_path, "shard", {"paper/markdown.md": b"original"})
+    store = Artifacts(Dataset(local_dir=tmp_path), ("ACL",), archives=True)
+    assert store.read_text("preprocessed/ACL/paper/markdown.md") == "original"
+    with path.open("r+b") as stream:
+        stream.write(b"X")  # Change a header byte without updating its TAR checksum.
+    with pytest.raises(DatasetFormatError, match="invalid uncompressed TAR"):
+        Artifacts(Dataset(local_dir=tmp_path), ("ACL",), archives=True)
+    # Releasing TarInfo objects must not release duplicate-member validation.
+    archive(tmp_path, "shard", {"paper/markdown.md": b"original"})
+    with tarfile.open(path, "a") as output:
+        output.addfile(tarfile.TarInfo("paper/markdown.md"), io.BytesIO(b""))
+    with pytest.raises(DatasetFormatError, match="unsupported/duplicate member"):
+        Artifacts(Dataset(local_dir=tmp_path), ("ACL",), archives=True)

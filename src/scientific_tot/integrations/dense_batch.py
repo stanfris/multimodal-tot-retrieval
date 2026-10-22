@@ -2,7 +2,6 @@
 
 import json
 import shutil
-from contextlib import closing
 from dataclasses import asdict
 from pathlib import Path
 from time import perf_counter
@@ -30,45 +29,12 @@ from scientific_tot.records import Records, Report, records_digest
 from scientific_tot.reporting import phase
 
 
-def load_page_text_corpus(adapter, cfg) -> Records:
-    """Extract text within original PDF page boundaries using the existing PDF loader."""
-    import pypdfium2 as pdfium
-
-    from scientific_tot.integrations.colqwen import load_pdf_corpus, page_id
-    from scientific_tot.reporting import tqdm
-
-    corpus = load_pdf_corpus(adapter, cfg)
-
-    def papers():
-        for paper in tqdm(corpus, desc="Extracting PDF page text", unit="paper"):
-            pages = []
-            with pdfium.PdfDocument(paper["pdf_path"]) as pdf:
-                for number in range(1, len(pdf) + 1):
-                    with closing(pdf[number - 1]) as page, closing(page.get_textpage()) as textpage:
-                        text = textpage.get_text_bounded().strip()
-                    if not text:
-                        raise ValueError(f"{paper['doc_id']}: PDF page {number} contains no text")
-                    pages.append(
-                        {
-                            "page_id": page_id(paper["doc_id"], number),
-                            "doc_id": paper["doc_id"],
-                            "domain": paper["domain"],
-                            "page_number": number,
-                            "text": text,
-                        }
-                    )
-            yield {**paper, "text": "\n\n".join(p["text"] for p in pages), "pages": pages}
-
-    return Records("corpus", papers(), corpus.report, corpus.provenance)
-
-
 def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
     """Encode documents only, reuse verified cached vectors/index, and publish a fresh index."""
     import faiss
 
     require_corpus_settings(cfg, corpus)
     representation = OmegaConf.to_container(cfg.representation, resolve=True)
-    representation.pop("aggregation", None)  # Aggregation affects ranking, not document embeddings.
     visual = cfg.model.name in VISUAL_DENSE_MODELS
     if visual:
         from scientific_tot.integrations.visual_dense import document_mapping
@@ -77,13 +43,6 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         mapping = [
             {"vector_id": row["docno"], "doc_id": row["doc_id"], "domain": row["domain"]}
             for row in documents
-        ]
-    elif cfg.representation.name == "page_text":
-        pages = [page for paper in corpus for page in paper["pages"]]
-        documents = [{"docno": row["page_id"], "text": row["text"]} for row in pages]
-        mapping = [
-            {"vector_id": row["page_id"], "doc_id": row["doc_id"], "domain": row["domain"]}
-            for row in pages
         ]
     else:
         documents = list(inputs.documents)
@@ -157,10 +116,6 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         for name in ("unit-mapping.jsonl", "unit-mapping.jsonl.manifest.json"):
             files[name] = artifact_reference(target / name)
             (target / name).chmod(0o444)
-    elif cfg.representation.name == "page_text":
-        from scientific_tot.integrations.colqwen import pdf_corpus_digest
-
-        corpus_sha256 = pdf_corpus_digest(corpus)
     else:
         corpus_sha256 = records_digest(inputs.documents)
     provenance = {
@@ -185,14 +140,8 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         "encoding": cached["encoding"],
         "versions": cached["configuration"]["versions"],
         "cache": {"documents": str(entry), "document_hit": hit},
-        "aggregation": {"method": "max", "scope": "all_indexed_units"}
-        if cfg.representation.name == "page_text"
-        else None,
+        "aggregation": None,
     }
-    if cfg.representation.name == "page_text":
-        from scientific_tot.reporting import package_version
-
-        provenance["versions"]["pypdfium2"] = package_version("pypdfium2")
     provenance["efficiency"] = {
         "indexed_units": index.ntotal,
         "retrievable_documents": len({row["doc_id"] for row in mapping}),
@@ -284,7 +233,7 @@ def retrieve_dense(cfg, target: Path) -> dict:
         )
     if vectors.shape[1] != index.d:
         raise ValueError("Query embedding dimension differs from the saved FAISS index")
-    page_mode = cfg.representation.name == "page_text" or cfg.model.name in OPENCLIP_MODELS
+    page_mode = cfg.model.name in OPENCLIP_MODELS
     depth = min(cfg.retrieval.top_k, len(ids))
     target_documents = min(cfg.retrieval.top_k, mapping.doc_id.nunique())
     max_depth = depth
@@ -386,9 +335,7 @@ def retrieve_dense(cfg, target: Path) -> dict:
                 "index transfer, vector search and paper aggregation; excludes query encoding"
             ),
         },
-        "aggregation": {"method": "max", "scope": "all_indexed_units"}
-        if page_mode
-        else None,
+        "aggregation": {"method": "max", "scope": "all_indexed_units"} if page_mode else None,
         "ranking_level": "paper",
         "versions": cached["configuration"]["versions"],
     }

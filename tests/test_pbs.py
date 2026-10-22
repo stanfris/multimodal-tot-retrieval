@@ -42,7 +42,7 @@ def submission(tmp_path, monkeypatch):
 @pytest.mark.parametrize("stage", ["prepare", "index", "retrieve", "evaluate"])
 def test_stage_submits_without_loading_sources_or_artifacts(submission, monkeypatch, stage):
     monkeypatch.setattr(stage_cli, "find_artifact", lambda *args: pytest.fail("Login-node I/O"))
-    monkeypatch.setattr(sys, "argv", ["stage", stage, "launcher=h200", "experiment=dense_pages"])
+    monkeypatch.setattr(sys, "argv", ["stage", stage, "launcher=h200", "experiment=dense_fulltext"])
     stage_cli.main()
     args = json.loads((submission / "qsub-args.json").read_text())
     assert args[:6] == ["-N", f"{stage}-dense-ACL", "-P", "gcb50357", "-q", "rt_HG"]
@@ -81,7 +81,7 @@ def test_benchmark_submits_one_worker_for_all_sequential_stages(submission, monk
         [
             "benchmark",
             "launcher=h200",
-            "benchmark.experiments=[bm25_fulltext,dense_pages]",
+            "benchmark.experiments=[bm25_fulltext,dense_fulltext]",
             "benchmark.domains=[ACL,Physics]",
         ],
     )
@@ -89,7 +89,7 @@ def test_benchmark_submits_one_worker_for_all_sequential_stages(submission, monk
     args = json.loads((submission / "qsub-args.json").read_text())
     plan = json.loads((Path(args[-1]).parent / "plan.json").read_text())
     assert plan["command"][3] == "scientific_tot.benchmark"
-    assert "benchmark.experiments=[bm25_fulltext,dense_pages]" in plan["command"]
+    assert "benchmark.experiments=[bm25_fulltext,dense_fulltext]" in plan["command"]
     assert Path(plan["log"]).name == "benchmark.log"
     assert len(list((submission / "results/logs/pbs").glob("*/submission.json"))) == 1
     assert not (submission / "results/indexes").exists()

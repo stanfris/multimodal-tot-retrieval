@@ -62,7 +62,7 @@ def validate(cfg) -> dict:
         if cfg.representation.name == "fulltext":
             markdown = row["metadata"]["paper"].get("markdown_relpath", "markdown.md")
             required.append(f"{directory}/{relative_path(markdown)}")
-        if cfg.representation.name in {"pages", "page_text"}:
+        if cfg.representation.name == "pages":
             required.append(f"pdf_datasets/{row['source_pdf_relpath']}")
         if figures:
             if (

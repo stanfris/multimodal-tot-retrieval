@@ -54,7 +54,6 @@ colbert = [
     "ir-measures>=0.4,<1",
 ]
 dense = [
-    "pypdfium2==5.9.0",
     "faiss-cpu>=1.10,<2",
     "numpy>=1.26,<3",
     "pandas>=2.2,<4",

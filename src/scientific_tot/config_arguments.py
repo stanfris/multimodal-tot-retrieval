@@ -26,11 +26,7 @@ def configured_corpus(cfg: DictConfig, adapter):
     prepared = _prepared_corpus.get()
     if prepared is not None:
         return prepared["corpus"]
-    if cfg.representation.name == "page_text":
-        from scientific_tot.integrations.dense_batch import load_page_text_corpus
-
-        corpus = load_page_text_corpus(adapter, cfg)
-    elif cfg.model.name in VISUAL_DENSE_MODELS:
+    if cfg.model.name in VISUAL_DENSE_MODELS:
         from scientific_tot.integrations.visual_dense import load_visual_corpus
 
         corpus = load_visual_corpus(adapter, cfg)
@@ -151,8 +147,6 @@ def configured_adapter(cfg: DictConfig):
 
 def corpus_arguments(cfg: DictConfig) -> dict:
     representation = cfg.representation.name
-    if representation == "page_text":
-        representation = "pages"
     if representation not in {"fulltext", "title_abstract", "pages", "figures"}:
         raise NotImplementedError(f"representation={cfg.representation.name} is not implemented")
     return {

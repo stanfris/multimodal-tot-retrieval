@@ -36,7 +36,6 @@ BACKENDS = {
 REPRESENTATIONS = {
     "title_abstract": ("text", "original_metadata"),
     "fulltext": ("text", "original_extracted_text"),
-    "page_text": ("text", "original_pdf_page_text"),
     "figures": ("image", "original_extracted_figures"),
     "pages": ("image", "original_pdf_pages"),
 }
@@ -280,8 +279,6 @@ def _validate(cfg: DictConfig) -> None:
         )
     if rep.name == "figures":
         _require(type(rep.include_captions) is bool, "include_captions must be boolean")
-    if rep.name == "page_text":
-        _require(model.name == "dense", "Page text requires model=dense")
     if rep.name == "pages":
         _require(rep.rendering.library == "pypdfium2", "Unsupported page rendering library")
         _require(
