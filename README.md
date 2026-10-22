@@ -505,7 +505,7 @@ export TOT_TEST_ROOT=./test
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `TOT_DATA_ROOT` | `./data` | Read-only dataset inputs |
+| `TOT_DATA_ROOT` | `./data` (Hydra launcher), `${VTT_DATA_ROOT:-../multimodal-tip-of-tongue-for-scientific-papers/data}` (stage scripts via `scripts/defaults.sh`) | Read-only dataset inputs |
 | `TOT_CACHE_ROOT` | `./cache` | Normal-run dataset/model/embedding caches; script uv cache defaults to `${TOT_CACHE_ROOT}/uv` |
 | `TOT_OUTPUT_ROOT` | `./results` | Normal-run prepared/index/retrieval/evaluation artifacts |
 | `TOT_TEST_ROOT` | `./test` | Isolated test mode's `cache/` and `results/`; overrides normal application cache/output roots |
