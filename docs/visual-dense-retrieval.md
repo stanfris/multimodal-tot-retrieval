@@ -1,16 +1,20 @@
 # OpenCLIP and Qwen3-VL-Embedding retrieval
 
-Five zero-shot profiles share Hydra stages, FAISS persistence, embedding caches,
+Six zero-shot profiles share Hydra stages, FAISS persistence, embedding caches,
 the TREC writer and saved-run evaluation. All use the original textual ToT queries
 and the selected paper collection independently for each scientific domain.
+
+For the complete 11-method comparison, dataset requirements and separate stage
+commands for every core method, see the [benchmark reference](benchmark.md).
 
 | Model profile / experiment | Document input | Indexed unit | Dimensions |
 | --- | --- | --- | --- |
 | `openclip` / `openclip_pages` | Rendered original PDF page | Page | 512 |
 | `openclip_figures` | Individual supplied figure/table image | Image | 512 |
-| `qwen3_vl_images` | All supplied images in one joint input | Paper | 2048 |
+| `qwen3_vl_pages` | All rendered PDF pages together, in page order | Paper | 2048 |
 | `qwen3_vl_text` | Full original Markdown text | Paper | 2048 |
-| `qwen3_vl_multimodal` | All supplied images, then full Markdown text, in one joint input | Paper | 2048 |
+| `qwen3_vl_figures` | All extracted figure/table images together | Paper | 2048 |
+| `qwen3_vl_multimodal` | All extracted figure/table images, then full Markdown text, in one joint input | Paper | 2048 |
 
 ## Models and inputs
 
@@ -28,29 +32,39 @@ Qwen profiles share `Qwen/Qwen3-VL-Embedding-2B` at
 `9f2f7e710d6d81056aa5c0a4f04764fec6bb7bda`. The pinned checkpoint's official
 `Qwen3VLEmbedder` provides image blocks, chat templates, preprocessing, forward
 inference and last-token pooling. Multiple image blocks are put in the same user
-message in dataset order. In multimodal mode the complete Markdown text follows
-the last image. One forward input and one normalized embedding represent each
+message in source order (PDF page order for the pages profile). In multimodal
+mode the complete Markdown text follows the last extracted figure image. One forward input and one normalized embedding represent each
 paper; images are never independently embedded and averaged.
 See the [official implementation](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B/blob/main/scripts/qwen3_vl_embedding.py).
 
-Text comes from the adapter's original `markdown.md` full-text representation,
-exactly as for BM25/E5 full text. No page matching, content-list JSON, PDF rendering,
-chunking, summarization or repeated text per image is required for Qwen.
-Images are the supplied extracted figures/tables, including lean `images/`
-staging; restored files and TAR archives work. Text-only Qwen does not read images,
-and image-only Qwen does not read Markdown. Source paths and hashes for every
-image and the complete text are included in document cache identity.
+The four Qwen modes have distinct document inputs:
 
-Qwen image-only inputs require at least one supplied image per paper, otherwise
-indexing fails with the paper ID. Multimodal papers with no images encode their
-full text. Missing or unusable selected Qwen images fail explicitly, so an input
-cannot silently become a subset of the paper's images. The existing OpenCLIP
-figures missing policy is unchanged: papers without images stay in evaluation
-but receive no vector, and explicit `dataset.missing=skip` can exclude unusable images.
+- `text` reads the full original `markdown.md`, exactly as for BM25/E5 full text.
+- `figures` reads every supplied extracted figure/table image, including lean
+  `images/` staging and restored/TAR artifacts. No text is added.
+- `pages` renders every original PDF page with the existing PDFium renderer
+  (`representation.rendering.scale=2.0`) and supplies all pages together, in order.
+  No extracted text or figures are added.
+- `multimodal` uses the same extracted images as `figures`, followed by the same
+  full original Markdown as `text`, in one joint input. It does not render PDFs.
+
+Only pages needs original PDFs. Only text and multimodal need Markdown. No mode
+combines rendered pages with text, and no page-text alignment, content-list JSON,
+chunking or summarization is required. Source image/PDF hashes, page counts,
+rendering settings and full text enter cache/index identity as applicable.
+Figure-only Qwen requires at least one supplied figure per paper; otherwise it
+fails explicitly. Multimodal papers without figures encode their full text.
+Missing referenced Qwen figures fail rather than silently dropping image inputs.
+Missing/corrupt PDFs follow the shared PDF loader's explicit missing policy;
+test mode requires the complete test split without skipped papers.
+
+The OpenCLIP figures missing policy is unchanged: papers without supplied images
+stay in evaluation but receive no vector, and explicit `dataset.missing=skip`
+can exclude unusable images.
 
 All Qwen queries use `Retrieve images or text relevant to the user's query.`
 Original query strings are supplied without rewriting; their embeddings are
-shared across the three profiles.
+shared across the four profiles.
 The shared context budget is 32768 tokens, including image tokens, text and the
 chat template. All available input is supplied to the official processor, which
 runs once with right-side truncation at `model.max_length`. Images precede text,
@@ -76,9 +90,9 @@ Install with `uv sync --locked`. New direct dependencies are `open-clip-torch`
 extra is available for library consumers. The ColQwen Transformers 5 environment
 remains separate.
 
-The following executes indexing, retrieval, and evaluation for all five
-configurations independently per domain. Each experiment selects the existing
-MRR@10 (`RR@10`), Recall@1/10/100 and NDCG@10 metrics. The test query split
+The following executes indexing, retrieval, and evaluation for all six
+configurations independently per domain. The shared evaluation defaults report
+MRR@10 (`RR@10`), Recall@1/10/100 and NDCG@10. The test query split
 retains all available corpus documents as distractors.
 
 ```sh
@@ -87,7 +101,7 @@ export TOT_DATA_ROOT=/your/restored/data
 for domain in ACL Biology Engineering Medicine Physics; do
   export TOT_OUTPUT_ROOT="./results/$domain"
 
-  for experiment in openclip_pages openclip_figures qwen3_vl_text qwen3_vl_multimodal qwen3_vl_images; do
+  for experiment in openclip_pages openclip_figures qwen3_vl_text qwen3_vl_figures qwen3_vl_pages qwen3_vl_multimodal; do
     ./scripts/02_index.sh "experiment=$experiment" split=test "dataset.domains=[$domain]"
     ./scripts/03_retrieve.sh "experiment=$experiment" split=test "dataset.domains=[$domain]"
     ./scripts/04_evaluate.sh "experiment=$experiment" split=test "dataset.domains=[$domain]"
@@ -105,10 +119,12 @@ For one domain/configuration, for example:
 ```
 
 Replace the experiment value with `openclip_pages`, `openclip_figures`, `qwen3_vl_text`, or
-`qwen3_vl_images` to run the others. Preparation is optional, using
+`qwen3_vl_pages` or `qwen3_vl_figures` to run the others. Preparation is optional, using
 `./scripts/01_prepare.sh` with the same experiment and domain overrides. Direct
 `model=...` overrides also choose the appropriate representation, while the
-experiment profiles additionally select the benchmark metrics.
+experiment profiles additionally select the index stage. Metrics come from the
+shared `evaluation=default` profile, which includes RR@10, R@1, R@10, R@100 and
+nDCG@10; the experiments do not override them.
 
 CUDA is the default. OpenCLIP uses `model.precision=fp32`; Qwen uses `bf16` with
 Transformers SDPA. Supported precision settings are `fp32`, `fp16`, and `bf16`;
@@ -122,9 +138,10 @@ All Qwen profiles inherit their shared settings from `config/model/qwen3_vl_text
 Indexes live under the existing `indexes/`, retrieval artifacts under `models/`,
 and metrics under `evaluations/`. Distinct model names, strategies and content
 hashes prevent index collisions. `unit-mapping.jsonl` records each vector's paper
-and its complete text/image inputs for Qwen, or its page/image source for OpenCLIP.
-The former `qwen3_vl_page` and `qwen3_vl_figures` profiles are removed; rebuild
-indexes with the new profiles. Old page-level multimodal indexes are incompatible.
+and its source PDF/page count or extracted image paths/hashes and full text for
+Qwen, or its page/image source for OpenCLIP.
+Rebuild Qwen indexes with the matching mode; document inputs and artifact identity
+separate text, figures, pages and multimodal outputs.
 Weights and embeddings stay under shared `cache/models/` and
 `cache/embeddings/`. Completed caches/indexes reload without document encoding.
 Interrupted encoding is not resumable, matching the existing dense workflow.
@@ -142,7 +159,7 @@ complete score ties at the cutoff, then takes maximum scores per paper.
 The index manifest records indexed units, retrievable papers, papers without
 units, FAISS file size and original embedding generation time. Retrieval manifests
 record search seconds and seconds per query. Qwen document encoding also reports
-paper-level embeddings, input mode, total supplied images and full-text counts.
+paper-level embeddings, input mode, rendered-page, supplied-figure and full-text counts.
 These resource measurements remain separate from effectiveness metrics; they are not a
 full-corpus performance benchmark. Exact FAISS still computes inner products
 against all vectors, and the flat index resides in RAM. Unlike ColQwen, each unit
@@ -160,7 +177,7 @@ uv run pytest -m visual_live tests/test_visual_dense.py
 Offline tests exercise PDFium rendering, multi-image papers, original full text,
 FAISS persistence, complete Hydra stages, saved-run evaluation and cache reuse
 with mocked neural inference. They verify one Qwen vector per paper, all-images-
-before-text ordering, image retention, token-limit truncation, missing-image behavior,
+before-text ordering, image retention, token-limit truncation, PDF identity and missing-PDF behavior,
 separate document indexes, shared queries and isolated test-mode execution.
 
 Some macOS PyTorch/FAISS wheels bundle different OpenMP runtimes. The local test
@@ -174,26 +191,20 @@ DYLD_LIBRARY_PATH="$PWD/.venv/lib/python3.11/site-packages/torch/lib" \
 The intended execution setup is CUDA/Linux. CPU fixture results do not establish
 GPU compatibility or full-corpus throughput.
 
-Executed validation on 2026-10-22:
+Executed validation for the four-mode configuration (2026-10-22):
 
-- Full offline suite: **510 passed, 8 skipped, 12 deselected**.
-- Real pinned Qwen checkpoint, CPU float32: **3 passed** (images, text and
-  multimodal), with indexing, retrieval and evaluation for each profile.
-- Each live Qwen index contained **2 paper vectors for 2 papers**. Image inputs
-  retained all 4 supplied images; text inputs retained both original full texts.
-  Retrieval reported no aggregation for any Qwen profile.
-- All **24** Qwen stage-script dry runs passed (prepare/index/retrieve/evaluate,
-  normal and isolated test modes). Ruff lint/format, lock validation and Git
-  whitespace checks passed.
+- Full offline suite: **524 passed, 8 skipped, 14 deselected**.
+- Real pinned checkpoint on CPU float32: **5 passed**, covering all four
+  index/retrieve/evaluate pipelines and prefix truncation at 256 tokens.
+- Each Qwen live index held **2 vectors for 2 papers**. Pages supplied all
+  4 rendered pages; figures and multimodal supplied all 4 extracted images.
+  Text and multimodal supplied both full texts, and queries shared their cache.
+- All four isolated 110-paper Qwen pipelines passed. Each had one vector per
+  paper; the pages fixture included a positive paper with two pages.
+- All **32** stage-script dry runs passed (four profiles, four stages, normal and
+  isolated test modes). Ruff lint/format, lock and Git whitespace checks passed.
 
-Right-truncation follow-up: **262 targeted offline tests passed**, plus a real
-CPU checkpoint test at a 256-token limit. That test retained every image,
-kept the text prefix, removed its suffix, produced one normalized vector per
-paper and also truncated a long query successfully.
-
-The historical page-level Qwen smoke measurements do not apply to these
-whole-document profiles. CUDA/bfloat16 inference and full-corpus throughput have
-not been exercised locally.
+CUDA/bfloat16 throughput has not been measured locally.
 
 ### Implementation files
 
@@ -210,7 +221,7 @@ query embeddings, preserves independent figure indexes, and needs no new depende
   and safe binary access to existing restored/TAR artifacts.
 - `configuration.py`, `artifact_identity.py`, `config_artifacts.py`, `hydra_run.py`,
   `stage_cli.py`, `stages.py`: profile validation, provenance and stage integration.
-- Five `config/model/` profiles and five matching `config/experiment/` profiles;
+- Six `config/model/` profiles and six matching `config/experiment/` profiles;
   `config/representation/figures.yaml` now has execution support.
 - `scripts/01_prepare.sh` through `04_evaluate.sh`: portable empty-array expansion
   for macOS Bash, preserving existing arguments and ColQwen environment selection.

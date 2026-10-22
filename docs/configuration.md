@@ -7,13 +7,18 @@ Validation needs only core dependencies and neither discovers data nor loads mod
 The [profile audit](configuration-audit.md) traces every YAML profile and records
 all differences from the existing implementations.
 
+The [benchmark reference and runbook](benchmark.md) lists all 11 core methods,
+their checkpoints, document inputs, indexed units, token limits and hardware
+requirements, plus separate stage commands and additional supported configurations.
+
 BM25 and dense `prepare`, `index`, `retrieve`, and `evaluate` execute with
 `fulltext` or `title_abstract`; dense also supports `passages`. `search`, `export`,
 and the legacy Byaldi profile remain unimplemented. Existing BM25/dense
 tutorial functions and scripts remain executable with their established defaults.
 ColBERT executes the same four stages with `fulltext`. ColQwen executes them with
-original PDF `pages`. OpenCLIP and Qwen support page, page-plus-text and extracted
-figure strategies through the same stages; see the [visual dense guide](visual-dense-retrieval.md).
+original PDF `pages`. OpenCLIP supports pages and extracted figures. Qwen supports
+text, figures, pages and multimodal (figures plus text), with one vector per paper.
+All use the same stages; see the [visual dense guide](visual-dense-retrieval.md).
 
 ## Ownership and consumers
 
@@ -22,17 +27,17 @@ figure strategies through the same stages; see the [visual dense guide](visual-d
 | `dataset` | `default`, `hub` | `configured_adapter` → existing `Dataset` / `DatasetAdapter`; configured Hub downloads supported; artifact relocation unsupported |
 | `split` | `all`, `train`, `test`, `train+test` | `corpus_arguments` / `query_arguments` → adapter selection |
 | `representation` | `fulltext`, `title_abstract` | `corpus_arguments` → `DatasetAdapter.load_corpus`; original content is preserved |
-| `representation` | `passages`, `figures`, `pages` | Dense passages use LangChain/PyTerrier; page rendering uses PDFium; Qwen figures use supplied extracted images |
+| `representation` | `passages`, `figures`, `pages` | Dense passages use LangChain/PyTerrier; page rendering uses PDFium; Qwen pages groups all rendered pages; figures groups extracted images; multimodal groups figures and full text |
 | `model` | `bm25`, `dense` | `bm25_arguments` / `dense_arguments` → existing optional integration functions when passed `settings=cfg` |
 | `model` | `colbert` | Stanford Indexer/Searcher; fulltext with token truncation |
 | `model` | `visual` | Configuration-only compatibility validation |
 | `model` | `colqwen` | ST 6 MultiVectorEncoder with pinned adapter/base and official processor; persistent Qdrant DOT/MAX_SIM |
-| `model` | `openclip`, `openclip_figures`, `qwen3_vl_text`, `qwen3_vl_multimodal`, `qwen3_vl_images` | Official encoders and shared dense FAISS stages; Qwen has one vector per paper, OpenCLIP aggregates page/figure scores |
+| `model` | `openclip`, `openclip_figures`, `qwen3_vl_text`, `qwen3_vl_multimodal`, `qwen3_vl_pages`, `qwen3_vl_figures` | Official encoders and shared dense FAISS stages; Qwen has one vector per paper, OpenCLIP aggregates page/figure scores |
 | `retrieval` | `default` | PyTerrier `Retriever.num_results` / FAISS `Index.search` depth in the existing functions; BM25/dense retrieve; search remains unimplemented |
 | `evaluation` | `default` | `evaluate_run` → `ir_measures.parse_measure` and PyTerrier `Experiment.eval_metrics` |
 | `launcher` | `local_cpu`, `local_gpu` | Path normalization, output guards, model device, PyTorch/FAISS/Terrier threads and Terrier version |
 | `stage` | `prepare`, `index`, `retrieve`, `evaluate`, `search`, `export` | `run_stage` artifact preflight / provenance, then BM25/dense prepare/index/retrieve/evaluate dispatch |
-| `experiment` | `bm25_fulltext`, `dense_passages`, `colbert_fulltext`, `visual_pages`, `colqwen_pages`, `openclip_pages`, `openclip_figures`, `qwen3_vl_text`, `qwen3_vl_multimodal`, `qwen3_vl_images` | Hydra defaults-list composition; Qwen strategies share checkpoint/query settings |
+| `experiment` | `bm25_fulltext`, `dense_passages`, `colbert_fulltext`, `visual_pages`, `colqwen_pages`, `openclip_pages`, `openclip_figures`, `qwen3_vl_text`, `qwen3_vl_multimodal`, `qwen3_vl_pages`, `qwen3_vl_figures` | Hydra defaults-list composition; `visual_pages` is configuration-only; Qwen strategies share checkpoint/query settings |
 
 `model` owns algorithm/library parameters. `representation` owns source content
 and prospective transformations. `retrieval.top_k` owns ranking depth;
@@ -40,7 +45,9 @@ and prospective transformations. `retrieval.top_k` owns ranking depth;
 counts, and JVM version live in `launcher`. `launcher` is an application group,
 independent of Hydra's `hydra/launcher` plugin group. No scheduler dispatch is added.
 A model's interpolated `device` is its external-library argument and must match
-`launcher.device`; CPU FAISS and Terrier do not become GPU backends.
+`launcher.device`. Terrier uses CPU; shared FAISS search has its own
+`retrieval.search_device` selector and requires a GPU-enabled FAISS installation
+for CUDA search. The locked environment supplies `faiss-cpu`.
 
 ## Composition and overrides
 
@@ -91,7 +98,7 @@ job's current retrieval settings. Index and search jobs do not run metric comput
 export TOT_DATA_ROOT=/your/existing/restored/data
 export TOT_CACHE_ROOT=/your/cache/scientific-tot
 export TOT_OUTPUT_ROOT=/your/experiments/scientific-tot
-uv run scientific-tot dry_run=true launcher=local_gpu experiment=visual_pages
+uv run scientific-tot dry_run=true experiment=openclip_pages
 ```
 
 There is no committed DGX03 path. Local data is read in place, with downloads
@@ -179,9 +186,9 @@ resolved to immutable commits and pinned for the actual build.
 
 | Stage | Inputs and intended output | Current boundary |
 | --- | --- | --- |
-| `prepare` | Selected corpus/queries → `corpus.jsonl`, `queries.jsonl`, `qrels.jsonl` with coverage/provenance sidecars | BM25/dense text representations supported; every positive validated |
-| `index` | Corpus → `results/indexes/<index-id>` or explicit `paths.index` | Persistent Terrier or FAISS index; existing destinations skipped |
-| `retrieve` | Verified `paths.index` + batch queries → `run.trec`, `topics.jsonl`, `qrels.tsv`, `query-ids.jsonl`, `corpus-ids.jsonl` | BM25/dense batch retrieval; canonical paper IDs and artifact hashes |
+| `prepare` | Selected corpus/queries → `corpus.jsonl`, `queries.jsonl`, `qrels.jsonl` with coverage/provenance sidecars | All core methods; every positive validated; applicable page/unit/passage mappings included |
+| `index` | Corpus → `results/indexes/<index-id>` or explicit `paths.index` | Persistent Terrier, FAISS, ColBERT or Qdrant files; reuse behavior depends on backend |
+| `retrieve` | Verified `paths.index` + batch queries → `run.trec`, `topics.jsonl`, `qrels.tsv`, `query-ids.jsonl`, `corpus-ids.jsonl` | All core methods; canonical paper IDs and artifact hashes |
 | `evaluate` | Completed retrieval `paths.run` → aggregate/per-query metrics | Saved artifact/configuration validation; ir_measures aggregate/per-query metrics |
 | `search` | Verified `paths.index` + required `stage.query` → ad hoc ranking | Index verification wired; interactive execution unimplemented |
 | `export` | Canonical records → record artifacts | Unimplemented |
@@ -357,8 +364,12 @@ This exact aggregation can be expensive for large passage collections.
 `model=dense` selects `launcher=local_gpu` by default and requires CUDA for
 encoding. CPU/MPS encoding is rejected, and unavailable CUDA raises an error
 even when embeddings are cached. Saved-run evaluation does not require CUDA.
-FAISS remains the existing CPU `IndexFlatIP`; no GPU
-FAISS implementation is introduced. Local model-path loading remains unsupported
+Indexes persist as CPU-format `IndexFlatIP`. Shared Hydra retrieval uses
+`retrieval.search_device=auto` to select CUDA when GPU FAISS is installed and
+available, otherwise CPU; `cpu` forces CPU and `cuda` rejects unavailable GPU
+FAISS. Depths over 2048 still use exact CPU search, including exhaustive passage
+rankings and expanded visual cutoff ties. The locked environment installs
+`faiss-cpu`; CUDA encoding alone does not enable CUDA search. Local model-path loading remains unsupported
 by the existing revision resolver. Standalone combined tutorial functions retain
 their established behavior; passage execution uses the separate Hydra stages.
 
