@@ -163,6 +163,12 @@ qsub -I -P "${VTT_PBS_PROJECT:-gcb50357}" -q "${VTT_PBS_QUEUE:-rt_HG}" \
 ./scripts/setup_h200.sh
 ```
 
+The setup script and every `launcher=h200` PBS job source
+`scripts/h200_environment.sh`. It initializes ABCI Environment Modules, unloads
+any selected CUDA module, and loads `cuda/13.0/13.0.1`, matching the locked
+PyTorch CUDA 13.0 runtime. You do not need to load CUDA manually before submission.
+See the [ABCI module documentation](https://docs.abci.ai/v3/en/environment-modules/).
+
 The setup checks Linux, installed Python 3.11, uv, the NVIDIA driver and memory,
 then installs **both locked environments**, without updating `uv.lock` or individual
 packages. It checks installed dependency constraints and imports, performs a small
@@ -175,11 +181,13 @@ The Torch wheel's CUDA runtime does not include `nvcc`. If compilation fails, lo
 a toolkit/compiler compatible with the printed `torch.version.cuda`, then rerun
 with `COLBERT_LOAD_TORCH_EXTENSION_VERBOSE=True`. Set `MAX_JOBS=2` to bound compiler
 workers. Do not repair compatibility errors by upgrading Torch or Transformers.
-ColBERT index/retrieve runs now resolve `CUDA_HOME`, `CUDA_PATH`, or `nvcc` on
+ColBERT index/retrieve runs resolve `CUDA_HOME`, `CUDA_PATH`, or `nvcc` on
 `PATH` and compile/load the extensions before reading the corpus. PBS submissions
-preserve both toolkit variables. If your toolkit is not on `PATH`, export its
-installation root before submitting, or pass
-`+launcher.environment.CUDA_HOME=/path/to/cuda` with `launcher=h200`. The root must
+preserve both toolkit variables, then load the ABCI toolkit. For a custom PBS
+toolkit setup, set `launcher.setup_script=/absolute/path/to/setup.sh`, or disable
+initialization with `launcher.setup_script=null` and export the toolkit environment
+before submitting. You can also pass
+`+launcher.environment.CUDA_HOME=/path/to/cuda` with initialization disabled. The root must
 contain `bin/nvcc`; a PyTorch runtime directory is insufficient. An explicitly
 configured invalid toolkit or a different CUDA major version fails immediately.
 The unchanged lock currently selects Torch 2.14.1; Linux CUDA runtime and driver

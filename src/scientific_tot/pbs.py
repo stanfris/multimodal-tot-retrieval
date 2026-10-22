@@ -103,6 +103,7 @@ def submit(cfg, arguments: list[str], *, name: str, colqwen: bool = False) -> No
             f"export PYTHONPATH={shlex.quote(str(ROOT / 'src'))}${{PYTHONPATH:+:$PYTHONPATH}}",
             "unset UV_PROJECT_ENVIRONMENT TOT_DATA_REVISION",
             *[f"export {key}={shlex.quote(str(value))}" for key, value in environment.items()],
+            *([f"source {shlex.quote(launcher.setup_script)}"] if launcher.setup_script else []),
             "export TOT_PBS_WORKER=1 UV_NO_SYNC=1",
             "exec " + shlex.join(worker),
             "",

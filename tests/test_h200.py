@@ -21,6 +21,31 @@ EXPERIMENTS = sorted(
 )
 
 
+@pytest.mark.parametrize("failed_command", ["", "unload", "load"])
+def test_abci_toolkit_initialization(failed_command):
+    # Mock the cluster's module initialization while executing the real shared script.
+    result = subprocess.run(
+        [
+            "bash",
+            "-ec",
+            'source() { echo "init:$1"; }; '
+            f'failed_command={failed_command!r}; '
+            'module() { echo "module:$*"; [[ "$1" != "$failed_command" ]]; }; '
+            'builtin source scripts/h200_environment.sh; echo ready',
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    expected = ["init:/etc/profile.d/modules.sh", "module:unload cuda"]
+    if failed_command != "unload":
+        expected.append("module:load cuda/13.0/13.0.1")
+    if not failed_command:
+        expected.append("ready")
+    assert result.stdout.splitlines() == expected
+    assert result.returncode == bool(failed_command)
+
+
 @pytest.mark.parametrize("launcher", ["local_cpu", "local_gpu", "h200"])
 @pytest.mark.parametrize("test_mode", [False, True])
 @pytest.mark.parametrize("experiment", EXPERIMENTS)

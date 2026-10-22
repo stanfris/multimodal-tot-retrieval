@@ -4,6 +4,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source scripts/defaults.sh
 
 [[ "$(uname -s)" == Linux ]] || { echo 'H200 setup requires Linux.' >&2; exit 1; }
+source scripts/h200_environment.sh
 command -v uv >/dev/null || { echo 'Install uv before running this script.' >&2; exit 1; }
 command -v nvidia-smi >/dev/null || { echo 'nvidia-smi is missing; load/install the NVIDIA driver.' >&2; exit 1; }
 uv --version

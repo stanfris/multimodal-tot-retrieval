@@ -3,6 +3,7 @@ defaults:
   - _self_
 
 kind: pbs
+setup_script: scripts/h200_environment.sh
 project: ${oc.env:VTT_PBS_PROJECT,gcb50357}
 queue: ${oc.env:VTT_PBS_QUEUE,rt_HG}
 gpus: 1

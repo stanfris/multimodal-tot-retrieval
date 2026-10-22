@@ -244,6 +244,10 @@ def _validate(cfg: DictConfig) -> None:
         )
         for key in ("log_root", "python", "colqwen_python"):
             _require(_text(launcher[key]), f"launcher.{key} must be a nonempty path")
+        _require(
+            launcher.setup_script is None or _text(launcher.setup_script),
+            "launcher.setup_script must be a nonempty path or null",
+        )
         _require(OmegaConf.is_dict(launcher.environment), "launcher.environment must be a mapping")
         for key, value in launcher.environment.items():
             _require(

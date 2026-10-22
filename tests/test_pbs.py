@@ -53,6 +53,8 @@ def test_stage_submits_without_loading_sources_or_artifacts(submission, monkeypa
     script = Path(args[-1])
     body = script.read_text()
     assert "export CUDA_PATH=/opt/cuda" in body
+    assert "source scripts/h200_environment.sh" in body
+    assert body.index("export CUDA_PATH=") < body.index("source scripts/h200_environment.sh")
     assert "export TORCH_CUDA_ARCH_LIST=9.0" in body
     plan = json.loads((script.parent / "plan.json").read_text())
     assert plan["command"][3:5] == ["scientific_tot.stage_cli", stage]
@@ -174,6 +176,7 @@ def test_pbs_worker_runs_real_offline_bm25_chain(submission, monkeypatch):
         [
             "benchmark",
             "launcher=h200",
+            "launcher.setup_script=null",
             "benchmark.experiments=[bm25_fulltext]",
             "benchmark.domains=[ACL]",
             "launcher.threads.indexing=1",
@@ -211,7 +214,11 @@ def test_pbs_worker_runs_real_offline_bm25_chain(submission, monkeypatch):
 
 
 def test_standalone_worker_failure_is_in_stage_log(submission, monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["stage", "index", "launcher=h200"])
+    setup = submission / "custom setup.sh"
+    setup.write_text("export CUDA_HOME=/custom/cuda\necho toolkit=$CUDA_HOME\n")
+    monkeypatch.setattr(
+        sys, "argv", ["stage", "index", "launcher=h200", f"launcher.setup_script={setup}"]
+    )
     stage_cli.main()
     args = json.loads((submission / "qsub-args.json").read_text())
     script = Path(args[-1])
@@ -224,6 +231,7 @@ def test_standalone_worker_failure_is_in_stage_log(submission, monkeypatch):
         timeout=30,
     )
     assert result.returncode != 0
+    assert "toolkit=/custom/cuda" in result.stdout
     log = (script.parent / "index.log").read_text()
     assert "worker started" in log
     assert "Traceback" in log and "Dataset root does not exist" in log
@@ -262,6 +270,7 @@ def test_worker_flag_requires_scheduler_allocation(monkeypatch):
         "launcher.memory=invalid",
         "launcher.walltime=bad",
         "launcher.queue='queue\\nextra'",
+        "launcher.setup_script=false",
     ],
 )
 def test_invalid_scheduler_resources_fail_before_submission(override):
