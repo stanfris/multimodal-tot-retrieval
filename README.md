@@ -560,7 +560,7 @@ Repeat any model/representation/encoding overrides consistently at all stages.
 The scripts discover compatible saved artifacts and print the paths selected.
 
 ```sh
-# 1. BM25 fulltext
+# BM25 fulltext
 ./scripts/02_index.sh experiment=bm25_fulltext split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh experiment=bm25_fulltext split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=bm25_fulltext split=test 'dataset.domains=[ACL]'
@@ -575,37 +575,32 @@ The scripts discover compatible saved artifacts and print the paths selected.
 ./scripts/03_retrieve.sh experiment=colbert_fulltext split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=colbert_fulltext split=test 'dataset.domains=[ACL]'
 
-# 4. ColQwen pages (scripts automatically select .venv-colqwen)
+# ColQwen pages (scripts automatically select .venv-colqwen)
 ./scripts/02_index.sh experiment=colqwen_pages split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh experiment=colqwen_pages split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=colqwen_pages split=test 'dataset.domains=[ACL]'
 
-# 5. OpenCLIP pages
-./scripts/02_index.sh experiment=openclip_pages split=test 'dataset.domains=[ACL]'
-./scripts/03_retrieve.sh experiment=openclip_pages split=test 'dataset.domains=[ACL]'
-./scripts/04_evaluate.sh experiment=openclip_pages split=test 'dataset.domains=[ACL]'
-
-# 6. OpenCLIP figures
+# OpenCLIP figures
 ./scripts/02_index.sh experiment=openclip_figures split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh experiment=openclip_figures split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=openclip_figures split=test 'dataset.domains=[ACL]'
 
-# 7. Qwen text
+# Qwen text
 ./scripts/02_index.sh experiment=qwen3_vl_text split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh experiment=qwen3_vl_text split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=qwen3_vl_text split=test 'dataset.domains=[ACL]'
 
-# 8. Qwen figures
+# Qwen figures
 ./scripts/02_index.sh experiment=qwen3_vl_figures split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh experiment=qwen3_vl_figures split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=qwen3_vl_figures split=test 'dataset.domains=[ACL]'
 
-# 9. Qwen pages
+# Qwen pages
 ./scripts/02_index.sh experiment=qwen3_vl_pages split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh experiment=qwen3_vl_pages split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=qwen3_vl_pages split=test 'dataset.domains=[ACL]'
 
-# 10. Qwen multimodal
+# Qwen multimodal
 ./scripts/02_index.sh experiment=qwen3_vl_multimodal split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh experiment=qwen3_vl_multimodal split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=qwen3_vl_multimodal split=test 'dataset.domains=[ACL]'
