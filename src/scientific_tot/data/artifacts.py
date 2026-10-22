@@ -27,9 +27,11 @@ class Artifacts:
     def __init__(self, dataset: Dataset, domains: tuple[str, ...], *, archives: bool) -> None:
         self.dataset = dataset
         self.files: dict[str, Artifact] = {}
+        self.images: dict[str, list[str]] = {}
         self.used: dict[str, Path] = {}
-        paths = [f.path for f in dataset.discover().files]
-        for name in paths:
+        self._archive_paths: dict[str, str] = {}
+        for item in dataset.discover().files:
+            name = item.path
             parts = name.split("/")
             if len(parts) < 3 or parts[0] != "preprocessed" or parts[1] not in domains:
                 continue
@@ -48,6 +50,9 @@ class Artifacts:
         if artifact.path in self.files:
             raise DatasetFormatError(f"Duplicate extracted artifact: {artifact.path}")
         self.files[artifact.path] = artifact
+        if "/images/" in artifact.path:
+            directory = artifact.path.split("/images/", 1)[0]
+            self.images.setdefault(directory, []).append(artifact.path)
 
     def _local(self, name: str) -> Path:
         if name not in self.used:
@@ -117,5 +122,10 @@ class Artifacts:
             local = self.used.get(artifact.file)
             if local is None and self.dataset.local_dir is not None:
                 local = self.dataset.local_dir / artifact.file
-            result["local_path"] = str(local.resolve()) if local is not None else None
+            if local is not None and artifact.member is not None:
+                if artifact.file not in self._archive_paths:
+                    self._archive_paths[artifact.file] = str(local.resolve())
+                result["local_path"] = self._archive_paths[artifact.file]
+            else:
+                result["local_path"] = str(local.resolve()) if local is not None else None
         return result

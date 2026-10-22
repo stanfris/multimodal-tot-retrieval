@@ -54,7 +54,7 @@ class Dataset:
         self.local_dir = Path(local_dir).expanduser() if local_dir is not None else None
         self.cache_dir = cache_dir
         self._inventory: Inventory | None = None
-        self._paths: frozenset[str] = frozenset()
+        self._files: dict[str, FileInfo] = {}
 
     def discover(self) -> Inventory:
         """List filenames and sizes only; never download artifact contents."""
@@ -68,16 +68,19 @@ class Dataset:
             files = []
             # Prune hidden caches before traversal, rather than visiting every
             # cached PDF/image and then discarding it from the local inventory.
-            for root, directories, filenames in os.walk(self.local_dir):
-                directories[:] = [name for name in directories if not name.startswith(".")]
-                for name in filenames:
-                    path = Path(root) / name
-                    if not name.startswith(".") and path.is_file():
-                        files.append(
-                            FileInfo(
-                                path.relative_to(self.local_dir).as_posix(), path.stat().st_size
-                            )
-                        )
+            pending = [(self.local_dir, "")]
+            while pending:
+                directory, prefix = pending.pop()
+                with os.scandir(directory) as entries:
+                    for entry in entries:
+                        if entry.name.startswith("."):
+                            continue
+                        name = prefix + entry.name
+                        if entry.is_dir():
+                            if not entry.is_symlink():
+                                pending.append((entry.path, name + "/"))
+                        elif entry.is_file():
+                            files.append(FileInfo(name, entry.stat().st_size))
         else:
             api = HfApi()
             self.revision = self.revision or api.dataset_info(self.repo_id).sha
@@ -89,9 +92,9 @@ class Dataset:
                 if isinstance(entry, RepoFile)
             ]
         files.sort(key=lambda item: item.path)
-        paths = self._paths = frozenset(item.path for item in files)
+        paths = self._files = {item.path: item for item in files}
         collections = []
-        for path in sorted(paths):
+        for path in paths:
             parts = path.split("/")
             if len(parts) == 5 and parts[0] == "query_collections" and parts[-1] == "queries.jsonl":
                 meta = path.removesuffix("queries.jsonl") + "metadata.json"
@@ -100,18 +103,14 @@ class Dataset:
                 )
         components = tuple(
             sorted(
-                {
-                    p.split("/")[0]
-                    for p in paths
-                    if p.split("/")[0]
-                    in {
-                        "query_collections",
-                        "splits",
-                        "preprocessed",
-                        "clues",
-                        "data",
-                        "pdf_datasets",
-                    }
+                {p.partition("/")[0] for p in paths}
+                & {
+                    "query_collections",
+                    "splits",
+                    "preprocessed",
+                    "clues",
+                    "data",
+                    "pdf_datasets",
                 }
                 | ({"metadata"} if "metadata.parquet" in paths else set())
             )
@@ -126,7 +125,7 @@ class Dataset:
         """
         relative_path(name)
         self.discover()
-        if name not in self._paths:
+        if name not in self._files:
             raise MissingComponentError(
                 f"Missing {name!r} in {self.local_dir or self.repo_id} "
                 f"(revision {self.revision or 'local/unrecorded'}). "
@@ -152,7 +151,8 @@ class Dataset:
             raise ValueError("read_json accepts only .json metadata files")
         if max_bytes < 1:
             raise ValueError("max_bytes must be positive")
-        info = next((f for f in self.discover().files if f.path == name), None)
+        self.discover()
+        info = self._files.get(name)
         if info is not None and (info.size is None or info.size > max_bytes):
             raise ValueError(f"{name}: metadata exceeds max_bytes or size is unknown")
         path = self.get_file(name)

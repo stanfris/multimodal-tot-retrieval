@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import shlex
-import subprocess
 import sys
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from omegaconf import OmegaConf
 
 from scientific_tot.configuration import CONFIG_DIR
 from scientific_tot.data.schemas import DOMAINS
+from scientific_tot.job_logging import run_logged
 from scientific_tot.pbs import is_worker, submit
 from scientific_tot.stage_cli import plan
 
@@ -66,7 +66,12 @@ def jobs(overrides: list[str]):
                     raise ValueError("The Byaldi visual profile has no execution implementation")
                 if resolved.model.name == "bm25" and resolved.representation.name == "passages":
                     raise ValueError("BM25 passages have no execution implementation")
-                log = Path(resolved.launcher.output_root) / "logs" / experiment / domain
+                log_root = (
+                    Path(resolved.launcher.log_root)
+                    if resolved.launcher.kind == "pbs"
+                    else Path(resolved.launcher.output_root) / "logs"
+                )
+                log = log_root / experiment / domain
                 commands.append(
                     (log / f"{stage}.log", [str(ROOT / "scripts" / SCRIPTS[stage]), *arguments])
                 )
@@ -85,24 +90,12 @@ def main() -> None:
         submit(cfg, ["scientific_tot.benchmark", *sys.argv[1:]], name="tot-benchmark")
         return
     for log, command in commands:
-        exact = shlex.join(command)
-        print(f"$ {exact}\nLog (append): {log}", flush=True)
         if dry_run:
+            print(f"$ {shlex.join(command)}\nLog (append): {log}", flush=True)
             continue
-        log.parent.mkdir(parents=True, exist_ok=True)
-        with log.open("a", encoding="utf-8") as stream:
-            stream.write(f"\n$ {exact}\n")
-            stream.flush()
-            with subprocess.Popen(
-                command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-            ) as process:
-                for line in process.stdout:
-                    print(line, end="", flush=True)
-                    stream.write(line)
-                    stream.flush()
-                code = process.wait()
-            if code:
-                raise SystemExit(code)
+        code = run_logged(command, log, label=log.stem, cwd=ROOT)
+        if code:
+            raise SystemExit(code)
 
 
 if __name__ == "__main__":

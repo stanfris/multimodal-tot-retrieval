@@ -7,10 +7,13 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 from omegaconf import OmegaConf
+
+from scientific_tot.job_logging import log_event, run_logged
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -42,6 +45,10 @@ def submit(cfg, arguments: list[str], *, name: str, colqwen: bool = False) -> No
     if not python.is_absolute():
         python = ROOT / python
     command = [str(python), "-u", "-m", *arguments]
+    stage = "benchmark" if arguments[0] == "scientific_tot.benchmark" else arguments[1]
+    log_path = directory / f"{stage}.log"
+    plan_path = directory / "plan.json"
+    worker = [str(python), "-u", "-m", "scientific_tot.pbs", "--worker", str(plan_path)]
     environment = {
         key: os.environ[key]
         for key in (
@@ -77,6 +84,7 @@ def submit(cfg, arguments: list[str], *, name: str, colqwen: bool = False) -> No
         TOT_FAISS_THREADS=str(launcher.threads.faiss),
         VTT_PBS_PROJECT=launcher.project,
         VTT_PBS_QUEUE=launcher.queue,
+        HYDRA_FULL_ERROR="1",
         UV_CACHE_DIR=str(Path(launcher.cache_root) / "uv"),
     )
     if cfg.dataset.revision is None:
@@ -94,7 +102,7 @@ def submit(cfg, arguments: list[str], *, name: str, colqwen: bool = False) -> No
             "unset UV_PROJECT_ENVIRONMENT TOT_DATA_REVISION",
             *[f"export {key}={shlex.quote(str(value))}" for key, value in environment.items()],
             "export TOT_PBS_WORKER=1 UV_NO_SYNC=1",
-            "exec " + shlex.join(command),
+            "exec " + shlex.join(worker),
             "",
         ]
     )
@@ -125,17 +133,44 @@ def submit(cfg, arguments: list[str], *, name: str, colqwen: bool = False) -> No
     print("$ " + shlex.join(qsub), flush=True)
     if cfg.dry_run:
         print(body, end="", flush=True)
+        print("Task: " + shlex.join(command), flush=True)
         return
     (directory / "job.sh").write_text(body, encoding="utf-8")
     OmegaConf.save(cfg, directory / "config.yaml", resolve=True)
+    # Publish the plan and visible stage log before qsub: a worker may start
+    # before the submission command has returned its job ID.
+    plan = {"command": command, "log": str(log_path), "name": name}
+    (directory / "plan.json").write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+    log_event(log_path, f"{name} job submitting")
     result = subprocess.run(qsub, cwd=ROOT, capture_output=True, text=True)
     (directory / "submission.log").write_text(result.stdout + result.stderr, encoding="utf-8")
     if result.returncode:
+        log_event(
+            log_path, f"{name} submission failed ({result.returncode}): {result.stderr.strip()}"
+        )
         raise RuntimeError(f"qsub failed ({result.returncode}): {result.stderr.strip()}")
     job_id = result.stdout.strip()
     if not job_id:
+        log_event(log_path, f"{name} submission failed: qsub returned no job ID")
         raise RuntimeError(f"qsub returned no job ID; inspect {directory / 'submission.log'}")
+    log_event(log_path, f"{name} job submitted: {job_id}")
     (directory / "submission.json").write_text(
-        json.dumps({"job_id": job_id, "command": qsub, "worker": command}, indent=2) + "\n"
+        json.dumps({"job_id": job_id, "command": qsub, "worker": worker}, indent=2) + "\n"
     )
-    print(f"Submitted PBS job {job_id}\nSubmission and logs: {directory}", flush=True)
+    print(
+        f"Submitted PBS job {job_id}\nSubmission and logs: {directory}\nStage log: {log_path}",
+        flush=True,
+    )
+
+
+def main() -> None:
+    if len(sys.argv) != 3 or sys.argv[1] != "--worker":
+        raise ValueError("Use the stage scripts to submit PBS jobs")
+    if not is_worker():
+        raise RuntimeError("PBS workers must be started by the generated job script")
+    plan = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+    raise SystemExit(run_logged(plan["command"], Path(plan["log"]), label=plan["name"], cwd=ROOT))
+
+
+if __name__ == "__main__":
+    main()

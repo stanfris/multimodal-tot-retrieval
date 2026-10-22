@@ -45,6 +45,7 @@ class DatasetAdapter:
 
     def __init__(self, dataset: Dataset) -> None:
         self.dataset = dataset
+        self.artifacts: Artifacts | None = None
 
     def _provenance(self, **selection: Any) -> dict[str, Any]:
         return {
@@ -182,13 +183,15 @@ class DatasetAdapter:
         rows = []
         files = []
         collection_metadata = {}
-        for collection in self._collections(domains, splits, mode):
+        collections = self._collections(domains, splits, mode)
+        paths = {f.path for f in self.dataset.discover().files}
+        for collection in collections:
             files.append(collection.queries_path)
             for name in (
                 collection.metadata_path,
                 str(PurePosixPath(collection.queries_path).parent.parent / "metadata.json"),
             ):
-                if name and name in {f.path for f in self.dataset.discover().files}:
+                if name and name in paths:
                     collection_metadata[name] = self.dataset.read_json(name)
                     files.append(name)
             for raw in self.dataset.iter_queries(collection):
@@ -285,11 +288,11 @@ class DatasetAdapter:
             if expected is not None
             else {p for p in pdf_by_path if p.split("/")[0] in domains}
         )
-        candidates: dict[str, set[str]] = {}
-        for path in set(split_map) | set(pdf_by_path):
-            for candidate in extraction_path_candidates(path):
-                candidates.setdefault(candidate, set()).add(path)
+        candidates: dict[str, set[str]] | None = None
         store = Artifacts(self.dataset, domains, archives=archives)
+        # Reuse this inventory for figure reads; text/page selections can release
+        # it. New selections always rebuild it, including post-build verification.
+        self.artifacts = store if include_figures else None
         if not store.files:
             raise MissingComponentError(
                 f"No preprocessed artifacts for {domains} at {inventory.revision or 'local root'}. "
@@ -301,7 +304,7 @@ class DatasetAdapter:
             for p in store.files
             if p.endswith(("/paper.json", "/markdown.md", "/_SUCCESS"))
         }
-        directories.update(p.split("/images/", 1)[0] for p in store.files if "/images/" in p)
+        directories.update(store.images)
         rows = []
         report = Report()
         seen_ids: set[str] = set()
@@ -327,6 +330,11 @@ class DatasetAdapter:
                 ):
                     raise DatasetFormatError(f"{directory}: invalid source PDF path")
             else:
+                if candidates is None:
+                    candidates = {}
+                    for path in set(split_map) | set(pdf_by_path):
+                        for candidate in extraction_path_candidates(path):
+                            candidates.setdefault(candidate, set()).add(path)
                 matches = candidates.get(paper_id, set())
                 if len(matches) > 1:
                     raise DatasetFormatError(
@@ -536,7 +544,7 @@ def _figures(
             }
         )
     if not original:
-        images = sorted(p for p in store.files if p.startswith(f"{directory}/images/"))
+        images = sorted(store.images.get(directory, ()))
         if images:
             report.issues.append(
                 Issue(

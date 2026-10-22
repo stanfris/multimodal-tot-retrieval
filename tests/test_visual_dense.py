@@ -34,22 +34,39 @@ def overrides(model):
 
 @pytest.mark.parametrize(
     "model,change_source",
-    [("openclip_figures", False), ("qwen3_vl_pages", False), ("qwen3_vl_pages", True)],
+    [
+        ("openclip_figures", False),
+        ("openclip_figures", True),
+        ("qwen3_vl_pages", False),
+        ("qwen3_vl_pages", True),
+    ],
 )
 def test_actual_hydra_reuses_startup_inputs_and_rechecks_sources(
     tmp_path, visual_dataset, model, change_source
 ):
+    if model == "openclip_figures":
+        base = visual_dataset / "preprocessed/ACL"
+        paths = [path for path in base.rglob("*") if path.is_file()]
+        with tarfile.open(base / "shard.tar", "w") as archive:
+            for path in paths:
+                archive.add(path, arcname=str(path.relative_to(base)))
+                path.unlink()
     script = """
-import json, os, socket
+import json, os, socket, tarfile
 from pathlib import Path
 import torch
 from scientific_tot.data.hub import Dataset
+from scientific_tot.data.artifacts import Artifacts
 from scientific_tot.integrations import visual_dense
 from scientific_tot.hydra_entry import main
 
-counts = {"inventories": 0, "corpus_loads": 0, "encoded_units": 0}
+counts = {"inventories": 0, "corpus_loads": 0, "encoded_units": 0, "archive_scans": 0}
 discover = Dataset.discover
 load_corpus = visual_dense.load_visual_corpus
+index_archive = Artifacts._index_archive
+def counted_archive(self, *args, **kwargs):
+    counts["archive_scans"] += 1
+    return index_archive(self, *args, **kwargs)
 def counted_discover(self):
     if self._inventory is None:
         counts["inventories"] += 1
@@ -61,17 +78,30 @@ class Encoder:
     metadata = {}
     def __init__(self, cfg):
         self.dimension = cfg.model.dimension
+        self.figures = cfg.model.document_input == "figures"
     def encode(self, values, task):
         assert task == "document"
         counts["encoded_units"] += len(values)
         if os.environ["TOT_REGRESSION_MUTATE"] == "1":
-            path = next(Path(os.environ["TOT_REGRESSION_DATASET"]).glob("pdf_datasets/ACL/*.pdf"))
-            with path.open("ab") as stream:
-                stream.write(b"\\n% changed PDF input\\n")
+            root = Path(os.environ["TOT_REGRESSION_DATASET"])
+            if self.figures:
+                path = root / "preprocessed/ACL/shard.tar"
+                with tarfile.open(path) as archive:
+                    member = next(item for item in archive if item.name.endswith(".png"))
+                with path.open("r+b") as stream:
+                    stream.seek(member.offset_data + member.size - 1)
+                    value = stream.read(1)[0]
+                    stream.seek(-1, 1)
+                    stream.write(bytes([value ^ 1]))
+            else:
+                path = next(root.glob("pdf_datasets/ACL/*.pdf"))
+                with path.open("ab") as stream:
+                    stream.write(b"\\n% changed PDF input\\n")
         return torch.ones(len(values), self.dimension)
 def blocked(*args, **kwargs):
     raise AssertionError("Startup reuse regression must not access the network")
 Dataset.discover = counted_discover
+Artifacts._index_archive = counted_archive
 visual_dense.load_visual_corpus = counted_corpus
 visual_dense.load_model = Encoder
 socket.socket.connect = blocked
@@ -109,6 +139,7 @@ finally:
         "inventories": 2,
         "corpus_loads": 2,
         "encoded_units": 4 if model in OPENCLIP_MODELS else 2,
+        "archive_scans": 2 if model == "openclip_figures" else 0,
     }
     assert result.stdout.count("▶ Startup: identify") == 1
     manifest_path = next((tmp_path / "results/indexes").glob("*/manifest.json"))
@@ -370,6 +401,36 @@ def test_qwen_needs_only_selected_document_inputs(tmp_path, visual_dataset, mode
     cfg, _ = settings(tmp_path, visual_dataset, "index", None, *overrides(model))
     corpus = visual_dense.load_visual_corpus(configured_adapter(cfg), cfg)
     assert len(visual_dense.document_mapping(corpus, cfg)) == len(corpus) == 2
+
+
+@pytest.mark.parametrize("model", MODELS)
+def test_visual_identity_preserves_hash_with_one_record_pass(tmp_path, visual_dataset, model):
+    from scientific_tot.records import records_digest
+
+    cfg, _ = settings(tmp_path, visual_dataset, "index", None, *overrides(model))
+    corpus = visual_dense.load_visual_corpus(configured_adapter(cfg), cfg)
+    expected = records_digest(
+        [
+            {"documents": [{"doc_id": row["doc_id"], "domain": row["domain"]} for row in corpus]},
+            {
+                "units": [
+                    {key: value for key, value in row.items() if key != "pdf_path"}
+                    for row in visual_dense.document_mapping(corpus, cfg)
+                ]
+            },
+        ]
+    )
+
+    class SinglePass:
+        def __init__(self):
+            self.visited = False
+
+        def __iter__(self):
+            assert not self.visited, "Identity must not decode the same records again"
+            self.visited = True
+            return iter(corpus)
+
+    assert visual_dense.visual_corpus_digest(SinglePass(), cfg) == expected
 
 
 @pytest.mark.parametrize("model", ["qwen3_vl_pages"])

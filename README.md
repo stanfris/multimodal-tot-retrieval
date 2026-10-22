@@ -349,14 +349,36 @@ performed.
 Artifacts remain in `results/{prepared,indexes,models,evaluations}/`, with the
 existing model/representation/domain/split/input identities, manifests and checksums.
 Submission prints the exact `qsub` command and returned job ID. Each submission
-retains `job.sh`, resolved `config.yaml`, `submission.json`, `submission.log`,
-`stdout.log`, and `stderr.log` under `TOT_OUTPUT_ROOT/logs/pbs/` (override with
-`launcher.log_root` or `TOT_LOG_ROOT`). Inspect queue state with `qstat JOB_ID`.
+retains `job.sh`, resolved `config.yaml`, `plan.json`, `submission.json`,
+`submission.log`, `stdout.log`, and `stderr.log` under `TOT_OUTPUT_ROOT/logs/pbs/`.
+Override this root with `launcher.log_root`, `TOT_LOG_ROOT`, or the producer's
+`VTT_LOG_ROOT` (`TOT_LOG_ROOT` takes precedence). Inspect queue state with `qstat JOB_ID`.
 `dry_run=true` prints the submission and worker script without calling `qsub` or
-creating files. Inside the job, the runner prints exact stage commands and appends logs
-to `TOT_OUTPUT_ROOT/logs/<experiment>/<domain>/<stage>.log`, and stops at the first
-stage error. In isolated mode logs use `TOT_TEST_ROOT/results/logs/`. Existing
-logs and results are retained. Inspect `manifest.json` for completion and
+creating files.
+
+As in dataset generation, each submitted job has a named application log beside
+its PBS files: `prepare.log`, `index.log`, `retrieve.log`, `evaluate.log`,
+`test.log`, or `benchmark.log`. It is created before submission and records UTC
+submission, worker-start and completion/failure timestamps. Worker stdout and
+stderr, including native-library/child-process output and full error tracebacks,
+are appended and flushed while the job runs. You can inspect these application
+logs immediately without waiting for PBS to deliver its stdout/stderr files.
+
+Benchmark jobs also append independent method/domain/stage logs under
+`<launcher.log_root>/<experiment>/<domain>/<stage>.log`, using the same live
+logging helper. A local launcher keeps its existing
+`TOT_OUTPUT_ROOT/logs/<experiment>/<domain>/<stage>.log` paths. The runner stops
+at the first stage error. The default PBS log root in isolated mode is
+`TOT_TEST_ROOT/results/logs/pbs/`. Existing logs and results are retained.
+
+```bash
+# Use the submission directory printed by the command:
+tail -f /path/to/submission/index.log
+# Or follow one method within a benchmark job:
+tail -f "$TOT_OUTPUT_ROOT/logs/pbs/dense_passages/ACL/index.log"
+```
+
+Inspect `manifest.json` for completion and
 `performance` reports; `nvidia-smi` shows current device-wide resource usage.
 
 Rerun the same command to reuse compatible **completed** indexes/retrieval/evaluation
@@ -509,6 +531,7 @@ export TOT_TEST_ROOT=./test
 | `TOT_CACHE_ROOT` | `./cache` | Normal-run dataset/model/embedding caches; script uv cache defaults to `${TOT_CACHE_ROOT}/uv` |
 | `TOT_OUTPUT_ROOT` | `./results` | Normal-run prepared/index/retrieval/evaluation artifacts |
 | `TOT_TEST_ROOT` | `./test` | Isolated test mode's `cache/` and `results/`; overrides normal application cache/output roots |
+| `TOT_LOG_ROOT` | `${TOT_OUTPUT_ROOT}/logs/pbs` | H200 job and method logs; falls back to `VTT_LOG_ROOT` when supplied |
 
 The shell scripts change to the repository root, so their relative paths resolve
 there. Direct Hydra invocations resolve relative paths from their invocation
@@ -691,7 +714,8 @@ Stages print the selected sources/counts, artifact paths, cache hits and complet
 status. Named phases cover source verification, execution, output verification
 and sealing. Progress bars show encoding/indexing/rendering/search work where
 available; opaque calls print a heartbeat every 30 seconds. Hydra job file
-logging is disabled. Capture console output yourself when a durable log is useful:
+logging is disabled. H200 PBS jobs automatically retain the live application logs
+described above. For a direct local stage, capture console output when a durable log is useful:
 
 ```sh
 mkdir -p logs

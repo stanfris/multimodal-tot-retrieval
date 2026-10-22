@@ -72,6 +72,22 @@ def test_public_api_and_export(complete, tmp_path):
     assert validate_qrels(queries, corpus)[0]["doc_id"] == "ACL_2022.example-1.1"
 
 
+def test_record_serialization_preserves_json_bytes_and_digest(tmp_path):
+    from scientific_tot.records import Records, Report, records_digest
+
+    rows = [{"text": '日本語\nquoted: "', "nested": {"z": None, "a": [1, True, 0.25]}}]
+    records = Records("corpus", rows, Report(emitted=1), {})
+    output = records.write_jsonl(tmp_path / "records.jsonl")
+    assert output.read_bytes() == (json.dumps(rows[0], ensure_ascii=False) + "\n").encode()
+    expected = (json.dumps(rows[0], ensure_ascii=False, sort_keys=True) + "\n").encode()
+    assert records_digest(records) == hashlib.sha256(expected).hexdigest()
+    for value in (float("nan"), float("inf"), -float("inf")):
+        with pytest.raises(ValueError):
+            records_digest([{"value": value}])
+        with pytest.raises(ValueError):
+            Records("corpus", [{"value": value}], Report(), {})
+
+
 def test_default_strict_missing_extraction(local_dataset):
     with pytest.raises(IncompleteCorpusError) as error:
         load_corpus(local_dir=local_dataset, domain="ACL")
@@ -289,6 +305,67 @@ def test_archive_matches_restored_content(complete):
     assert not (complete / PAPER).exists()  # no restoration, no extraction to disk
     with pytest.raises(MissingComponentError, match="archive reads disabled"):
         load_corpus(local_dir=complete, domain="ACL", archives=False)
+
+
+@pytest.mark.parametrize("archived", [False, True])
+def test_lean_figure_selection_does_not_rescan_all_files(tmp_path, monkeypatch, archived):
+    from scientific_tot.data.artifacts import Artifacts
+
+    members = {}
+    for number in range(32):
+        directory = f"ACL_paper-{number:02d}"
+        members[f"{directory}/markdown.md"] = b"Original text"
+        for name in ("z.png", "nested/a.png", "b.png"):
+            members[f"{directory}/images/{name}"] = b"image"
+    base = tmp_path / "preprocessed/ACL"
+    if archived:
+        make_tar(base / "shard.tar", members)
+    else:
+        for name, data in members.items():
+            path = base / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+
+    visits = 0
+    resolutions = 0
+    initialize = Artifacts.__init__
+    resolve = Path.resolve
+
+    class CountedFiles(dict):
+        def __iter__(self):
+            nonlocal visits
+            visits += len(self)
+            return super().__iter__()
+
+    def counted_initialize(self, *args, **kwargs):
+        initialize(self, *args, **kwargs)
+        self.files = CountedFiles(self.files)
+
+    def counted_resolve(self, *args, **kwargs):
+        nonlocal resolutions
+        if self.suffix == ".tar":
+            resolutions += 1
+        return resolve(self, *args, **kwargs)
+
+    monkeypatch.setattr(Artifacts, "__init__", counted_initialize)
+    monkeypatch.setattr(Path, "resolve", counted_resolve)
+    corpus = load_corpus(local_dir=tmp_path, domain="ACL", split="all", include_metadata=False)
+    assert len(corpus) == 32
+    assert visits <= 3 * len(members)
+    assert resolutions <= 1
+    for row in corpus:
+        images = [figure["image"] for figure in row["figures"]]
+        assert len(images) == 3
+        assert [image["path"] for image in images] == sorted(image["path"] for image in images)
+        assert all(image["available"] for image in images)
+
+
+def test_explicit_source_paths_do_not_build_lean_id_lookup(complete, monkeypatch):
+    def blocked(*args, **kwargs):
+        raise AssertionError("Explicit source paths do not need extraction ID candidates")
+
+    monkeypatch.setattr("scientific_tot.adapter.extraction_path_candidates", blocked)
+    assert len(load_corpus(local_dir=complete, domain="ACL")) == 2
 
 
 @pytest.mark.parametrize("member", ["../escape", "/absolute", "paper/../escape", "paper\\escape"])

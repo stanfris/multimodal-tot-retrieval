@@ -11,7 +11,7 @@ memory: 160gb
 walltime: 03:00:00
 dataset_root: ${oc.env:TOT_DATA_ROOT,${oc.env:VTT_DATA_ROOT,./data}}
 cache_root: ${oc.env:TOT_CACHE_ROOT,${oc.env:VTT_CACHE_ROOT,./cache}}
-log_root: ${oc.env:TOT_LOG_ROOT,${launcher.output_root}/logs/pbs}
+log_root: ${oc.env:TOT_LOG_ROOT,${oc.env:VTT_LOG_ROOT,${launcher.output_root}/logs/pbs}}
 python: ${oc.env:TOT_PYTHON,${oc.env:VTT_PYTHON,./.venv/bin/python}}
 colqwen_python: ${oc.env:TOT_COLQWEN_PYTHON,./.venv-colqwen/bin/python}
 environment:

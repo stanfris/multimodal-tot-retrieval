@@ -30,6 +30,25 @@ def test_local_reads_preserve_metadata_and_ids(local_dataset):
     assert ds.load_split()["metadata"]["seed"] == 42
 
 
+def test_inventory_prunes_hidden_trees_and_does_not_follow_directory_links(tmp_path):
+    visible = tmp_path / "preprocessed/ACL/paper/markdown.md"
+    visible.parent.mkdir(parents=True)
+    visible.write_bytes(b"original text")
+    hidden = tmp_path / ".cache/nested/large.pdf"
+    hidden.parent.mkdir(parents=True)
+    hidden.write_bytes(b"cached")
+    (visible.parent / ".hidden").write_bytes(b"hidden")
+    (tmp_path / "loop").symlink_to(tmp_path, target_is_directory=True)
+    (tmp_path / "missing").symlink_to(tmp_path / "absent")
+    (tmp_path / "linked.md").symlink_to(visible)
+
+    inventory = Dataset(local_dir=tmp_path).discover()
+    assert [(item.path, item.size) for item in inventory.files] == [
+        ("linked.md", 13),
+        ("preprocessed/ACL/paper/markdown.md", 13),
+    ]
+
+
 def test_missing_components_and_lean_paper(local_dataset):
     ds = Dataset(local_dir=local_dataset)
     with pytest.raises(MissingComponentError, match="Inspect discover"):

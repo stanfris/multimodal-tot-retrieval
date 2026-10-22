@@ -138,7 +138,7 @@ def test_benchmark_selection_shared_overrides_and_isolation(tmp_path, monkeypatc
     )
     assert dry and len(commands) == 8
     for log, command in commands:
-        assert "test/results/logs/qwen3_vl_text" in str(log)
+        assert "test/results/logs/pbs/qwen3_vl_text" in str(log)
         assert "model.batch_size=1" in command and "launcher=h200" in command
         assert command[0].endswith(tuple(benchmark.SCRIPTS.values()))
         assert not any(arg.startswith("benchmark.") for arg in command)

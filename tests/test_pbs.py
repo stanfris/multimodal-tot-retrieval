@@ -24,7 +24,7 @@ def submission(tmp_path, monkeypatch):
     monkeypatch.setenv("TOT_OUTPUT_ROOT", str(tmp_path / "results"))
     monkeypatch.setenv("TOT_TEST_ROOT", str(tmp_path / "test"))
     monkeypatch.setenv("HF_TOKEN", "must-not-be-written-to-job-script")
-    for key in ("VTT_PBS_PROJECT", "VTT_PBS_QUEUE", "TOT_LOG_ROOT"):
+    for key in ("VTT_PBS_PROJECT", "VTT_PBS_QUEUE", "TOT_LOG_ROOT", "VTT_LOG_ROOT"):
         monkeypatch.delenv(key, raising=False)
     executable = tmp_path / "bin/qsub"
     executable.parent.mkdir()
@@ -50,7 +50,12 @@ def test_stage_submits_without_loading_sources_or_artifacts(submission, monkeypa
     assert "walltime=03:00:00" in args
     script = Path(args[-1])
     body = script.read_text()
-    assert "scientific_tot.stage_cli " + stage in body
+    plan = json.loads((script.parent / "plan.json").read_text())
+    assert plan["command"][3:5] == ["scientific_tot.stage_cli", stage]
+    log = Path(plan["log"])
+    assert log.name == f"{stage}.log"
+    assert "job submitted: 12345.server" in log.read_text()
+    assert "-m scientific_tot.pbs --worker" in body
     assert "TOT_PBS_WORKER=1 UV_NO_SYNC=1" in body
     assert "must-not-be-written-to-job-script" not in body
     assert ".artifact-selection-placeholder" not in body
@@ -82,9 +87,10 @@ def test_benchmark_submits_one_worker_for_all_sequential_stages(submission, monk
     )
     benchmark.main()
     args = json.loads((submission / "qsub-args.json").read_text())
-    body = Path(args[-1]).read_text()
-    assert "-m scientific_tot.benchmark" in body
-    assert "benchmark.experiments=[bm25_fulltext,dense_passages]" in body
+    plan = json.loads((Path(args[-1]).parent / "plan.json").read_text())
+    assert plan["command"][3] == "scientific_tot.benchmark"
+    assert "benchmark.experiments=[bm25_fulltext,dense_passages]" in plan["command"]
+    assert Path(plan["log"]).name == "benchmark.log"
     assert len(list((submission / "results/logs/pbs").glob("*/submission.json"))) == 1
     assert not (submission / "results/indexes").exists()
 
@@ -93,7 +99,9 @@ def test_test_chain_is_one_pbs_job(submission, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["stage", "test", "--test", "launcher=h200"])
     stage_cli.main()
     args = json.loads((submission / "qsub-args.json").read_text())
-    assert "scientific_tot.stage_cli test --test" in Path(args[-1]).read_text()
+    plan = json.loads((Path(args[-1]).parent / "plan.json").read_text())
+    assert plan["command"][3:6] == ["scientific_tot.stage_cli", "test", "--test"]
+    assert Path(plan["log"]).name == "test.log"
     assert Path(args[-1]).is_relative_to(submission / "test/results/logs/pbs")
 
 
@@ -184,10 +192,55 @@ def test_pbs_worker_runs_real_offline_bm25_chain(submission, monkeypatch):
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Submitted PBS job" not in result.stdout
     assert (submission / "qsub-args.json").read_text() == original_submission
+    job_log = (script.parent / "benchmark.log").read_text()
+    assert "job submitted: 12345.server" in job_log
+    assert "tot-benchmark worker started" in job_log
+    assert "tot-benchmark worker completed (exit=0)" in job_log
     for directory in ("indexes", "models", "evaluations"):
         manifests = list((submission / "results" / directory).glob("*/manifest.json"))
         assert len(manifests) == 1
         assert json.loads(manifests[0].read_text())["status"] == "completed"
+    for stage in ("index", "retrieve", "evaluate"):
+        log = submission / "results/logs/pbs/bm25_fulltext/ACL" / f"{stage}.log"
+        assert "worker started" in log.read_text()
+        assert "worker completed (exit=0)" in log.read_text()
+
+
+def test_standalone_worker_failure_is_in_stage_log(submission, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["stage", "index", "launcher=h200"])
+    stage_cli.main()
+    args = json.loads((submission / "qsub-args.json").read_text())
+    script = Path(args[-1])
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=ROOT,
+        env=dict(os.environ, PBS_JOBID="12345.server"),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode != 0
+    log = (script.parent / "index.log").read_text()
+    assert "worker started" in log
+    assert "Traceback" in log and "Dataset root does not exist" in log
+    assert "worker failed" in log
+
+
+def test_custom_log_root_covers_submission_and_method_logs(submission, monkeypatch):
+    root = submission / "custom-logs"
+    monkeypatch.setenv("VTT_LOG_ROOT", str(root))
+    overrides = [
+        "launcher=h200",
+        "benchmark.experiments=[bm25_fulltext]",
+        "benchmark.domains=[ACL]",
+    ]
+    _, commands = benchmark.jobs(overrides)
+    assert all(log.is_relative_to(root / "bm25_fulltext/ACL") for log, _ in commands)
+    monkeypatch.setattr(sys, "argv", ["benchmark", *overrides])
+    benchmark.main()
+    args = json.loads((submission / "qsub-args.json").read_text())
+    assert Path(args[-1]).is_relative_to(root)
+    assert (Path(args[-1]).parent / "benchmark.log").is_file()
 
 
 def test_worker_flag_requires_scheduler_allocation(monkeypatch):

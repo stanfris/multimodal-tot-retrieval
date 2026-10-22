@@ -14,10 +14,9 @@ from typing import Any, overload
 
 def records_digest(rows) -> str:
     checksum = hashlib.sha256()
+    encoder = json.JSONEncoder(ensure_ascii=False, sort_keys=True, allow_nan=False)
     for row in rows:
-        checksum.update(
-            json.dumps(row, ensure_ascii=False, sort_keys=True, allow_nan=False).encode()
-        )
+        checksum.update(encoder.encode(row).encode())
         checksum.update(b"\n")
     return checksum.hexdigest()
 
@@ -79,7 +78,8 @@ class Records(Sequence[dict[str, Any]]):
         self, kind: str, rows: Sequence[dict[str, Any]], report: Report, provenance: dict[str, Any]
     ) -> None:
         self.kind = kind
-        self._rows = tuple(json.dumps(row, ensure_ascii=False, allow_nan=False) for row in rows)
+        encoder = json.JSONEncoder(ensure_ascii=False, allow_nan=False)
+        self._rows = tuple(encoder.encode(row) for row in rows)
         self.report = report
         self.provenance = provenance
 

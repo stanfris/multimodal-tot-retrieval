@@ -74,31 +74,31 @@ def document_mapping(corpus, cfg) -> list[dict]:
         ]
     from scientific_tot.integrations.colqwen import page_mapping
 
-    papers = {row["doc_id"]: row for row in corpus}
     return [
         {
             **page,
             "docno": page["page_id"],
-            "pdf_path": papers[page["doc_id"]]["pdf_path"],
-            "pdf_sha256": papers[page["doc_id"]]["pdf_sha256"],
+            "pdf_path": paper["pdf_path"],
+            "pdf_sha256": paper["pdf_sha256"],
         }
-        for page in page_mapping(corpus)
+        for paper in corpus
+        for page in page_mapping((paper,))
     ]
 
 
 def visual_corpus_digest(corpus, cfg) -> str:
     # Retain the full document collection, including papers with zero visual elements.
-    return records_digest(
-        [
-            {"documents": [{"doc_id": row["doc_id"], "domain": row["domain"]} for row in corpus]},
-            {
-                "units": [
-                    {k: v for k, v in row.items() if k != "pdf_path"}
-                    for row in document_mapping(corpus, cfg)
-                ]
-            },
-        ]
-    )
+    documents = []
+
+    def papers():
+        for paper in corpus:
+            documents.append({"doc_id": paper["doc_id"], "domain": paper["domain"]})
+            yield paper
+
+    units = document_mapping(papers(), cfg)
+    for unit in units:
+        unit.pop("pdf_path", None)
+    return records_digest([{"documents": documents}, {"units": units}])
 
 
 def load_visual_corpus(adapter, cfg) -> Records:
@@ -119,7 +119,8 @@ def load_visual_corpus(adapter, cfg) -> Records:
         flush=True,
     )
     selected = adapter.load_corpus(**corpus_arguments(cfg))
-    store = Artifacts(adapter.dataset, tuple(cfg.dataset.domains), archives=True)
+    store = adapter.artifacts
+    assert store is not None
     report = Report(
         selected=selected.report.selected,
         skipped=selected.report.skipped,
@@ -492,13 +493,13 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
                 shape=(len(rows), cfg.model.dimension),
             )
             index = faiss.IndexFlatIP(cfg.model.dimension) if task == "document" else None
-            store = (
-                Artifacts(
-                    configured_adapter(cfg).dataset, tuple(cfg.dataset.domains), archives=True
-                )
-                if task == "document" and cfg.model.document_input in {"figures", "multimodal"}
-                else None
-            )
+            store = None
+            if task == "document" and cfg.model.document_input in {"figures", "multimodal"}:
+                adapter = configured_adapter(cfg)
+                store = adapter.artifacts
+                if store is None:
+                    # Standalone encoding has no preceding corpus selection.
+                    store = Artifacts(adapter.dataset, tuple(cfg.dataset.domains), archives=True)
             if task == "document" and cfg.model.name in QWEN_MODELS:
                 print(
                     f"Qwen document input={cfg.model.document_input}: {len(rows):,} papers, "
