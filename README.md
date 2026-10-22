@@ -516,3 +516,60 @@ Visual encoding prefetches one image batch while the GPU processes the current
 batch; PDFium work stays on one worker. Qwen validates and reuses its official
 preprocessed tensors instead of processing each batch twice. These changes do not
 add distributed model execution or automatic batch-size tuning.
+
+## Isolated 100-document test runs
+
+Attach `--test` to run only the **100 documents in the official test split** and
+that split's queries. The mode rejects a different corpus/query split, a test
+corpus with a different document count, or skipped papers. All pages, passages
+or figures belonging to those 100 papers remain available to their respective
+methods; the limit counts papers rather than images or passages.
+
+Run indexing, retrieval and evaluation together with one command per method:
+
+```sh
+# BM25 fulltext
+./scripts/00_test.sh --test experiment=bm25_fulltext
+# E5 fulltext
+./scripts/00_test.sh --test model=dense representation=fulltext
+# E5 passages
+./scripts/00_test.sh --test experiment=dense_passages
+# ColBERT fulltext
+./scripts/00_test.sh --test experiment=colbert_fulltext
+# ColQwen pages
+./scripts/00_test.sh --test experiment=colqwen_pages
+# OpenCLIP pages
+./scripts/00_test.sh --test experiment=openclip_pages
+# OpenCLIP figures
+./scripts/00_test.sh --test experiment=openclip_figures
+# Qwen3-VL pages
+./scripts/00_test.sh --test experiment=qwen3_vl_page
+# Qwen3-VL pages with extracted text
+./scripts/00_test.sh --test experiment=qwen3_vl_multimodal
+# Qwen3-VL figures
+./scripts/00_test.sh --test experiment=qwen3_vl_figures
+```
+
+`00_test.sh` requires `--test` and stops if any stage fails. It reuses the existing
+stage scripts, including the separate ColQwen environment. To run stages separately,
+attach `--test` to each of `02_index.sh`, `03_retrieve.sh`, and `04_evaluate.sh`.
+Direct Hydra invocations use `mode=test` instead of `--test`.
+
+The default layout is separate from normal `./results/` and `./cache/`:
+
+```text
+test/
+  cache/                 # Test embedding, model and dataset caches
+  results/
+    indexes/             # Index files, configuration and provenance
+    models/              # Retrieval runs and query/corpus mappings
+    evaluations/         # metrics.csv and per-query.csv
+```
+
+Use `TOT_TEST_ROOT=/path/to/test` or `test_root=/path/to/test` to relocate the entire
+test folder. Dataset inputs are read from the usual `TOT_DATA_ROOT` or
+`dataset.root=...`; they are not copied or modified. The mode rejects explicit
+index/run paths outside the test folder. Test indexes and saved runs have separate
+identities and cannot be consumed by a normal run, even with an explicit path.
+Normal runs keep their existing splits and output/cache locations when the flag
+is absent. Existing GPU requirements still apply to neural methods.

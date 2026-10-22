@@ -55,12 +55,15 @@ def index_settings(cfg: DictConfig, provenance: dict | None = None) -> dict:
         dataset["revision"] = provenance["dataset_revision"]
         if model["name"] == "dense":
             model["revision"] = provenance["model_revision"]
-    return {
+    settings = {
         "dataset": dataset,
         "corpus_split": data["split"]["corpus"],
         "representation": representation,
         "model": model,
     }
+    if data.get("test_mode", False):
+        settings["test_mode"] = True
+    return settings
 
 
 def require_index_reservation(target: Path) -> None:
@@ -129,6 +132,8 @@ def verify_index(index: Path, cfg: DictConfig, *, allow_building: bool = False) 
     if digest(configuration) != manifest["configuration_sha256"]:
         raise ValueError("Index configuration snapshot checksum differs")
     provenance = manifest.get("provenance", {})
+    if cfg.get("test_mode", False) and provenance.get("documents") != 100:
+        raise ValueError("Test mode requires an index containing exactly 100 test documents")
     built_config = OmegaConf.create(configuration)
     _validate_provenance(built_config, provenance)
     built = index_settings(built_config, provenance)
@@ -183,9 +188,9 @@ def verify_retrieval(directory: Path, cfg: DictConfig | None = None) -> dict:
             raise ValueError(f"Incomplete retrieval artifact: {name}")
         if outputs.get(name) != artifact_reference(directory / name):
             raise ValueError(f"Retrieval artifact reference/checksum differs: {name}")
-    from scientific_tot.configuration import resolve_config
-
-    built = resolve_config(OmegaConf.create(snapshot), directory.parent)
+    # The sealed snapshot describes the run that actually happened. Evaluation
+    # must not require inference settings added after that run was produced.
+    built = OmegaConf.create(snapshot)
     if built.stage.name != "retrieve" or built.model.name not in VISUAL_DENSE_MODELS | {
         "bm25",
         "dense",

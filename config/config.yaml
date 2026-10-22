@@ -9,6 +9,7 @@ defaults:
   - evaluation: default
   - _self_
   - experiment: null
+  - mode: normal
   - override hydra/job_logging: disabled
 
 dry_run: false

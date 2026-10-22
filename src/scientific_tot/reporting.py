@@ -27,21 +27,39 @@ def phase(description):
     if monitor:
         monitor.activity = description
     started = perf_counter()
-    tqdm.write(f"▶ {description}")
+    with tqdm.external_write_mode():
+        print(f"▶ {description}", flush=True)
+    stop = threading.Event()
+
+    def heartbeat():
+        while not stop.wait(30):
+            with tqdm.external_write_mode():
+                print(f"… {description}; elapsed {perf_counter() - started:.0f}s", flush=True)
+
+    # Hydra resolves corpus identities before a stage monitor can be started.
+    worker = None
+    if monitor is None:
+        worker = threading.Thread(target=heartbeat, daemon=True)
+        worker.start()
     try:
         yield
     except BaseException:
         elapsed = perf_counter() - started
-        tqdm.write(f"✗ {description} failed after {elapsed:.1f}s")
+        with tqdm.external_write_mode():
+            print(f"✗ {description} failed after {elapsed:.1f}s", flush=True)
         if monitor:
             monitor.phases.append({"name": description, "seconds": elapsed, "status": "failed"})
         raise
     else:
         elapsed = perf_counter() - started
-        tqdm.write(f"✓ {description} — {elapsed:.1f}s")
+        with tqdm.external_write_mode():
+            print(f"✓ {description} — {elapsed:.1f}s", flush=True)
         if monitor:
             monitor.phases.append({"name": description, "seconds": elapsed, "status": "completed"})
     finally:
+        stop.set()
+        if worker is not None:
+            worker.join()
         if monitor:
             monitor.activity = previous
 

@@ -82,12 +82,17 @@ def test_explicit_inputs_and_labels(monkeypatch):
     assert str(index) in plan("retrieve", ["run.name=another-study"])[1][-1]
 
 
-def test_evaluation_selects_intact_matching_batch(monkeypatch):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_evaluation_selects_intact_matching_batch(monkeypatch, legacy):
     index = completed_index(monkeypatch)
     cfg, _ = plan("retrieve", [])
     cfg = OmegaConf.create(OmegaConf.to_container(cfg))
     cfg.paths.index = str(index)
     cfg = resolve_config(cfg, Path.cwd())
+    if legacy:
+        cfg = OmegaConf.create(OmegaConf.to_container(cfg))
+        del cfg.retrieval.batch_size
+        del cfg.retrieval.search_device
     attempt = Path(cfg.launcher.output_root) / "models/batch"
     (attempt / ".hydra").mkdir(parents=True)
     OmegaConf.save(cfg, attempt / ".hydra/config.yaml")
@@ -109,6 +114,20 @@ def test_evaluation_selects_intact_matching_batch(monkeypatch):
             }
         )
     )
+    assert str(attempt) in plan("evaluate", [])[1][-1]
+    # A malformed configuration elsewhere in the same results tree cannot
+    # prevent selection of the completed matching run.
+    malformed = attempt.parent / "aaa-malformed"
+    shutil.copytree(attempt, malformed)
+    snapshot = OmegaConf.load(malformed / ".hydra/config.yaml")
+    del snapshot.model
+    OmegaConf.save(snapshot, malformed / ".hydra/config.yaml")
+    manifest = json.loads((malformed / "manifest.json").read_text())
+    manifest["configuration_sha256"] = digest(OmegaConf.to_container(snapshot))
+    manifest["artifacts"]["outputs"] = {
+        name: artifact_reference(malformed / name) for name in BATCH_FILES
+    }
+    (malformed / "manifest.json").write_text(json.dumps(manifest))
     assert str(attempt) in plan("evaluate", [])[1][-1]
     with pytest.raises(ValueError, match="No compatible completed artifact"):
         plan("evaluate", ["retrieval.top_k=200"])

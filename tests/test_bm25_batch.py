@@ -14,7 +14,7 @@ from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
 from scientific_tot.config_arguments import configured_adapter, corpus_arguments
-from scientific_tot.config_artifacts import artifact_reference, write_index_manifest
+from scientific_tot.config_artifacts import artifact_reference, digest, write_index_manifest
 from scientific_tot.configuration import CONFIG_DIR, resolve_config
 from scientific_tot.hydra_run import run_stage
 
@@ -161,10 +161,25 @@ def test_retrieve_forwards_yaml_and_records_exact_artifacts(saved_batch):
         assert reference == artifact_reference(batch.output / name)
 
 
+@pytest.mark.parametrize("legacy", [False, True])
 def test_repeat_evaluation_is_independent_of_dataset_index_and_inference(
-    tmp_path, monkeypatch, saved_batch
+    tmp_path, monkeypatch, saved_batch, legacy
 ):
     batch = saved_batch
+    if legacy:
+        snapshot_path = batch.output / ".hydra/config.yaml"
+        snapshot = OmegaConf.load(snapshot_path)
+        for key in ("batch_size", "search_device"):
+            del snapshot.retrieval[key]
+            del batch.manifest["artifact_identity"]["retrieval"][key]
+        snapshot_path.chmod(0o644)
+        OmegaConf.save(snapshot, snapshot_path)
+        batch.manifest["configuration_sha256"] = digest(OmegaConf.to_container(snapshot))
+        batch.manifest["artifact_sha256"] = digest(batch.manifest["artifact_identity"])
+        batch.manifest["output_files"][".hydra/config.yaml"] = artifact_reference(snapshot_path)
+        manifest_path = batch.output / "manifest.json"
+        manifest_path.chmod(0o644)
+        manifest_path.write_text(json.dumps(batch.manifest))
     shutil.rmtree(batch.dataset)
     shutil.rmtree(batch.index_dir)
     monkeypatch.setattr(batch.pt.terrier, "Retriever", blocked)

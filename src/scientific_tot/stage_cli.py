@@ -9,6 +9,7 @@ from pathlib import Path
 
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
+from omegaconf.errors import OmegaConfBaseException
 
 from scientific_tot.config_artifacts import verify_index, verify_retrieval
 from scientific_tot.configuration import CONFIG_DIR, VISUAL_DENSE_MODELS, resolve_config
@@ -24,7 +25,7 @@ def find_artifact(cfg, stage: str) -> Path | None:
             try:
                 verify_index(path.parent, cfg)
                 candidates.append(path.parent)
-            except (OSError, ValueError, KeyError, TypeError):
+            except (OSError, ValueError, KeyError, TypeError, OmegaConfBaseException):
                 continue
         if len(candidates) > 1:
             raise ValueError("Multiple compatible visual indexes; supply paths.index explicitly")
@@ -52,7 +53,7 @@ def find_artifact(cfg, stage: str) -> Path | None:
             saved = OmegaConf.load(path.parent / ".hydra/config.yaml")
             if saved.retrieval.top_k == cfg.retrieval.top_k:
                 candidates.append(path.parent)
-        except (OSError, ValueError, KeyError, TypeError):
+        except (OSError, ValueError, KeyError, TypeError, OmegaConfBaseException):
             continue
     if len(candidates) > 1:
         raise ValueError("Multiple compatible saved runs; supply paths.run explicitly")
@@ -63,6 +64,12 @@ def plan(stage: str, overrides: list[str]):
     """Compose ordinary Hydra overrides and supply only omitted artifact inputs."""
     if stage not in {"prepare", "index", "retrieve", "evaluate"}:
         raise ValueError(f"Unsupported script stage: {stage}")
+    if "--test" in overrides:
+        overrides = [argument for argument in overrides if argument != "--test"]
+        if any(argument.startswith("mode=") and argument != "mode=test" for argument in overrides):
+            raise ValueError("--test cannot be combined with another mode")
+        if "mode=test" not in overrides:
+            overrides.append("mode=test")
     if any(arg.startswith("-") for arg in overrides):
         raise ValueError("Stage scripts accept single-run Hydra key=value overrides only")
     with initialize_config_dir(version_base="1.3", config_dir=str(CONFIG_DIR)):
@@ -71,7 +78,10 @@ def plan(stage: str, overrides: list[str]):
     automatic = key is not None and cfg.paths[key] is None
     if automatic:
         # Validation requires input paths even during configuration-only planning.
-        cfg.paths[key] = str(Path.cwd() / ".artifact-selection-placeholder")
+        cfg.paths[key] = str(
+            (Path(cfg.test_root) if cfg.test_mode else Path.cwd())
+            / ".artifact-selection-placeholder"
+        )
     resolved = resolve_config(cfg, Path.cwd())
     command = [*overrides, f"stage={stage}"]
     if automatic:
@@ -91,6 +101,8 @@ def plan(stage: str, overrides: list[str]):
             )
         # JSON quoting is accepted by Hydra and preserves spaces in filesystem paths.
         command.append(f"paths.{key}={json.dumps(str(artifact))}")
+        cfg.paths[key] = str(artifact)
+        resolved = resolve_config(cfg, Path.cwd())
         if not resolved.dry_run:
             print(f"Using {key}: {artifact}", flush=True)
     return resolved, command
@@ -100,7 +112,8 @@ def main() -> None:
     args = sys.argv[1:]
     if not args or "--help" in args or "-h" in args:
         print(
-            "Usage: scripts/0N_STAGE.sh [Hydra key=value ...]\n"
+            "Usage: scripts/0N_STAGE.sh [--test] [Hydra key=value ...]\n"
+            "--test: exactly 100 test-split documents; isolated ./test/ outputs and caches.\n"
             "Defaults: BM25/fulltext, ACL, all corpus documents, test queries, CPU, top-100.\n"
             "Examples: scripts/02_index.sh experiment=dense_passages\n"
             "          scripts/03_retrieve.sh retrieval.top_k=200\n"
@@ -115,7 +128,7 @@ def main() -> None:
                 f"Dataset root does not exist: {cfg.dataset.root}. "
                 "Put restored data in ./data or set TOT_DATA_ROOT once in scripts/defaults.sh."
             )
-    result = subprocess.run([sys.executable, "-m", "scientific_tot.hydra_entry", *command])
+    result = subprocess.run([sys.executable, "-u", "-m", "scientific_tot.hydra_entry", *command])
     raise SystemExit(result.returncode)
 
 

@@ -5,6 +5,31 @@ from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 
 
+def configured_corpus(cfg: DictConfig, adapter):
+    """Load the configured representation and enforce the opt-in test corpus boundary."""
+    from scientific_tot.configuration import VISUAL_DENSE_MODELS
+
+    if cfg.model.name in VISUAL_DENSE_MODELS:
+        from scientific_tot.integrations.visual_dense import load_visual_corpus
+
+        corpus = load_visual_corpus(adapter, cfg)
+    elif cfg.model.name == "colqwen":
+        from scientific_tot.integrations.colqwen import load_pdf_corpus
+
+        corpus = load_pdf_corpus(adapter, cfg)
+    else:
+        corpus = adapter.load_corpus(**corpus_arguments(cfg))
+    if cfg.get("test_mode", False) and (
+        len(corpus) != 100 or corpus.report.selected != 100 or corpus.report.skipped
+    ):
+        raise ValueError(
+            "Test mode requires exactly 100 test-split documents with no skipped papers; "
+            f"selected={corpus.report.selected}, loaded={len(corpus)}, "
+            f"skipped={corpus.report.skipped}"
+        )
+    return corpus
+
+
 def bm25_arguments(cfg: DictConfig, *, docno_bytes: int) -> tuple[dict, dict]:
     """The caller converts classic to PyTerrier's IndexingType.CLASSIC enum."""
     assert cfg.model.name == "bm25"

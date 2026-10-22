@@ -12,7 +12,7 @@ from omegaconf import OmegaConf
 
 from scientific_tot.config_arguments import (
     configured_adapter,
-    corpus_arguments,
+    configured_corpus,
     dense_arguments,
     query_arguments,
 )
@@ -25,7 +25,7 @@ from scientific_tot.config_artifacts import (
 )
 from scientific_tot.configuration import VISUAL_DENSE_MODELS, resolve_config
 from scientific_tot.records import records_digest
-from scientific_tot.reporting import package_version
+from scientific_tot.reporting import package_version, phase
 
 PLANNED_IDENTITIES: dict[Path, dict] = {}
 INDEX_EXISTENCE: dict[Path, bool] = {}
@@ -106,16 +106,7 @@ def _resolve_identity(cfg) -> dict:
             "run_name": cfg.run.name,
         }
     adapter = configured_adapter(cfg)
-    if cfg.model.name in VISUAL_DENSE_MODELS:
-        from scientific_tot.integrations.visual_dense import load_visual_corpus
-
-        corpus = load_visual_corpus(adapter, cfg)
-    elif cfg.model.name == "colqwen":
-        from scientific_tot.integrations.colqwen import load_pdf_corpus
-
-        corpus = load_pdf_corpus(adapter, cfg)
-    else:
-        corpus = adapter.load_corpus(**corpus_arguments(cfg))
+    corpus = configured_corpus(cfg, adapter)
     if stage == "prepare":
         from scientific_tot.adapter import validate_qrels
 
@@ -195,10 +186,11 @@ def hydra_directory(*, _root_) -> str:
         identity = {"dry_run": OmegaConf.to_container(cfg, resolve=True)}
         return str(Path(cfg.launcher.output_root) / "dry-runs" / artifact_name(cfg, identity))
     if cfg.stage.name == "index":
-        directory = artifact_directory(
-            cfg,
-            resolve_identity(cfg) if cfg.model.name in {"colqwen"} | VISUAL_DENSE_MODELS else {},
-        )
+        identity = {}
+        if cfg.model.name in {"colqwen"} | VISUAL_DENSE_MODELS:
+            with phase(f"Startup: identify {cfg.model.name} corpus before selecting index output"):
+                identity = resolve_identity(cfg)
+        directory = artifact_directory(cfg, identity)
         # Hydra creates the directory before dispatch; remember whether it already existed.
         INDEX_EXISTENCE.setdefault(directory, directory.exists())
         return str(directory)

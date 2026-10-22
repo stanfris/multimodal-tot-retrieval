@@ -573,7 +573,9 @@ def execute_visual_stage(cfg, run_dir) -> dict:
     if cfg.stage.name == "retrieve":
         return retrieve(cfg, run_dir)
     adapter = configured_adapter(cfg)
-    corpus = load_pdf_corpus(adapter, cfg)
+    from scientific_tot.config_arguments import configured_corpus
+
+    corpus = configured_corpus(cfg, adapter)
     if cfg.stage.name == "index":
         return {
             "index_provenance": build_index(corpus, cfg, reserved=Path(cfg.paths.index) == run_dir)

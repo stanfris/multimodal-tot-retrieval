@@ -72,6 +72,8 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
     _validate(resolved)
     base_dir = base_dir.resolve()
     run_dir = run_dir.resolve() if run_dir is not None else None
+    if resolved.get("test_mode", False):
+        resolved.test_root = str(absolute(resolved.test_root, base_dir))
     for key in ("dataset_root", "cache_root", "output_root"):
         resolved.launcher[key] = str(absolute(resolved.launcher[key], base_dir))
     for key in ("root", "cache_dir"):
@@ -86,6 +88,20 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
     for key in ("index", "run"):
         if resolved.paths[key] is not None:
             resolved.paths[key] = str(absolute(resolved.paths[key], base_dir))
+    if resolved.get("test_mode", False):
+        root = Path(resolved.test_root)
+        for value in (
+            resolved.launcher.output_root,
+            resolved.launcher.cache_root,
+            resolved.dataset.cache_dir,
+            resolved.paths.index,
+            resolved.paths.run,
+            str(run_dir) if run_dir is not None else None,
+        ):
+            _require(
+                value is None or Path(value).is_relative_to(root),
+                "Test mode requires outputs, caches and artifact inputs inside test_root",
+            )
     if run_dir is not None and resolved.stage.name == "index" and resolved.paths.index is None:
         resolved.paths.index = str(run_dir)
     inputs = [
@@ -143,6 +159,13 @@ def resolve_config(cfg: DictConfig, base_dir: Path, run_dir: Path | None = None)
 
 def _validate(cfg: DictConfig) -> None:
     _require(type(cfg.dry_run) is bool, "dry_run must be a boolean")
+    _require(type(cfg.get("test_mode", False)) is bool, "test_mode must be a boolean")
+    if cfg.get("test_mode", False):
+        _require(_text(cfg.test_root), "test_root must be a nonempty path")
+        _require(
+            cfg.split.corpus == cfg.split.queries == "test",
+            "Test mode requires split.corpus=test and split.queries=test",
+        )
     _require(
         _text(cfg.run.name) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+-]*", cfg.run.name),
         "run.name must be a plain filesystem-safe experiment name",

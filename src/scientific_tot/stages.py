@@ -7,7 +7,7 @@ from omegaconf import DictConfig
 from scientific_tot.adapter import validate_qrels
 from scientific_tot.config_arguments import (
     configured_adapter,
-    corpus_arguments,
+    configured_corpus,
     query_arguments,
 )
 from scientific_tot.configuration import VISUAL_DENSE_MODELS
@@ -62,12 +62,7 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
         f"representation={cfg.representation.name}",
         flush=True,
     )
-    if cfg.model.name in VISUAL_DENSE_MODELS:
-        from scientific_tot.integrations.visual_dense import load_visual_corpus
-
-        corpus = load_visual_corpus(adapter, cfg)
-    else:
-        corpus = adapter.load_corpus(**corpus_arguments(cfg))
+    corpus = configured_corpus(cfg, adapter)
     print(f"Selected corpus: {len(corpus):,} documents", flush=True)
     if cfg.stage.name == "index":
         from types import SimpleNamespace

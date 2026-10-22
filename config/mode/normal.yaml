@@ -1,0 +1,3 @@
+# @package _global_
+test_mode: false
+test_root: ${oc.env:TOT_TEST_ROOT,./test}

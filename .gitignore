@@ -11,6 +11,7 @@ dist/
 
 .venv-pyterrier/
 /results/
+/test/
 .ipynb_checkpoints/
 
 .venv-colqwen/

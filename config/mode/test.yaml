@@ -1,0 +1,12 @@
+# @package _global_
+test_mode: true
+test_root: ${oc.env:TOT_TEST_ROOT,./test}
+split:
+  name: test
+  corpus: test
+  queries: test
+launcher:
+  output_root: ${test_root}/results
+  cache_root: ${test_root}/cache
+dataset:
+  cache_dir: ${launcher.cache_root}/datasets

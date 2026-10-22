@@ -95,6 +95,11 @@ def load_visual_corpus(adapter, cfg) -> Records:
         print(f"Multimodal pages without extracted text: {missing:,}", flush=True)
         return Records("corpus", rows, selected.report, selected.provenance)
 
+    print(
+        f"Loading figure metadata: domains={','.join(cfg.dataset.domains)}, "
+        f"split={cfg.split.corpus}; dataset={cfg.dataset.root}",
+        flush=True,
+    )
     selected = adapter.load_corpus(**corpus_arguments(cfg))
     store = Artifacts(adapter.dataset, tuple(cfg.dataset.domains), archives=True)
     report = Report(
