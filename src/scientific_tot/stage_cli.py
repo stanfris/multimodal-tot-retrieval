@@ -145,7 +145,8 @@ def main() -> None:
         if not Path(cfg.dataset.root).is_dir():
             raise ValueError(
                 f"Dataset root does not exist: {cfg.dataset.root}. "
-                "Put restored data in ./data or set TOT_DATA_ROOT once in scripts/defaults.sh."
+                "Set TOT_DATA_ROOT (or VTT_DATA_ROOT) in your environment or scripts/defaults.sh, "
+                "or put restored data in ./data for direct Hydra runs."
             )
     result = subprocess.run([sys.executable, "-u", "-m", "scientific_tot.hydra_entry", *command])
     raise SystemExit(result.returncode)
