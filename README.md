@@ -1,27 +1,14 @@
-# scientific-tot-retrieval
+# Scientific Tip of the Tongue Retrieval.
 
-Canonical dataset adapters for the
-[scientific tip-of-the-tongue dataset](https://huggingface.co/datasets/kasys/open-source-scientific-documents).
-Load selected original-content corpus records, queries, and validated relevance
-judgments, then export standard JSONL for existing retrieval frameworks.
+This repository is the retrieval model implementation for **Multimodal Tip-of-the-Tongue Retrieval for Scientific Papers**, which introduces a
+[multimodal scientific tip-of-the-tongue dataset](https://huggingface.co/datasets/kasys/open-source-scientific-documents). 
+In this repository we provide implementations of retrieval models to be used for evaluation.
 
-The published dataset is the source of truth. The
-[generation repository](https://github.com/stanfris/multimodal-tip-of-tongue-retrieval-for-scientific-papers)
-creates the artifacts; this package does not depend on that pipeline at runtime
+Please first download the dataset from the [generation repository](https://github.com/stanfris/multimodal-tip-of-tongue-retrieval-for-scientific-papers)
+creates the artifact. This package does not depend on that pipeline at runtime
 and delegates ranking, pretrained encoding, and evaluation to PyTerrier,
 Sentence Transformers, FAISS, Stanford ColBERT, Qdrant, and ir_measures.
 
-**Publication status rechecked 2026-10-11:** revision
-`3b764a4c6855925ec802a2560712c4f5cc96f980` contains query collections only.
-Corpus archives, `metadata.parquet`, and `splits/` are absent. Queries can be
-loaded from the Hub now; full corpus/qrel conversion requires appropriate local
-artifacts or a future publication containing them. Missing data is reported,
-never fabricated. [Evidence and data contract](docs/dataset-schema.md).
-
-This is the reference for the 11 core methods. All methods use the original
-textual ToT query strings and return paper rankings. No fine-tuning is performed.
-Configuration values below come from `config/model/`, `config/representation/`,
-and the integrations in `src/scientific_tot/integrations/`.
 
 ## Core benchmark
 
