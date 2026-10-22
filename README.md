@@ -554,42 +554,32 @@ Repeat any model/representation/encoding overrides consistently at all stages.
 The scripts discover compatible saved artifacts and print the paths selected.
 
 ```sh
-# 1. BM25 fulltext
+# BM25 fulltext
 ./scripts/02_index.sh experiment=bm25_fulltext split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh experiment=bm25_fulltext split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=bm25_fulltext split=test 'dataset.domains=[ACL]'
 
-# 2. E5 fulltext
+# E5 fulltext
 ./scripts/02_index.sh model=dense representation=fulltext split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh model=dense representation=fulltext split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh model=dense representation=fulltext split=test 'dataset.domains=[ACL]'
 
-# 3. E5 passages
-./scripts/02_index.sh experiment=dense_passages split=test 'dataset.domains=[ACL]'
-./scripts/03_retrieve.sh experiment=dense_passages split=test 'dataset.domains=[ACL]'
-./scripts/04_evaluate.sh experiment=dense_passages split=test 'dataset.domains=[ACL]'
-
-# 4. ColBERT fulltext
+# ColBERT fulltext
 ./scripts/02_index.sh experiment=colbert_fulltext split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh experiment=colbert_fulltext split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=colbert_fulltext split=test 'dataset.domains=[ACL]'
 
-# 5. ColQwen pages (scripts automatically select .venv-colqwen)
+# ColQwen pages (scripts automatically select .venv-colqwen)
 ./scripts/02_index.sh experiment=colqwen_pages split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh experiment=colqwen_pages split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=colqwen_pages split=test 'dataset.domains=[ACL]'
 
-# 6. OpenCLIP pages
-./scripts/02_index.sh experiment=openclip_pages split=test 'dataset.domains=[ACL]'
-./scripts/03_retrieve.sh experiment=openclip_pages split=test 'dataset.domains=[ACL]'
-./scripts/04_evaluate.sh experiment=openclip_pages split=test 'dataset.domains=[ACL]'
-
-# 7. OpenCLIP figures
+# OpenCLIP figures
 ./scripts/02_index.sh experiment=openclip_figures split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh experiment=openclip_figures split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=openclip_figures split=test 'dataset.domains=[ACL]'
 
-# 8. Qwen text
+# Qwen text
 ./scripts/02_index.sh experiment=qwen3_vl_text split=test 'dataset.domains=[ACL]'
 ./scripts/03_retrieve.sh experiment=qwen3_vl_text split=test 'dataset.domains=[ACL]'
 ./scripts/04_evaluate.sh experiment=qwen3_vl_text split=test 'dataset.domains=[ACL]'
