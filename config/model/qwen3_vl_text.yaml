@@ -13,6 +13,7 @@ batch_size: 2
 device: ${launcher.device}
 precision: bf16
 max_length: 32768
+truncation_side: right
 query_instruction: Retrieve images or text relevant to the user's query.
 indexing:
   factory: Flat

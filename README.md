@@ -413,8 +413,9 @@ done
 
 All run in the default locked environment. Qwen needs no PDF rendering or
 page-level text alignment; lean `markdown.md` + `images/` staging is sufficient.
-Inputs exceeding Qwen's shared 32768-token context fail explicitly without
-silently dropping images or text. Image-only Qwen requires at least one image
+Qwen supplies all images before all available text. The official processor
+keeps the input prefix up to the shared 32768-token context limit and truncates
+the remaining text from the end. Image-only Qwen requires at least one image
 per paper; multimodal papers without images use their full text.
 The old Qwen page/figure profiles have been replaced; rebuild their indexes using
 the new profiles. See the [visual dense retrieval guide](docs/visual-dense-retrieval.md).

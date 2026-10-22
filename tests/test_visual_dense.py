@@ -418,7 +418,7 @@ def test_openclip_standard_long_query_tokenization():
     assert encoder.truncated == 1
 
 
-def test_qwen_full_query_and_combined_context():
+def test_qwen_full_inputs_and_processor_truncation():
     import torch
 
     encoder = QwenEmbeddingEncoder.__new__(QwenEmbeddingEncoder)
@@ -426,6 +426,8 @@ def test_qwen_full_query_and_combined_context():
         model=SimpleNamespace(query_instruction="Retrieve relevant images.")
     )
     seen = []
+    limits = []
+    forwarded = []
 
     def format_input(image=None, text=None, instruction=None):
         content = []
@@ -440,9 +442,10 @@ def test_qwen_full_query_and_combined_context():
 
     def preprocess(rows):
         seen.extend(rows)
+        limits.append(encoder.model.max_length)
         count = sum(item["type"] == "image" for row in rows for item in row[1]["content"])
         return {
-            "attention_mask": torch.ones(len(rows), 9000),
+            "attention_mask": torch.ones(len(rows), min(9000, encoder.model.max_length)),
             **(
                 {"pixel_values": torch.ones(count), "image_grid_thw": torch.ones(count, 3)}
                 if count
@@ -455,10 +458,13 @@ def test_qwen_full_query_and_combined_context():
         format_model_input=format_input,
         _preprocess_inputs=preprocess,
         model=SimpleNamespace(device="cpu"),
-        forward=lambda values: {
-            "last_hidden_state": torch.ones(len(values["attention_mask"]), 2, 2),
-            "attention_mask": values["attention_mask"],
-        },
+        forward=lambda values: (
+            forwarded.append(values)
+            or {
+                "last_hidden_state": torch.ones(len(values["attention_mask"]), 2, 2),
+                "attention_mask": values["attention_mask"],
+            }
+        ),
         _pooling_last=lambda hidden, mask: hidden[:, -1],
     )
     query = "original ToT text " * 1000
@@ -476,11 +482,15 @@ def test_qwen_full_query_and_combined_context():
     encoder.encode([{"images": [], "text": "Full original paper text"}], "document")
     assert seen[-1][1]["content"] == [{"type": "text", "text": "Full original paper text"}]
     encoder.model.max_length = 8192
-    with pytest.raises(ValueError, match="refusing truncation"):
-        encoder.encode([query], "query")
-    assert encoder.model.max_length == 8192
-    with pytest.raises(ValueError, match="paper.*refusing truncation"):
-        encoder.encode([{"images": images, "text": "Long text", "doc_id": "paper"}], "document")
+    for values, task in (
+        ([query], "query"),
+        ([{"images": [], "text": "Long text", "doc_id": "paper"}], "document"),
+        ([{"images": images, "text": "Long text", "doc_id": "paper"}], "document"),
+    ):
+        result = encoder.encode(values, task)
+        assert result.shape == (1, 2)
+        assert forwarded[-1]["attention_mask"].shape == (1, 8192)
+        assert limits[-1] == encoder.model.max_length == 8192
     encoder.model.max_length = 32768
     encoder.model._preprocess_inputs = lambda rows: {
         "attention_mask": torch.ones(len(rows), 2),
@@ -491,6 +501,54 @@ def test_qwen_full_query_and_combined_context():
         encoder.encode([{"images": images, "text": "Full text"}], "document")
     for image in images:
         image.close()
+
+
+@pytest.mark.visual_live
+def test_real_qwen_prefix_truncation(tmp_path, visual_dataset):
+    import torch
+
+    cfg, _ = settings(
+        tmp_path,
+        visual_dataset,
+        "index",
+        None,
+        *overrides("qwen3_vl_multimodal"),
+        "model.max_length=256",
+    )
+    encoder = visual_dense.load_model(cfg)
+    captured = []
+    forward = encoder.model.forward
+
+    def capture(values):
+        captured.append(values)
+        return forward(values)
+
+    encoder.model.forward = capture
+    text = "PREFIXRETAINED " + "scientific document " * 1000 + " SUFFIXREMOVED"
+    images = [Image.new("RGB", (32, 32)) for _ in range(3)]
+    try:
+        with torch.inference_mode():
+            vectors = encoder.encode(
+                [
+                    {"images": images},
+                    {"images": [], "text": text},
+                    {"images": images, "text": text},
+                ],
+                "document",
+            )
+            assert vectors.shape == (3, 2048) and torch.isfinite(vectors).all()
+            assert torch.allclose(vectors.norm(dim=1), torch.ones(3), atol=1e-5)
+            assert captured[-1]["attention_mask"].sum(dim=1).tolist()[1:] == [256, 256]
+            assert len(captured[-1]["image_grid_thw"]) == 6
+            decoded = encoder.model.processor.tokenizer.batch_decode(captured[-1]["input_ids"])
+            for value in decoded[1:]:
+                assert "PREFIXRETAINED" in value and "SUFFIXREMOVED" not in value
+            encoder.encode([text], "query")
+            assert captured[-1]["attention_mask"].sum().item() == 256
+            assert encoder.model.processor.tokenizer.truncation_side == "right"
+    finally:
+        for image in images:
+            image.close()
 
 
 @pytest.mark.visual_live

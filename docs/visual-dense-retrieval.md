@@ -49,12 +49,18 @@ figures missing policy is unchanged: papers without images stay in evaluation
 but receive no vector, and explicit `dataset.missing=skip` can exclude unusable images.
 
 All Qwen queries use `Retrieve images or text relevant to the user's query.`
-Queries remain intact and their embeddings are shared across the three profiles.
-The shared context budget is 32768 tokens, including image tokens, full text and
-the chat template. The official processor runs once, with overflow detection;
-its tensors are reused for inference. Over-budget inputs raise with the paper ID
-instead of silently truncating text or omitting images. Official image resizing
-uses 4096–1843200 pixels per image.
+Original query strings are supplied without rewriting; their embeddings are
+shared across the three profiles.
+The shared context budget is 32768 tokens, including image tokens, text and the
+chat template. All available input is supplied to the official processor, which
+runs once with right-side truncation at `model.max_length`. Images precede text,
+so the remaining budget holds the beginning of the text and any excess suffix
+is discarded. The same prefix truncation applies to long text-only documents
+and queries. The configured limit and truncation side are recorded in encoding
+metadata and cache/index identity. The processed tensors are reused for inference.
+Official image resizing uses 4096–1843200 pixels per image. Image tokens must fit
+within the context; the Transformers processor rejects truncation through image
+tokens rather than creating mismatched image features.
 
 Embeddings are L2-normalized in float32 and inserted incrementally into exact
 `IndexFlatIP`. GPU encoding uses inference mode and SDPA for Qwen. A single CPU
@@ -110,7 +116,8 @@ choose one supported by the GPU. CPU smoke runs explicitly use
 `launcher=local_cpu model.precision=fp32`. No device fallback occurs.
 Adjust `model.batch_size` consistently across index/retrieve/evaluate commands to
 fit memory. Qwen also exposes `model.max_length` and `model.query_instruction`;
-all Qwen profiles inherit their shared settings from `config/model/qwen3_vl_text.yaml`.
+`model.truncation_side=right` keeps the input prefix.
+All Qwen profiles inherit their shared settings from `config/model/qwen3_vl_text.yaml`.
 
 Indexes live under the existing `indexes/`, retrieval artifacts under `models/`,
 and metrics under `evaluations/`. Distinct model names, strategies and content
@@ -153,7 +160,7 @@ uv run pytest -m visual_live tests/test_visual_dense.py
 Offline tests exercise PDFium rendering, multi-image papers, original full text,
 FAISS persistence, complete Hydra stages, saved-run evaluation and cache reuse
 with mocked neural inference. They verify one Qwen vector per paper, all-images-
-before-text ordering, image retention, context overflow, missing-image behavior,
+before-text ordering, image retention, token-limit truncation, missing-image behavior,
 separate document indexes, shared queries and isolated test-mode execution.
 
 Some macOS PyTorch/FAISS wheels bundle different OpenMP runtimes. The local test
@@ -178,6 +185,11 @@ Executed validation on 2026-10-22:
 - All **24** Qwen stage-script dry runs passed (prepare/index/retrieve/evaluate,
   normal and isolated test modes). Ruff lint/format, lock validation and Git
   whitespace checks passed.
+
+Right-truncation follow-up: **262 targeted offline tests passed**, plus a real
+CPU checkpoint test at a 256-token limit. That test retained every image,
+kept the text prefix, removed its suffix, produced one normalized vector per
+paper and also truncated a long query successfully.
 
 The historical page-level Qwen smoke measurements do not apply to these
 whole-document profiles. CUDA/bfloat16 inference and full-corpus throughput have

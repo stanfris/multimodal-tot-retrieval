@@ -232,9 +232,11 @@ class QwenEmbeddingEncoder:
             attn_implementation="sdpa",
         )
         self.model.model.to(cfg.model.device)
+        self.model.processor.tokenizer.truncation_side = cfg.model.truncation_side
         self.metadata = {
             "implementation": "official Qwen3VLEmbedder preprocessing, forward and _pooling_last",
             "max_length": self.model.max_length,
+            "truncation_side": cfg.model.truncation_side,
             "min_pixels": self.model.min_pixels,
             "max_pixels": self.model.max_pixels,
             "document_instruction": self.model.default_instruction,
@@ -249,9 +251,6 @@ class QwenEmbeddingEncoder:
             inputs = [
                 {"text": text, "instruction": self.cfg.model.query_instruction} for text in values
             ]
-        # Probe the official processor with one extra token to detect overflow before
-        # process() can silently truncate. This counts expanded image tokens as well
-        # as text/template tokens, without moving the preview tensors to the GPU.
         conversations = []
         for row in inputs:
             images = row.get("images", [])
@@ -266,21 +265,9 @@ class QwenEmbeddingEncoder:
                 self.model.format_model_input(image=image)[1]["content"][0] for image in images[1:]
             ]
             conversations.append(conversation)
-        limit = self.model.max_length
-        try:
-            self.model.max_length = limit + 1
-            preview = self.model._preprocess_inputs(conversations)
-        finally:
-            self.model.max_length = limit
-        overflow = preview["attention_mask"].sum(dim=1) > limit
-        if overflow.any():
-            labels = [
-                inputs[i].get("doc_id", f"input {i}") for i in overflow.nonzero().flatten().tolist()
-            ]
-            raise ValueError(
-                f"Qwen input exceeds the shared context budget ({', '.join(labels)}); "
-                "refusing truncation"
-            )
+        # The official processor truncates at max_length. Images precede text,
+        # so text fills the remaining context and its suffix is discarded.
+        preview = self.model._preprocess_inputs(conversations)
         image_count = sum(len(row.get("images", [])) for row in inputs)
         if image_count and (
             "pixel_values" not in preview
@@ -290,7 +277,7 @@ class QwenEmbeddingEncoder:
             raise ValueError(
                 "Official Qwen preprocessing did not retain every image modality input"
             )
-        # Reuse the validated CPU tensors with the official forward/pooling methods.
+        # Reuse the processed CPU tensors with the official forward/pooling methods.
         # Calling process(inputs) here would repeat image processing and tokenization.
         processed = {key: value.to(self.model.model.device) for key, value in preview.items()}
         output = self.model.forward(processed)

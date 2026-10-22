@@ -318,6 +318,7 @@ def _validate(cfg: DictConfig) -> None:
         else:
             _require(model.model_id == "Qwen/Qwen3-VL-Embedding-2B", "Incorrect Qwen checkpoint")
             _require(model.dimension == 2048, "Use Qwen's default 2048 dimensions")
+            _require(model.truncation_side == "right", "Qwen requires right-side truncation")
             _require(
                 _positive(model.max_length) and model.max_length <= 32768,
                 "Qwen max_length must be positive and at most 32768",
