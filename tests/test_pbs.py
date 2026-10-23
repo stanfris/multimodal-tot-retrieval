@@ -80,6 +80,29 @@ def test_colqwen_uses_its_venv_without_resolving_python_symlink(submission, monk
     assert str(ROOT / ".venv-colqwen/bin/python") in body
 
 
+def test_qwen_batch_check_submits_without_reading_the_corpus(submission, monkeypatch):
+    from scientific_tot import check_qwen_batch
+
+    arguments = [
+        "8912",
+        "launcher=h200",
+        "launcher.walltime=00:20:00",
+        "experiment=qwen3_vl_multimodal",
+        "split=test",
+        "dataset.domains=[ACL]",
+    ]
+    monkeypatch.setattr(sys, "argv", ["check", *arguments])
+    monkeypatch.setattr(
+        check_qwen_batch, "check_batch", lambda *args: pytest.fail("Login-node encoding")
+    )
+    check_qwen_batch.main()
+    args = json.loads((submission / "qsub-args.json").read_text())
+    assert "walltime=00:20:00" in args
+    plan = json.loads((Path(args[-1]).parent / "plan.json").read_text())
+    assert plan["command"][3:] == ["scientific_tot.check_qwen_batch", *arguments]
+    assert not (submission / "results/indexes").exists()
+
+
 def test_benchmark_submits_one_worker_for_all_sequential_stages(submission, monkeypatch):
     monkeypatch.setattr(
         sys,

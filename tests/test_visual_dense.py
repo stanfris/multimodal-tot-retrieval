@@ -702,6 +702,13 @@ def test_qwen_full_inputs_and_processor_truncation():
     with pytest.raises(ValueError, match="paper-too-large.*image token count"):
         encoder.encode([{"images": images, "doc_id": "paper-too-large"}], "document")
 
+    def image_index_failure(rows):
+        raise IndexError("index 111 is out of bounds for dimension 0 with size 111")
+
+    encoder._preprocess = image_index_failure
+    with pytest.raises(IndexError, match="paper-with-control-tokens.*index 111"):
+        encoder.encode([{"images": images, "doc_id": "paper-with-control-tokens"}], "document")
+
     def fail(rows):
         raise torch.cuda.OutOfMemoryError("allocation failed")
 
@@ -717,6 +724,7 @@ def test_qwen_vision_errors_propagate_without_placeholder():
     encoder.model = SimpleNamespace(
         processor=SimpleNamespace(apply_chat_template=lambda *a, **k: "formatted input")
     )
+    encoder.model.processor.tokenizer = SimpleNamespace(all_special_tokens=[])
 
     def fail(*args, **kwargs):
         raise ValueError("invalid image dimensions")
@@ -724,6 +732,129 @@ def test_qwen_vision_errors_propagate_without_placeholder():
     encoder.process_vision_info = fail
     with pytest.raises(ValueError, match="invalid image dimensions"):
         encoder._preprocess([])
+
+
+@pytest.mark.parametrize("image_count", [0, 2, 111])
+def test_qwen_literal_control_tokens_with_real_processor(image_count):
+    from qwen_vl_utils import process_vision_info
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from transformers import (
+        Qwen2TokenizerFast,
+        Qwen2VLImageProcessor,
+        Qwen3VLProcessor,
+        Qwen3VLVideoProcessor,
+    )
+
+    # Exercise the installed processor offline, with a tiny tokenizer and real images.
+    special = ["<|image_pad|>", "<|video_pad|>", "<|vision_start|>", "<|vision_end|>"]
+    tokenizer = Qwen2TokenizerFast(
+        tokenizer_object=Tokenizer(WordLevel({"[UNK]": 0}, unk_token="[UNK]")),
+        unk_token="[UNK]",
+        additional_special_tokens=special,
+    )
+    processor = Qwen3VLProcessor(
+        tokenizer=tokenizer,
+        image_processor=Qwen2VLImageProcessor(patch_size=16),
+        video_processor=Qwen3VLVideoProcessor(),
+        chat_template=(
+            "{% for message in messages %}{% for block in message.content %}"
+            "{% if block.type == 'image' %}<|vision_start|><|image_pad|><|vision_end|>"
+            "{% else %}{{ block.text }}{% endif %}{% endfor %}{% endfor %}"
+        ),
+    )
+    literal = "Paper quotes " + " ".join([*special, "<|placeholder|>"])
+    with Image.new("RGB", (32, 32)) as image:
+        conversations = [
+            [{"role": "user", "content": [{"type": "text", "text": literal}]}],
+            [
+                {"role": "system", "content": [{"type": "text", "text": literal}]},
+                {
+                    "role": "user",
+                    "content": [
+                        *[{"type": "image", "image": image} for _ in range(image_count)],
+                        {"type": "text", "text": "Ordinary paper text."},
+                    ],
+                },
+            ],
+        ]
+        if image_count:
+            with pytest.raises(IndexError, match=f"index {image_count} is out of bounds"):
+                processor(
+                    text=processor.apply_chat_template(conversations, tokenize=False),
+                    images=[image] * image_count,
+                    do_resize=False,
+                )
+        encoder = QwenEmbeddingEncoder.__new__(QwenEmbeddingEncoder)
+        encoder.model = SimpleNamespace(processor=processor, max_length=32768)
+        encoder.process_vision_info = process_vision_info
+        processed = encoder._preprocess(conversations)
+
+    assert conversations[0][0]["content"][0]["text"] == literal.replace("<|", "< |")
+    assert conversations[1][0]["content"][0]["text"] == literal.replace("<|", "< |")
+    assert conversations[1][1]["content"][-1]["text"] == "Ordinary paper text."
+    ids = processed["input_ids"]
+    image_tokens = (
+        (processed["image_grid_thw"].prod(dim=1) // processor.image_processor.merge_size**2)
+        .sum()
+        .item()
+        if image_count
+        else 0
+    )
+    assert (ids == processor.image_token_id).sum().item() == image_tokens
+    assert (ids == processor.video_token_id).sum().item() == 0
+    assert (ids == processor.vision_start_token_id).sum().item() == image_count
+    assert (ids == processor.vision_end_token_id).sum().item() == image_count
+    if image_count:
+        assert len(processed["image_grid_thw"]) == image_count
+
+
+@pytest.mark.parametrize("batch_number", [1, 2, 3])
+def test_qwen_batch_replay_uses_original_corpus_order(
+    tmp_path, visual_dataset, monkeypatch, capsys, batch_number
+):
+    import torch
+
+    from scientific_tot.check_qwen_batch import check_batch
+
+    cfg, _ = settings(
+        tmp_path,
+        visual_dataset,
+        "index",
+        None,
+        *overrides("qwen3_vl_multimodal"),
+        "model.batch_size=1",
+    )
+    encoded_ids = []
+
+    def encode(values, task):
+        assert task == "document"
+        encoded_ids.extend(row["doc_id"] for row in values)
+        assert len(values) == 1
+        assert len(values[0]["images"]) == (3 if batch_number == 1 else 1)
+        return torch.ones(len(values), cfg.model.dimension)
+
+    encoder = SimpleNamespace(
+        model=SimpleNamespace(
+            processor=SimpleNamespace(
+                tokenizer=SimpleNamespace(all_special_tokens=["<|image_pad|>"])
+            )
+        ),
+        encode=encode,
+    )
+    monkeypatch.setattr(visual_dense, "load_model", lambda cfg: encoder)
+    if batch_number == 3:
+        with pytest.raises(ValueError, match="exceeds the corpus's 2 batches"):
+            check_batch(cfg, batch_number)
+        assert not encoded_ids
+        return
+    check_batch(cfg, batch_number)
+    papers = sorted(visual_dataset.glob("preprocessed/ACL/*/paper.json"))
+    assert encoded_ids == [json.loads(papers[batch_number - 1].read_text())["paper_id"]]
+    output = capsys.readouterr().out
+    assert f"Replaying batch {batch_number}/2; papers=2; batch_size=1" in output
+    assert f"PASS: batch {batch_number} encoded successfully on cpu" in output
+    assert not (tmp_path / "results/indexes").exists()
 
 
 @pytest.mark.parametrize(

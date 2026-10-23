@@ -282,6 +282,17 @@ class QwenEmbeddingEncoder:
         }
 
     def _preprocess(self, conversations, *, truncation=True):
+        # Paper/query text can quote Qwen control tokens. Escape them before the
+        # template adds real modality markers, or the processor consumes extra images.
+        reserved = [*self.model.processor.tokenizer.all_special_tokens, "<|placeholder|>"]
+        for conversation in conversations:
+            for message in conversation:
+                for block in message["content"]:
+                    if block["type"] == "text":
+                        for token in reserved:
+                            block["text"] = block["text"].replace(
+                                token, token.replace("<|", "< |", 1)
+                            )
         # Same pinned official preprocessing arguments, with errors allowed to
         # propagate instead of its catch-all replacement with a NULL input.
         text = self.model.processor.apply_chat_template(
@@ -389,7 +400,7 @@ class QwenEmbeddingEncoder:
                 f"Qwen CUDA out of memory for {ids}: {exc}. Reduce model.batch_size "
                 "(try 1); a single paper may still exceed GPU memory."
             ) from exc
-        except (ValueError, RuntimeError) as exc:
+        except (ValueError, RuntimeError, IndexError) as exc:
             raise type(exc)(f"Qwen input {ids}: {exc}") from exc
 
     def _encode(self, values, task):
@@ -551,6 +562,8 @@ def cached_encoding(cfg, *, task, rows, dataset_revision):
 
     assert task in {"document", "query"} and (rows or task == "document")
     model_settings = OmegaConf.to_container(cfg.model, resolve=True)
+    if cfg.model.name in QWEN_MODELS:
+        model_settings["text_special_tokens"] = "escape"
     if task == "document":
         model_settings.pop("query_instruction", None)
         if cfg.model.name == "qwen3_vl_pages":

@@ -283,6 +283,25 @@ Keep the same assertion (or consistently leave it null) across all stages.
 `dataset.revision` defaults to `TOT_DATA_REVISION` when set, so the exported staging
 commit is also recorded by subsequent local runs; a CLI override still takes priority.
 
+To check the Qwen multimodal batch that failed after 8,911 completed batches,
+replay batch **8912** with the same dataset, revision, split, and batch size:
+
+```bash
+.venv/bin/python -m scientific_tot.check_qwen_batch 8912 \
+  launcher=h200 launcher.walltime=00:20:00 \
+  experiment=qwen3_vl_multimodal split=test 'dataset.domains=[ACL]'
+```
+
+This submits a short PBS job through the existing launcher. It reconstructs the
+original corpus order, prints the selected paper IDs, image counts, and literal
+Qwen control tokens, then runs only that batch through the production encoder.
+It writes no index or embedding cache. The reported incident had **10423** total
+batches and **111** images in the failing batch; compare these with the replay
+output to check that the selection matches. Require `PASS: batch 8912 encoded
+successfully on cuda` before repeating the full job. This verifies the replayed
+batch, not the remaining corpus. Literal Qwen control tokens in paper/query text
+are escaped before templating; real image markers remain intact.
+
 ### Run one baseline or all domains
 
 These use the existing stage entry points. Preparation exports canonical records
