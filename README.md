@@ -667,7 +667,7 @@ append this override to **any** `04_evaluate.sh` command:
 Print the benchmark LaTeX table (requires LaTeX's `booktabs` package):
 
 ```sh
-python -m scientific_tot.retrieval_table /path/to/results > retrieval_results.tex 2> coverage.txt
+python src/scientific_tot/retrieval_table.py results > retrieval_results.tex 2> coverage.txt
 ```
 
 Omit the path to use `TOT_OUTPUT_ROOT`, or `./results` if unset. Each method and
@@ -676,8 +676,13 @@ Engineering, Medicine and Physics. Each cell has its own denominator; missing
 measurements are `-`, and zero scores remain zero. Coverage and source paths go
 to stderr. Index size uses decimal GB; index time is whole-stage wall time in
 seconds. Index measurements can be reported even before evaluation is available.
-The script reads completed `evaluations/*/manifest.json` and
-`indexes/*/manifest.json` artifacts with saved Hydra configurations. It selects
+The script runs directly with standard-library Python, without installing the
+package. It recursively finds `manifest.json` files under the given directory
+and reads completed evaluation and index stages. Method, representation and
+dataset come from the manifest's embedded index identity (following evaluation
+and retrieval `source_identity` links); folder names and saved Hydra files are
+not needed. You can also pass `results/evaluations` to report only effectiveness.
+It selects
 normal full-corpus runs with test queries in `visual-and-text` mode and the
 listed representations; the E5 row selects `intfloat/e5-small-v2`. Legacy example
 outputs and test-mode runs are excluded. Duplicate measurements for a method

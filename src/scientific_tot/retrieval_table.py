@@ -11,9 +11,12 @@ import sys
 from pathlib import Path
 from statistics import mean
 
-from omegaconf import OmegaConf
-
-from scientific_tot.data.schemas import DOMAINS
+# Allow direct execution with system Python from an uninstalled source checkout.
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from data.schemas import DOMAINS
+else:
+    from scientific_tot.data.schemas import DOMAINS
 
 # Model name, representation, display name, modality (in table order).
 ROWS = (
@@ -36,58 +39,72 @@ def collect_results(root: Path) -> tuple[dict, list[str]]:
         raise NotADirectoryError(root)
     values, notes = {}, []
     supported = {(model, representation) for model, representation, _, _ in ROWS}
-    for stage, folder in (("evaluate", "evaluations"), ("index", "indexes")):
-        for path in sorted(root.glob(f"{folder}/*/manifest.json")):
-            manifest = json.loads(path.read_text())
-            if manifest["status"] != "completed":
-                notes.append(f"Skipped {path}: status={manifest['status']}")
+    for path in sorted(root.rglob("manifest.json")):
+        manifest = json.loads(path.read_text())
+        stage = manifest.get("stage")
+        if stage not in {"evaluate", "index"}:
+            continue
+        if manifest["status"] != "completed":
+            notes.append(f"Skipped {path}: status={manifest['status']}")
+            continue
+        # Evaluation embeds the retrieval identity, which embeds the index
+        # identity. All method/domain metadata survives copying the outputs.
+        identity = manifest.get("artifact_identity", {})
+        queries = {}
+        while "source_identity" in identity:
+            identity = identity["source_identity"] or {}
+            if "queries" in identity:
+                queries = identity["queries"]
+        if "index" not in identity:
+            notes.append(f"Skipped {path}: missing index identity in manifest")
+            continue
+        settings = identity["index"]
+        model = settings["model"]
+        key = (model["name"], settings["representation"]["name"])
+        if (
+            key not in supported
+            or settings.get("test_mode", False)
+            or settings["corpus_split"] != "all"
+            or (stage == "evaluate" and queries.get("split") != "test")
+            or (stage == "evaluate" and queries.get("mode") != "visual-and-text")
+            or (model["name"] == "dense" and model["model_id"] != "intfloat/e5-small-v2")
+        ):
+            notes.append(f"Skipped {path}: outside the full-corpus test benchmark")
+            continue
+        domains = settings["dataset"]["domains"]
+        if len(domains) != 1 or domains[0] not in DOMAINS:
+            raise ValueError(f"Expected one benchmark domain: {path}")
+        if stage == "evaluate":
+            metrics_path = path.parent / "metrics.csv"
+            if not metrics_path.is_file():
+                notes.append(f"Missing {metrics_path}")
                 continue
-            cfg = OmegaConf.load(path.parent / ".hydra/config.yaml")
-            key = (cfg.model.name, cfg.representation.name)
-            if (
-                key not in supported
-                or cfg.get("test_mode", False)
-                or cfg.split.corpus != "all"
-                or cfg.split.queries != "test"
-                or cfg.dataset.query_mode != "visual-and-text"
-                or (cfg.model.name == "dense" and cfg.model.model_id != "intfloat/e5-small-v2")
-            ):
-                notes.append(f"Skipped {path}: outside the full-corpus test benchmark")
+            with metrics_path.open(newline="") as stream:
+                records = list(csv.DictReader(stream))
+            if len(records) != 1:
+                raise ValueError(f"Expected one aggregate metrics row: {metrics_path}")
+            record = records[0]
+            metrics = METRICS[:4]
+        else:
+            record = manifest.get("performance", {})
+            metrics = METRICS[4:]
+        for metric in metrics:
+            raw = record.get(metric)
+            if raw is None or raw == "":
                 continue
-            domains = list(cfg.dataset.domains)
-            if len(domains) != 1 or domains[0] not in DOMAINS:
-                raise ValueError(f"Expected one benchmark domain: {path}")
-            if stage == "evaluate":
-                metrics_path = path.parent / "metrics.csv"
-                if not metrics_path.is_file():
-                    notes.append(f"Missing {metrics_path}")
-                    continue
-                with metrics_path.open(newline="") as stream:
-                    records = list(csv.DictReader(stream))
-                if len(records) != 1:
-                    raise ValueError(f"Expected one aggregate metrics row: {metrics_path}")
-                record = records[0]
-                metrics = METRICS[:4]
-            else:
-                record = manifest.get("performance", {})
-                metrics = METRICS[4:]
-            for metric in metrics:
-                raw = record.get(metric)
-                if raw is None or raw == "":
-                    continue
-                number = float(raw)
-                if not math.isfinite(number) or number < 0 or (stage == "evaluate" and number > 1):
-                    raise ValueError(f"Invalid {metric}={raw!r}: {path}")
-                cell = (*key, metric)
-                by_domain = values.setdefault(cell, {})
-                domain = domains[0]
-                if domain in by_domain:
-                    raise ValueError(
-                        f"Multiple {metric} results for {key}/{domain}: "
-                        f"{by_domain[domain][1]} and {path}. "
-                        "Select a results root containing one run per method and dataset."
-                    )
-                by_domain[domain] = (number, path)
+            number = float(raw)
+            if not math.isfinite(number) or number < 0 or (stage == "evaluate" and number > 1):
+                raise ValueError(f"Invalid {metric}={raw!r}: {path}")
+            cell = (*key, metric)
+            by_domain = values.setdefault(cell, {})
+            domain = domains[0]
+            if domain in by_domain:
+                raise ValueError(
+                    f"Multiple {metric} results for {key}/{domain}: "
+                    f"{by_domain[domain][1]} and {path}. "
+                    "Select a results root containing one run per method and dataset."
+                )
+            by_domain[domain] = (number, path)
     return values, notes
 
 

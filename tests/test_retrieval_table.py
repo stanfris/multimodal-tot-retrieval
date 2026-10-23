@@ -1,9 +1,11 @@
 """Table aggregation uses datasets as the unit and preserves missing measurements."""
 
 import json
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
-from omegaconf import OmegaConf
 
 from scientific_tot.retrieval_table import collect_results, main, render_table
 
@@ -11,20 +13,32 @@ from scientific_tot.retrieval_table import collect_results, main, render_table
 def artifact(root, domain, *, stage="evaluate", name=None, metrics=None, performance=None):
     folder = "evaluations" if stage == "evaluate" else "indexes"
     directory = root / folder / (name or domain)
-    (directory / ".hydra").mkdir(parents=True)
-    config = {
+    directory.mkdir(parents=True)
+    settings = {
         "model": {"name": "bm25"},
         "representation": {"name": "fulltext"},
-        "split": {"corpus": "all", "queries": "test"},
-        "dataset": {"domains": [domain], "query_mode": "visual-and-text"},
+        "corpus_split": "all",
+        "dataset": {"domains": [domain]},
     }
-    OmegaConf.save(config, directory / ".hydra/config.yaml")
+    identity = {"stage": "index", "index": settings}
+    if stage == "evaluate":
+        identity = {
+            "stage": "evaluate",
+            "source_identity": {
+                "stage": "retrieve",
+                "model": settings["model"],
+                "representation": settings["representation"],
+                "queries": {"split": "test", "mode": "visual-and-text"},
+                "source_identity": identity,
+            },
+        }
     (directory / "manifest.json").write_text(
         json.dumps(
             {
                 "stage": stage,
                 "status": "completed",
                 "performance": performance or {},
+                "artifact_identity": identity,
             }
         )
     )
@@ -52,11 +66,12 @@ def test_partial_macro_average_and_independent_index_measurements(tmp_path):
 def test_missing_metrics_and_failed_or_test_runs(tmp_path):
     artifact(tmp_path, "ACL")
     failed = artifact(tmp_path, "Biology")
-    (failed / "manifest.json").write_text('{"status": "failed"}')
+    (failed / "manifest.json").write_text('{"stage": "evaluate", "status": "failed"}')
     test = artifact(tmp_path, "Physics", metrics="name,RR@10\nBM25,1\n")
-    config = OmegaConf.load(test / ".hydra/config.yaml")
-    config.test_mode = True
-    OmegaConf.save(config, test / ".hydra/config.yaml")
+    path = test / "manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["artifact_identity"]["source_identity"]["source_identity"]["index"]["test_mode"] = True
+    path.write_text(json.dumps(manifest))
     values, notes = collect_results(tmp_path)
     assert not values
     assert len(notes) == 3
@@ -85,3 +100,17 @@ def test_cli_keeps_coverage_out_of_latex(tmp_path, monkeypatch, capsys):
     assert "Coverage" not in captured.out
     assert "RR@10: 1/5; missing: Biology, Engineering, Medicine, Physics" in captured.err
     assert "Source:" in captured.err
+
+
+def test_direct_script_without_installed_package_or_dependencies(tmp_path):
+    artifact(tmp_path / "nested/domain", "ACL", metrics="name,RR@10\nBM25,0.5\n")
+    script = Path(__file__).resolve().parents[1] / "src/scientific_tot/retrieval_table.py"
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", str(script), str(tmp_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "BM25 & Text & 0.5000" in result.stdout
+    assert "RR@10: 1/5" in result.stderr
