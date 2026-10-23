@@ -116,7 +116,7 @@ def render_table(values: dict) -> str:
         r"\caption{Retrieval effectiveness across methods and modalities. "
         r"Each cell is an unweighted mean over available results from the five retrieval "
         r"datasets; missing values are excluded. Index size (decimal GB) and construction "
-        r"time (seconds, whole index stage) are also averaged over available datasets. "
+        r"time (hours, whole index stage) are also averaged over available datasets. "
         r"A dash indicates no available measurements.}",
         r"\label{tab:retrieval_results}",
         r"\footnotesize",
@@ -126,7 +126,7 @@ def render_table(values: dict) -> str:
         r"\toprule",
         r"\textbf{Method} & \textbf{Modality} & \textbf{MRR@10} & \textbf{R@1} & "
         r"\textbf{R@10} & \textbf{R@100} & \textbf{Index Size (GB)} & "
-        r"\textbf{Index Time (s)} \\",
+        r"\textbf{Index Time (h)} \\",
         r"\midrule",
     ]
     previous = None
@@ -140,7 +140,9 @@ def render_table(values: dict) -> str:
                 average = mean(number for number, _ in samples.values())
                 if metric == "index_bytes":
                     average /= 1e9
-                cells.append(format(average, ".1f" if metric == "wall_seconds" else ".4f"))
+                elif metric == "wall_seconds":
+                    average /= 3600
+                cells.append(format(average, ".3f"))
             else:
                 cells.append("-")
         lines.append(" & ".join([name, modality, *cells]) + r" \\")

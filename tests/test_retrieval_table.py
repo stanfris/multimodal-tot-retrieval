@@ -50,12 +50,13 @@ def artifact(root, domain, *, stage="evaluate", name=None, metrics=None, perform
 def test_partial_macro_average_and_independent_index_measurements(tmp_path):
     artifact(tmp_path, "ACL", metrics="name,RR@10,R@1,R@10\nBM25,0.2,0,0.4\n")
     artifact(tmp_path, "Biology", metrics="name,RR@10,R@10\nBM25,0.8,\n")
-    artifact(tmp_path, "ACL", stage="index", performance={"index_bytes": 2e9, "wall_seconds": 10})
+    artifact(tmp_path, "ACL", stage="index", performance={"index_bytes": 2e9, "wall_seconds": 5400})
     artifact(tmp_path, "Physics", stage="index", performance={"index_bytes": 4e9})
     values, notes = collect_results(tmp_path)
     table = render_table(values)
     assert not notes
-    assert "BM25 & Text & 0.5000 & 0.0000 & 0.4000 & - & 3.0000 & 10.0" in table
+    assert "BM25 & Text & 0.500 & 0.000 & 0.400 & - & 3.000 & 1.500" in table
+    assert r"\textbf{Index Time (h)}" in table
     assert "E5 & Text & - & - & - & - & - & -" in table
     assert "ColQwen" not in table
     assert sum(line.count(" & ") == 7 for line in table.splitlines()) == 10
@@ -112,5 +113,5 @@ def test_direct_script_without_installed_package_or_dependencies(tmp_path):
         text=True,
         check=True,
     )
-    assert "BM25 & Text & 0.5000" in result.stdout
+    assert "BM25 & Text & 0.500" in result.stdout
     assert "RR@10: 1/5" in result.stderr

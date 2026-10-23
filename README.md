@@ -675,7 +675,8 @@ modality is averaged equally over the available datasets among ACL, Biology,
 Engineering, Medicine and Physics. Each cell has its own denominator; missing
 measurements are `-`, and zero scores remain zero. Coverage and source paths go
 to stderr. Index size uses decimal GB; index time is whole-stage wall time in
-seconds. Index measurements can be reported even before evaluation is available.
+hours. All table values use three decimal places. Index measurements can be
+reported even before evaluation is available.
 The script runs directly with standard-library Python, without installing the
 package. It recursively finds `manifest.json` files under the given directory
 and reads completed evaluation and index stages. Method, representation and
