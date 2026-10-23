@@ -1,4 +1,4 @@
-"""Original PDF pages, official ColQwen encoding, Qdrant storage, and CUDA MaxSim."""
+"""ColQwen page encoding, hierarchical pooling, Qdrant persistence, and CUDA MaxSim."""
 
 import gc
 import json
@@ -43,6 +43,7 @@ def dependency_versions() -> dict:
             "pillow",
             "pypdfium2",
             "qdrant-client",
+            "scipy",
             "numpy",
             "tokenizers",
             "huggingface-hub",
@@ -313,13 +314,17 @@ def build_index(corpus, cfg, *, reserved=False, existing=None) -> dict:
 
 def persist_pages(corpus, cfg, model, mapping, resume_from: int) -> None:
     """Append new PointStructs through Qdrant's persistence API without a full RAM index."""
+    import torch
     from qdrant_client import models
     from qdrant_client.local.persistence import CollectionPersistence
+    from sentence_transformers.multi_vector_encoder.modules import HierarchicalTokenPooling
 
     from scientific_tot.integrations.visual_dense import prefetched_batches
     from scientific_tot.reporting import tqdm
 
     target = Path(cfg.paths.index)
+    factor = cfg.model.indexing.pooling.factor
+    pooler = HierarchicalTokenPooling(pool_factor=factor, num_protected_tokens=0)
     paths = {row["doc_id"]: row["pdf_path"] for row in corpus}
     remaining = [{**row, "pdf_path": paths[row["doc_id"]]} for row in mapping[resume_from:]]
     with closing(CollectionPersistence(str(target / "qdrant/collection/pages"))) as store:
@@ -341,6 +346,9 @@ def persist_pages(corpus, cfg, model, mapping, resume_from: int) -> None:
                 )
                 assert len(vectors) == len(values)
                 for i, vector in enumerate(vectors):
+                    if factor > 1:
+                        pooled = pooler.pool_one(torch.as_tensor(vector))
+                        vector = torch.nn.functional.normalize(pooled, p=2, dim=-1).numpy()
                     offset = resume_from + start + i
                     store.persist(
                         models.PointStruct(
@@ -372,6 +380,14 @@ def publish_index_metadata(corpus, cfg, effective) -> dict:
         "document_domains": {row["doc_id"]: row["domain"] for row in corpus},
         "corpus_report": corpus.report.to_dict(),
         "rendering": OmegaConf.to_container(cfg.representation.rendering, resolve=True),
+        "compression": {
+            "implementation": (
+                "sentence_transformers.multi_vector_encoder.modules.HierarchicalTokenPooling"
+            ),
+            "factor": cfg.model.indexing.pooling.factor,
+            "num_protected_tokens": 0,
+            "normalize_after_pooling": cfg.model.indexing.pooling.factor > 1,
+        },
         "effective_model": effective,
         "versions": dependency_versions(),
     }

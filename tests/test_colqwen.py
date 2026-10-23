@@ -80,7 +80,8 @@ def encoder(monkeypatch):
 
         def encode_document(self, images, **kwargs):
             calls.append(("document", [image.size for image in images], kwargs))
-            return [np.array([[image.width / 100, 0]], dtype=np.float32) for image in images]
+            vectors = [np.array([[image.width / 100, 1]], dtype=np.float32) for image in images]
+            return [v / np.linalg.norm(v, axis=-1, keepdims=True) for v in vectors]
 
         def encode_query(self, queries, **kwargs):
             calls.append(("query", queries, kwargs))
@@ -247,6 +248,7 @@ def test_pdf_bytes_and_corruption_change_identity(tmp_path, dataset, encoder):
 @pytest.mark.parametrize("batch_size", [1, 2])
 @pytest.mark.parametrize("scoring_batch_size", [1, 2, 16])
 @pytest.mark.parametrize("page_batch_size", [1, 3])
+@pytest.mark.parametrize("pool_factor", [1, 3])
 @pytest.mark.parametrize("dimension", [2, 128])
 def test_streamed_search_matches_local_qdrant(
     tmp_path,
@@ -257,6 +259,7 @@ def test_streamed_search_matches_local_qdrant(
     scoring_batch_size,
     page_batch_size,
     dimension,
+    pool_factor,
 ):
     from contextlib import closing
 
@@ -300,7 +303,9 @@ def test_streamed_search_matches_local_qdrant(
             return [queries[int(text.split()[-1])] for text in texts]
 
     monkeypatch.setattr(colqwen, "load_model", lambda cfg: (Model(), {"checkpoint_files": {}}))
-    index, cfg, _ = execute(tmp_path, dataset, "index", "index")
+    index, cfg, _ = execute(
+        tmp_path, dataset, "index", "index", f"model.indexing.pooling.factor={pool_factor}"
+    )
     work = tmp_path / "reference-qdrant"
     shutil.copytree(index / "qdrant", work)
     for path in work.rglob("*"):
@@ -354,6 +359,7 @@ def test_streamed_search_matches_local_qdrant(
         f"model.retrieval.batch_size={batch_size}",
         f"model.retrieval.scoring_batch_size={scoring_batch_size}",
         f"model.retrieval.page_batch_size={page_batch_size}",
+        f"model.indexing.pooling.factor={pool_factor}",
     )
     assert len(scans) == 1
     assert [text for batch in encoding_batches for text in batch] == [
@@ -878,3 +884,58 @@ def test_index_command_rejects_changed_settings(interrupted, dataset, tmp_path, 
     with pytest.raises(ValueError, match="settings differ"):
         run_stage(cfg, interrupted, hydra, ROOT)
     assert encoder == []
+
+
+@pytest.mark.parametrize("factor", [1, 3])
+def test_hierarchical_pooling(tmp_path, dataset, encoder, monkeypatch, factor):
+    # Two unit directions, each repeated three times: pooling should preserve both.
+    vectors = np.array([[0.6, 0.8]] * 3 + [[-0.8, 0.6]] * 3, dtype=np.float32)
+
+    class Model:
+        def get_embedding_dimension(self):
+            return 2
+
+        def encode_document(self, images, **kwargs):
+            return [vectors.copy() for _ in images]
+
+    monkeypatch.setattr(colqwen, "load_model", lambda cfg: (Model(), {"checkpoint_files": {}}))
+    index, cfg, _ = execute(
+        tmp_path, dataset, "index", "pooled", f"model.indexing.pooling.factor={factor}"
+    )
+    mapping = [json.loads(line) for line in (index / "page-mapping.jsonl").read_text().splitlines()]
+    pages = list(colqwen.iter_points(index / "qdrant/collection/pages/storage.sqlite", mapping, 2))
+    assert len(pages) == 4
+    for _, page in pages:
+        assert page.dtype == np.float32
+        assert page.shape == (6 // factor, 2)
+        if factor == 1:
+            np.testing.assert_array_equal(page, vectors)
+        else:
+            np.testing.assert_allclose(
+                page[np.argsort(page[:, 0])], [[-0.8, 0.6], [0.6, 0.8]], atol=1e-7
+            )
+            np.testing.assert_allclose(np.linalg.norm(page, axis=-1), 1, atol=1e-7)
+    provenance = verify_index(index, cfg)["provenance"]
+    assert provenance["compression"]["factor"] == factor
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        "model.indexing.pooling.factor=0",
+        "model.indexing.pooling.factor=1.5",
+        "model.indexing.pooling.factor=true",
+        "model.indexing.pooling.method=mean",
+    ],
+)
+def test_invalid_pooling_settings(tmp_path, dataset, override):
+    with pytest.raises(ValueError):
+        settings(tmp_path, dataset, "index", None, override)
+
+
+def test_pooling_changes_index_identity(tmp_path, dataset, encoder):
+    index, cfg, _ = execute(tmp_path, dataset, "index", "index")
+    changed, _ = settings(tmp_path, dataset, "index", None, "model.indexing.pooling.factor=1")
+    assert resolve_identity(changed) != resolve_identity(cfg)
+    with pytest.raises(ValueError, match="configuration differs"):
+        verify_index(index, changed)

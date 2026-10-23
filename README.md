@@ -21,7 +21,7 @@ retrieval. Preparation and saved-run evaluation require no GPU.
 | BM25 fulltext | PyTerrier/Terrier BM25; no neural checkpoint | Full original Markdown text | One text document per paper; ranks papers directly | `experiment=bm25_fulltext` | CPU, bundled Java; default environment |
 | Standard dense (E5 fulltext) | `intfloat/e5-small-v2` | Full original Markdown text | One 384-dimensional vector per paper; ranks papers directly | `experiment=dense_fulltext` | CUDA encoding required; FAISS search as below; default environment |
 | ColBERT fulltext | `colbert-ir/colbertv2.0` | Original Markdown, token-truncated | One paper PID with token multi-vectors; ColBERT late interaction ranks papers directly | `experiment=colbert_fulltext` | CUDA required; CUDA toolkit, compiler and Ninja; default environment |
-| ColQwen pages | `vidore/colqwen2.5-v0.2` with `vidore/colqwen2.5-base` | Individually rendered original PDF pages | One multi-vector set per page; exact MaxSim per page, then maximum page score per paper | `experiment=colqwen_pages` | CUDA encoding and scoring required; CPU PDF rendering/storage; ColQwen environment |
+| ColQwen pages | `vidore/colqwen2.5-v0.2` with `vidore/colqwen2.5-base` | Individually rendered original PDF pages | One pooled multi-vector set per page; exact MaxSim per page, then maximum page score per paper | `experiment=colqwen_pages` | CUDA encoding and scoring required; CPU PDF rendering/storage; ColQwen environment |
 | OpenCLIP pages | `laion/CLIP-ViT-B-32-laion2B-s34B-b79K` (`ViT-B-32`, `laion2b_s34b_b79k`) | Individually rendered original PDF pages | One 512-dimensional vector per page; maximum page score per paper | `experiment=openclip_pages` | CUDA by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 | OpenCLIP figures | Same OpenCLIP checkpoint | Individual extracted figure/table images, without added captions | One 512-dimensional vector per image; maximum image score per paper | `experiment=openclip_figures` | CUDA by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 | Qwen text | `Qwen/Qwen3-VL-Embedding-2B` | full original Markdown text | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_text` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
@@ -760,6 +760,30 @@ cutoff ties. Deep searches avoid an unused GPU clone or switch to CPU mid-query
 as required. Retrieval manifests report CPU/GPU query-search counts. ColBERT's upstream index/search and
 ColQwen's persisted Qdrant vectors with streamed CUDA MaxSim use their own paths;
 the shared FAISS selector does not control them.
+
+## ColQwen token pooling
+
+ColQwen defaults to hierarchical token pooling with factor **3**. Each page is
+encoded separately, pooled on CPU using Sentence Transformers'
+`HierarchicalTokenPooling` with no protected tokens, and re-normalized before
+being saved through the existing Qdrant persistence path. Queries remain
+unpooled. Encoder precision, embedding storage, FP32 scoring, and
+`matmul_precision=highest` are unchanged.
+
+The Sentence Transformers pooler differs from ColPali Engine's clustering
+implementation. A factor of 3 retains approximately one-third of each page's
+vectors (clustering ties can produce fewer). Retrieval quality must be evaluated.
+
+For an unpooled baseline, pass `model.indexing.pooling.factor=1` consistently
+across indexing, retrieval, and evaluation, for example:
+
+```bash
+./scripts/02_index.sh experiment=colqwen_pages model.indexing.pooling.factor=1
+```
+
+Pooling settings are part of index identity. Rebuild existing indexes into a
+fresh destination; indexes created before this change are not migrated or
+overwritten. Interrupted pooled builds resume from their committed page prefix.
 
 ## Progress logs and resource reports
 

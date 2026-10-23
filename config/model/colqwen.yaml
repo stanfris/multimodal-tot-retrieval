@@ -15,6 +15,9 @@ indexing:
   distance: dot
   comparator: max_sim
   exact: true
+  pooling:
+    method: hierarchical
+    factor: 3  # 1 disables pooling for baseline comparisons.
 retrieval:
   matmul_precision: highest  # high opts in to TF32 on supported CUDA hardware.
   batch_size: 2

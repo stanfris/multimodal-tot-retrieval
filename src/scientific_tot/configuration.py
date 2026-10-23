@@ -393,6 +393,13 @@ def _validate(cfg: DictConfig) -> None:
         _require(model.indexing.distance == "dot", "ColQwen index requires dot distance")
         _require(model.indexing.comparator == "max_sim", "ColQwen index requires max_sim")
         _require(model.indexing.exact is True, "ColQwen requires exact page search")
+        _require(
+            model.indexing.pooling.method == "hierarchical", "Unsupported ColQwen pooling method"
+        )
+        _require(
+            type(model.indexing.pooling.factor) is int and model.indexing.pooling.factor >= 1,
+            "ColQwen pooling factor must be a positive integer",
+        )
         _require(model.processor == "checkpoint", "Use the official checkpoint processor")
     elif model.name == "colbert":
         _require(rep.name == "fulltext", "ColBERT requires representation=fulltext")
