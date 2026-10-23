@@ -664,6 +664,25 @@ append this override to **any** `04_evaluate.sh` command:
   'evaluation.metrics=[RR@10,R@1,R@10,R@100]'
 ```
 
+Print the benchmark LaTeX table (requires LaTeX's `booktabs` package):
+
+```sh
+python -m scientific_tot.retrieval_table /path/to/results > retrieval_results.tex 2> coverage.txt
+```
+
+Omit the path to use `TOT_OUTPUT_ROOT`, or `./results` if unset. Each method and
+modality is averaged equally over the available datasets among ACL, Biology,
+Engineering, Medicine and Physics. Each cell has its own denominator; missing
+measurements are `-`, and zero scores remain zero. Coverage and source paths go
+to stderr. Index size uses decimal GB; index time is whole-stage wall time in
+seconds. Index measurements can be reported even before evaluation is available.
+The script reads completed `evaluations/*/manifest.json` and
+`indexes/*/manifest.json` artifacts with saved Hydra configurations. It selects
+normal full-corpus runs with test queries in `visual-and-text` mode and the
+listed representations; the E5 row selects `intfloat/e5-small-v2`. Legacy example
+outputs and test-mode runs are excluded. Duplicate measurements for a method
+and dataset raise an error: select a results root containing one run per cell.
+
 Evaluation can be rerun with different metrics without retrieving again; metric
 cutoffs cannot exceed the saved retrieval depth. Use explicit completed artifact
 paths when automatic selection is ambiguous or when text source files are no

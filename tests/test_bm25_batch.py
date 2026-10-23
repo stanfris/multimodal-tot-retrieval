@@ -97,6 +97,7 @@ def batch_setup(tmp_path, monkeypatch):
 
         def transform(self, topics):
             assert topics.qid.tolist() == ["001", "NA"]
+            assert topics["query"].tolist() == ["synthetic tokenised", "unfindablexyz tokenised"]
             calls.append("retrieve")
             return pd.DataFrame([{"qid": "001", "docno": ids[0], "rank": 0, "score": 2.0}])
 
@@ -106,6 +107,9 @@ def batch_setup(tmp_path, monkeypatch):
     monkeypatch.setattr(pt.terrier, "version", lambda: "5.11")
     monkeypatch.setattr(pt.terrier, "IndexFactory", SimpleNamespace(of=lambda path: index))
     monkeypatch.setattr(pt.terrier, "Retriever", Retriever)
+    monkeypatch.setattr(
+        pt.rewrite, "tokenise", lambda: pt.apply.query(lambda row: row.query + " tokenised")
+    )
     monkeypatch.setattr(pt.terrier, "IterDictIndexer", blocked)
     monkeypatch.setattr(pt, "Experiment", blocked)
     monkeypatch.setattr("scientific_tot.adapter.DatasetAdapter.load_corpus", blocked)
@@ -154,6 +158,8 @@ def test_retrieve_forwards_yaml_and_records_exact_artifacts(saved_batch):
     tokens = (batch.output / "run.trec").read_text().split()
     assert tokens[:4] == ["001", "Q0", "ACL_2022.example-1.1", "1"]
     assert not (batch.output / "metrics.csv").exists()
+    topics = [json.loads(line) for line in (batch.output / "topics.jsonl").read_text().splitlines()]
+    assert [row["query"] for row in topics] == ["synthetic", "unfindablexyz"]
     refs = batch.manifest["artifacts"]["inputs"]
     assert refs["index_manifest"] == artifact_reference(batch.index_dir / "index-manifest.json")
     assert any(ref["path"] == str(batch.query_file) for ref in refs["query_files"])
@@ -416,7 +422,8 @@ def test_colliding_collection_query_ids_have_reversible_trec_mapping(
     }
 
 
-def test_offline_prepare_index_retrieve_evaluate(tmp_path):
+@pytest.mark.parametrize("threads", [1, 2])
+def test_offline_prepare_index_retrieve_evaluate(tmp_path, threads):
     """Real Terrier retrieval followed by repeated evaluation in a fresh, Java-free process."""
     pt = pytest.importorskip("pyterrier")
     pytest.importorskip("jdk4py")
@@ -437,10 +444,11 @@ def test_offline_prepare_index_retrieve_evaluate(tmp_path):
     (paper3 / "markdown.md").write_text("Computer dialogue language\n")
     query_file = next(dataset.glob("query_collections/**/queries.jsonl"))
     row = json.loads(query_file.read_text())
+    query_text = "I'm looking for zebra 'shALKBH5#1' and 'shALKBH5#2' (OD450)."
     query_file.write_text(
         "".join(
             json.dumps({**row, "query_id": qid, "query": text}) + "\n"
-            for qid, text in [("001", "zebra"), ("NA", "unfindablexyz")]
+            for qid, text in [("001", query_text), ("NA", "unfindablexyz")]
         )
     )
     setup = f"""
@@ -465,7 +473,8 @@ def execute(stage, name=None, extra=()):
     output = BASE / (name or stage)
     with initialize_config_dir(version_base="1.3", config_dir=str(CONFIG_DIR)):
         raw = compose(config_name="config", return_hydra_config=True, overrides=[
-            f"stage={{stage}}", f"dataset.root={{DATASET}}", {METRICS!r}, {CONTROLS!r}, *extra])
+            f"stage={{stage}}", f"dataset.root={{DATASET}}", {METRICS!r}, {CONTROLS!r},
+            "launcher.threads.indexing={threads}", *extra])
     cfg = resolve_config(OmegaConf.masked_copy(raw, [k for k in raw if k != "hydra"]), BASE, output)
     output.mkdir()
     run_stage(cfg, output, raw.hydra, ROOT)
@@ -513,6 +522,10 @@ assert (BASE / "evaluate-first/metrics.csv").read_bytes() == (
         if script == build_and_retrieve:
             shutil.rmtree(dataset)
             shutil.rmtree(tmp_path / "index")
+    topics = [
+        json.loads(line) for line in (tmp_path / "retrieve/topics.jsonl").read_text().splitlines()
+    ]
+    assert topics[0]["query"] == query_text
     metrics = pd.read_csv(tmp_path / "evaluate-first/metrics.csv")
     assert metrics["RR@1"].iloc[0] == pytest.approx(0.5)
     perquery = pd.read_csv(

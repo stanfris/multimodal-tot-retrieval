@@ -161,7 +161,9 @@ def retrieve_bm25(cfg, target: Path) -> dict:
             cfg, docno_bytes=max(len(row["doc_id"].encode("utf-8")) for row in corpus)
         )
         with phase("Retrieve BM25 queries on CPU"):
-            run = pt.terrier.Retriever(index, verbose=True, **arguments).transform(inputs.topics)
+            # Literal text such as gene names containing '#1' must not become MatchOp syntax.
+            topics = pt.rewrite.tokenise().transform(inputs.topics)
+            run = pt.terrier.Retriever(index, verbose=True, **arguments).transform(topics)
     finally:
         index.close()
     # PyTerrier uses zero-based ranks internally; the exported TREC ranks start at one.

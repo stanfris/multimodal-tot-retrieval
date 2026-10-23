@@ -224,14 +224,15 @@ def bm25_experiment(
     index = pt.terrier.IndexFactory.of(indexref)
     try:
         _verify_document_ids(index, inputs.documents)
-        # The standard Terrier tokeniser handles natural-language query syntax.
         retrieval_args = retrieval_args or {
             "wmodel": "BM25",
             "num_results": 100,
             "threads": threads,
         }
         retriever = pt.terrier.Retriever(index, verbose=True, **retrieval_args)
-        run = retriever.transform(inputs.topics)
+        # Explicit tokenisation prevents literal '#1' text from selecting MatchOp parsing.
+        topics = pt.rewrite.tokenise().transform(inputs.topics)
+        run = retriever.transform(topics)
         from scientific_tot.integrations.evaluation import evaluate_run
 
         metrics = evaluate_run(

@@ -126,7 +126,12 @@ def test_standard_terrier_index_run_and_metrics(tmp_path):
             document("ACL_" + "long" * 20, "computer dialogue language"),
         ]
     )
-    qs = queries([query(), query("q2", "scope-q2", "unfindablexyz")])
+    qs = queries(
+        [
+            query(text="I'm looking for zebra 'shALKBH5#1' and 'shALKBH5#2'."),
+            query("q2", "scope-q2", "unfindablexyz"),
+        ]
+    )
     metrics = bm25_experiment(docs, qs, tmp_path / "experiment")
     assert metrics.iloc[0]["RR@10"] == pytest.approx(0.5)
     assert metrics.iloc[0]["R@10"] == pytest.approx(0.5)
@@ -212,6 +217,7 @@ def test_hydra_settings_reach_external_terrier_arguments(tmp_path, monkeypatch):
             calls.append(("retriever", kwargs))
 
         def transform(self, topics):
+            assert topics["query"].str.endswith(" tokenised").all()
             return pd.DataFrame()
 
     monkeypatch.setitem(
@@ -219,6 +225,11 @@ def test_hydra_settings_reach_external_terrier_arguments(tmp_path, monkeypatch):
         "pyterrier",
         SimpleNamespace(
             tqdm=lambda rows, **kwargs: rows,
+            rewrite=SimpleNamespace(
+                tokenise=lambda: SimpleNamespace(
+                    transform=lambda topics: topics.assign(query=topics["query"] + " tokenised")
+                )
+            ),
             java=SimpleNamespace(started=lambda: True),
             terrier=SimpleNamespace(
                 IterDictIndexer=Indexer,
