@@ -345,6 +345,11 @@ def _validate(cfg: DictConfig) -> None:
             _require(_text(model.query_instruction), "Qwen query instruction is required")
             if model.name == "qwen3_vl_pages":
                 _require(model.page_overflow == "skip", "Qwen pages requires page_overflow=skip")
+            if model.name in {"qwen3_vl_figures", "qwen3_vl_multimodal"}:
+                _require(
+                    model.figure_overflow == "skip",
+                    "Qwen figure inputs require figure_overflow=skip",
+                )
     elif model.name == "dense":
         _require(
             model.revision is None or _text(model.revision), "model.revision must be null or text"

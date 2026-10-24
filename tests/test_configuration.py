@@ -347,6 +347,8 @@ def test_invalid_sweep_paths_cannot_bypass_output_guard(tmp_path, override, exis
         (["model=bm25", "model.indexing.meta.docno=0"], "docno"),
         (["model=bm25", "model.retrieval.controls={bm25.b:nan,bm25.k_1:1.2}"], "nonnegative"),
         (["model=colbert", "model.indexing.nbits=true"], "nbits"),
+        (["experiment=qwen3_vl_figures", "model.figure_overflow=truncate"], "figure_overflow"),
+        (["experiment=qwen3_vl_multimodal", "model.figure_overflow=truncate"], "figure_overflow"),
         (["representation=title_abstract", "representation.fields=[title]"], "fields"),
         (["model=visual", "representation=pages", "representation.rendering.scale=.inf"], "scale"),
         (["launcher.threads.encoding=true"], "positive"),

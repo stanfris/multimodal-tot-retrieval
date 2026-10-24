@@ -86,7 +86,7 @@ def build_dense_index(corpus: Records, inputs, cfg, *, reserved=False) -> dict:
         )
     index = faiss.read_index(str(entry / "index.faiss"))
     ids = json.loads((entry / "ids.json").read_text())
-    if cfg.model.name == "qwen3_vl_pages":
+    if cfg.model.name in {"qwen3_vl_pages", "qwen3_vl_figures"}:
         encoded_ids = set(ids)
         documents = [row for row in documents if row["docno"] in encoded_ids]
         mapping = [row for row in mapping if row["vector_id"] in encoded_ids]

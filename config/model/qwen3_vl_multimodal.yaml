@@ -5,3 +5,4 @@ defaults:
 
 name: qwen3_vl_multimodal
 document_input: multimodal
+figure_overflow: skip

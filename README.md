@@ -25,9 +25,9 @@ retrieval. Preparation and saved-run evaluation require no GPU.
 | OpenCLIP pages | `laion/CLIP-ViT-B-32-laion2B-s34B-b79K` (`ViT-B-32`, `laion2b_s34b_b79k`) | Individually rendered original PDF pages | One 512-dimensional vector per page; maximum page score per paper | `experiment=openclip_pages` | CUDA by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 | OpenCLIP figures | Same OpenCLIP checkpoint | Individual extracted figure/table images, without added captions | One 512-dimensional vector per image; maximum image score per paper | `experiment=openclip_figures` | CUDA by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 | Qwen text | `Qwen/Qwen3-VL-Embedding-2B` | full original Markdown text | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_text` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
-| Qwen figures | Same Qwen checkpoint | all extracted figure/table images together | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_figures` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
+| Qwen figures | Same Qwen checkpoint | Extracted figure/table images together, omitting trailing images that exceed the token context | ONE 2048-dimensional embedding per encoded paper; ranks papers directly | `experiment=qwen3_vl_figures` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 | Qwen pages | Same Qwen checkpoint | First 18 PDF pages (or all if fewer), in page order, further limited by the token context | ONE 2048-dimensional embedding per encoded paper; ranks papers directly | `experiment=qwen3_vl_pages` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
-| Qwen multimodal | Same Qwen checkpoint | all extracted figure/table images, followed by full original Markdown text | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_multimodal` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
+| Qwen multimodal | Same Qwen checkpoint | Extracted figure/table images, omitting trailing images that exceed the token context, followed by original Markdown text truncated to the remaining space | ONE 2048-dimensional embedding per paper; ranks papers directly | `experiment=qwen3_vl_multimodal` | CUDA/BF16 by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
 
 Every Qwen configuration produces **ONE embedding per encoded paper** and ranks papers
 directly, without page/image score aggregation or embedding averaging. There is
@@ -75,7 +75,7 @@ overrides are execution settings rather than additional benchmark methods.
 | ColBERT | `model.indexing.doc_maxlen=220` WordPiece tokens including CLS, document marker and SEP (about 217 content tokens); retains the text prefix, without passage splitting. `model.retrieval.query_maxlen=32` controls query tokenization. |
 | ColQwen | Every original PDF page is rendered at scale 2.0 and encoded independently. The pinned checkpoint's official processor/module owns image resizing, query tokenization and any model length limits; this integration adds no shared Qwen3-VL `model.max_length` setting, document-text truncation or page-count cap. Effective processor, module and model configs are saved in index provenance. |
 | OpenCLIP | The code asserts the checkpoint's **77-token** query context, including special tokens. Long queries are truncated by the OpenCLIP tokenizer; truncation counts/proportions are printed and saved. Images use the standard evaluation resize/center-crop to 224 pixels. All pages/images are indexed. |
-| Qwen, all four modes | Shared **32768-token** context by default, including image tokens, text, instructions and chat template. Text is truncated **from the end** at `model.max_length`. Page mode skips whole trailing pages to fit the context, preserving the instruction/template and complete retained images. Figure/multimodal modes reject truncation through image tokens. There is no paper chunking, summarization or multi-vector aggregation. Queries share the same context limit. |
+| Qwen, all four modes | Shared **32768-token** context by default, including image tokens, text, instructions and chat template. Text is truncated **from the end** at `model.max_length`. Page and figure modes skip whole trailing images to fit the context, preserving the instruction/template and complete retained images. Multimodal mode keeps complete leading images that fit, omits trailing images, then right-truncates text to the remaining space. There is no paper chunking, summarization or multi-vector aggregation. Queries share the same context limit. |
 
 E5's limit is loaded rather than hardcoded by the application; see its
 [pinned checkpoint config](https://huggingface.co/intfloat/e5-small-v2/blob/ffb93f3bd4047442299a41ebb6fa998a38507c52/sentence_bert_config.json).
@@ -90,8 +90,14 @@ The 18-page cap is recorded as `max_pages` in the document embedding cache ident
 Page mode logs any additional pages skipped to fit the token context in encoding
 metadata under `skipped_pages`. If no page fits, the paper receives no embedding
 and remains in the evaluation corpus. `model.page_overflow=skip` is recorded in
-page index/cache identities. Figure/multimodal inputs can still exceed context;
-any mode can exceed GPU memory even with a small batch size.
+page index/cache identities. Figure mode applies the same whole-image policy,
+recording omitted one-based figure positions under `skipped_figures` and
+`model.figure_overflow=skip` in index/cache identities. Images keep their normal
+processor resolution; if no figure fits, the paper remains in the evaluation
+corpus without an embedding. Multimodal mode uses the same `figure_overflow=skip`
+policy and `skipped_figures` metadata, prioritizing complete leading images before
+right-truncating text to the remaining space. If no image fits, it still encodes
+the text prefix. Any mode can exceed GPU memory even with a small batch size.
 
 ## Install environments
 
@@ -373,14 +379,15 @@ library precision. E5/OpenCLIP/Qwen/ColQwen expose `model.batch_size`; ColBERT u
 
 Qwen still produces **one embedding per paper**. Page mode selects the first
 18 pages and skips any additional trailing pages needed to fit the token context.
-All selected figures must fit together. The processor's existing image resizing and text-prefix
-truncation remain unchanged. The pinned processor rejects truncated image-token sequences before forward
-execution. Vision-processing failures no
+Figure and multimodal modes similarly skip whole trailing figures to fit the
+context. Multimodal mode then right-truncates text to the remaining space. The
+processor's existing image resizing remains unchanged. Complete retained image
+tokens and pixel patches stay aligned before forward execution. Vision-processing failures no
 longer become placeholder inputs. Context failures identify the paper and counts;
 CUDA OOM errors retain their exception type and list the paper batch. Reduce
 `model.batch_size` for OOM; batch size cannot fix a single paper's image context
-overflow. Figure inputs are not dropped automatically; no summarization,
-averaging or fallback is performed.
+overflow. Skipped figure positions are recorded in the index encoding metadata.
+No summarization or averaging is performed.
 
 ### Logs, offline execution and interruption
 

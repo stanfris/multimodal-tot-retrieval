@@ -633,7 +633,7 @@ def test_qwen_full_inputs_and_processor_truncation():
             {"role": "user", "content": content},
         ]
 
-    def preprocess(rows):
+    def preprocess(rows, **kwargs):
         seen.extend(rows)
         limits.append(encoder.model.max_length)
         count = sum(item["type"] == "image" for row in rows for item in row[1]["content"])
@@ -685,7 +685,7 @@ def test_qwen_full_inputs_and_processor_truncation():
         assert forwarded[-1]["attention_mask"].shape == (1, 8192)
         assert limits[-1] == encoder.model.max_length == 8192
     encoder.model.max_length = 32768
-    encoder._preprocess = lambda rows: {
+    encoder._preprocess = lambda rows, **kwargs: {
         "attention_mask": torch.ones(len(rows), 2),
         "pixel_values": torch.ones(1),
         "image_grid_thw": torch.ones(1, 3),
@@ -693,7 +693,7 @@ def test_qwen_full_inputs_and_processor_truncation():
     with pytest.raises(ValueError, match="every image"):
         encoder.encode([{"images": images, "text": "Full text"}], "document")
 
-    def context_failure(rows):
+    def context_failure(rows, **kwargs):
         raise ValueError(
             "Mismatch in image token count; ids=[16], text=[48]; truncation=max_length"
         )
@@ -702,14 +702,14 @@ def test_qwen_full_inputs_and_processor_truncation():
     with pytest.raises(ValueError, match="paper-too-large.*image token count"):
         encoder.encode([{"images": images, "doc_id": "paper-too-large"}], "document")
 
-    def image_index_failure(rows):
+    def image_index_failure(rows, **kwargs):
         raise IndexError("index 111 is out of bounds for dimension 0 with size 111")
 
     encoder._preprocess = image_index_failure
     with pytest.raises(IndexError, match="paper-with-control-tokens.*index 111"):
         encoder.encode([{"images": images, "doc_id": "paper-with-control-tokens"}], "document")
 
-    def fail(rows):
+    def fail(rows, **kwargs):
         raise torch.cuda.OutOfMemoryError("allocation failed")
 
     encoder._preprocess = fail
@@ -734,11 +734,11 @@ def test_qwen_vision_errors_propagate_without_placeholder():
         encoder._preprocess([])
 
 
-@pytest.mark.parametrize("image_count", [0, 2, 111])
-def test_qwen_literal_control_tokens_with_real_processor(image_count):
-    from qwen_vl_utils import process_vision_info
+@pytest.fixture
+def qwen_processor():
     from tokenizers import Tokenizer
     from tokenizers.models import WordLevel
+    from tokenizers.pre_tokenizers import WhitespaceSplit
     from transformers import (
         Qwen2TokenizerFast,
         Qwen2VLImageProcessor,
@@ -748,12 +748,16 @@ def test_qwen_literal_control_tokens_with_real_processor(image_count):
 
     # Exercise the installed processor offline, with a tiny tokenizer and real images.
     special = ["<|image_pad|>", "<|video_pad|>", "<|vision_start|>", "<|vision_end|>"]
+    backend = Tokenizer(
+        WordLevel({"[UNK]": 0, "PREFIX": 1, "SUFFIX": 2, "word": 3}, unk_token="[UNK]")
+    )
+    backend.pre_tokenizer = WhitespaceSplit()
     tokenizer = Qwen2TokenizerFast(
-        tokenizer_object=Tokenizer(WordLevel({"[UNK]": 0}, unk_token="[UNK]")),
+        tokenizer_object=backend,
         unk_token="[UNK]",
         additional_special_tokens=special,
     )
-    processor = Qwen3VLProcessor(
+    return Qwen3VLProcessor(
         tokenizer=tokenizer,
         image_processor=Qwen2VLImageProcessor(patch_size=16),
         video_processor=Qwen3VLVideoProcessor(),
@@ -763,7 +767,16 @@ def test_qwen_literal_control_tokens_with_real_processor(image_count):
             "{% else %}{{ block.text }}{% endif %}{% endfor %}{% endfor %}"
         ),
     )
-    literal = "Paper quotes " + " ".join([*special, "<|placeholder|>"])
+
+
+@pytest.mark.parametrize("image_count", [0, 2, 111])
+def test_qwen_literal_control_tokens_with_real_processor(image_count, qwen_processor):
+    from qwen_vl_utils import process_vision_info
+
+    processor = qwen_processor
+    literal = "Paper quotes " + " ".join(
+        [*processor.tokenizer.additional_special_tokens, "<|placeholder|>"]
+    )
     with Image.new("RGB", (32, 32)) as image:
         conversations = [
             [{"role": "user", "content": [{"type": "text", "text": literal}]}],
@@ -807,6 +820,92 @@ def test_qwen_literal_control_tokens_with_real_processor(image_count):
     assert (ids == processor.vision_end_token_id).sum().item() == image_count
     if image_count:
         assert len(processed["image_grid_thw"]) == image_count
+
+
+@pytest.mark.parametrize("kind,limit", [("figures", 80), ("multimodal", 80), ("multimodal", 5)])
+def test_qwen_figure_overflow_with_real_processor(qwen_processor, kind, limit):
+    import torch
+    from qwen_vl_utils import process_vision_info
+
+    processor = qwen_processor
+    encoder = QwenEmbeddingEncoder.__new__(QwenEmbeddingEncoder)
+    encoder.cfg = SimpleNamespace(model=SimpleNamespace(document_input=kind, dimension=2))
+    encoder.metadata = {}
+    encoder.process_vision_info = process_vision_info
+    forwarded = []
+
+    def format_input(image=None, text=None, **kwargs):
+        content = []
+        if image is not None:
+            content.append({"type": "image", "image": image})
+        if text is not None:
+            content.append({"type": "text", "text": text})
+        return [
+            {"role": "system", "content": [{"type": "text", "text": "Instruction "}]},
+            {"role": "user", "content": content},
+        ]
+
+    def forward(values):
+        forwarded.append(values)
+        assert values["input_ids"].shape[1] <= encoder.model.max_length
+        expected = (
+            values["image_grid_thw"].prod(dim=1) // processor.image_processor.merge_size**2
+            if "image_grid_thw" in values
+            else torch.tensor([])
+        )
+        assert (values["input_ids"] == processor.image_token_id).sum().item() == expected.sum()
+        if "image_grid_thw" in values:
+            assert len(values["pixel_values"]) == values["image_grid_thw"].prod(dim=1).sum()
+        else:
+            assert "pixel_values" not in values
+        return {
+            "last_hidden_state": torch.ones(len(values["input_ids"]), 1, 2),
+            "attention_mask": values["attention_mask"],
+        }
+
+    encoder.model = SimpleNamespace(
+        processor=processor,
+        max_length=limit,
+        model=SimpleNamespace(device="cpu"),
+        format_model_input=format_input,
+        forward=forward,
+        _pooling_last=lambda hidden, mask: hidden[:, -1],
+    )
+    with Image.new("RGB", (32, 32)) as image:
+        conversation = format_input(image)
+        conversation[1]["content"] *= 20
+        with pytest.raises(ValueError, match="Mismatch.*image.*token count"):
+            encoder._preprocess([conversation])
+        inputs = [
+            {"doc_id": "long", "images": [image] * 20},
+            {"doc_id": "short", "images": [image]},
+        ]
+        if kind == "multimodal":
+            inputs.append({"doc_id": "text-only", "images": []})
+            for row in inputs:
+                row["text"] = " PREFIX " + "word " * 100 + "SUFFIX"
+        result = encoder.encode(inputs, "document")
+        if kind == "multimodal" and limit == 80:
+            original = encoder._preprocess([format_input(image, inputs[1]["text"])])
+            active = forwarded[0]["attention_mask"][1].bool()
+            assert torch.equal(forwarded[0]["input_ids"][1][active], original["input_ids"][0])
+    assert result.shape == (len(inputs), 2)
+    assert encoder.retained_indices == list(range(len(inputs)))
+    skipped = encoder.metadata["skipped_figures"]["long"]
+    retained = 20 - len(skipped)
+    assert 0 <= retained < 20
+    assert skipped == list(range(retained + 1, 21))
+    if limit == 80:
+        assert retained > 0
+        assert len(forwarded[0]["image_grid_thw"]) == retained + 1
+        assert forwarded[0]["image_grid_thw"].tolist() == [[1, 4, 4]] * (retained + 1)
+    else:
+        assert retained == 0
+        assert encoder.metadata["skipped_figures"]["short"] == [1]
+    if kind == "multimodal":
+        assert forwarded[0]["attention_mask"].sum(dim=1).tolist() == [limit] * len(inputs)
+        decoded = processor.tokenizer.batch_decode(forwarded[0]["input_ids"])
+        assert all("PREFIX" in text and "SUFFIX" not in text for text in decoded)
 
 
 @pytest.mark.parametrize("batch_number", [1, 2, 3])
@@ -860,7 +959,8 @@ def test_qwen_batch_replay_uses_original_corpus_order(
 @pytest.mark.parametrize(
     "limit,retained,patches", [(20, [0, 1], 40), (10, [0, 1], 20), (7, [1], 8), (6, [], 0)]
 )
-def test_qwen_pages_drop_complete_trailing_pages(limit, retained, patches):
+@pytest.mark.parametrize("kind", ["pages", "figures"])
+def test_qwen_drops_complete_trailing_images(limit, retained, patches, kind):
     import torch
 
     def pad(rows, **kwargs):
@@ -872,7 +972,7 @@ def test_qwen_pages_drop_complete_trailing_pages(limit, retained, patches):
 
     encoder = QwenEmbeddingEncoder.__new__(QwenEmbeddingEncoder)
     encoder.metadata = {}
-    encoder.cfg = SimpleNamespace(model=SimpleNamespace(document_input="pages", dimension=2))
+    encoder.cfg = SimpleNamespace(model=SimpleNamespace(document_input=kind, dimension=2))
     forwarded = []
     encoder.model = SimpleNamespace(
         max_length=limit,
@@ -928,20 +1028,21 @@ def test_qwen_pages_drop_complete_trailing_pages(limit, retained, patches):
     else:
         assert not forwarded
     if limit == 20:
-        assert "skipped_pages" not in encoder.metadata
+        assert f"skipped_{kind}" not in encoder.metadata
     else:
-        assert encoder.metadata["skipped_pages"]["long"] == ([2] if limit == 10 else [1, 2])
+        assert encoder.metadata[f"skipped_{kind}"]["long"] == ([2] if limit == 10 else [1, 2])
 
 
 @pytest.mark.parametrize("empty_all", [False, True])
 @pytest.mark.parametrize("batch_size", [1, 2])
-def test_qwen_pages_skipped_papers_keep_correct_index_ids(
-    tmp_path, visual_dataset, monkeypatch, empty_all, batch_size
+@pytest.mark.parametrize("kind", ["pages", "figures"])
+def test_qwen_skipped_papers_keep_correct_index_ids(
+    tmp_path, visual_dataset, monkeypatch, empty_all, batch_size, kind
 ):
     import torch
 
     class Encoder:
-        metadata = {"skipped_pages": {"oversized": [1, 2]}}
+        metadata = {f"skipped_{kind}": {"oversized": [1, 2]}}
 
         def __init__(self, cfg):
             self.dimension = cfg.model.dimension
@@ -955,12 +1056,14 @@ def test_qwen_pages_skipped_papers_keep_correct_index_ids(
             return torch.ones(len(self.retained_indices), self.dimension)
 
     monkeypatch.setattr(visual_dense, "load_model", Encoder)
-    args = (*overrides("qwen3_vl_pages"), f"model.batch_size={batch_size}")
+    args = (*overrides(f"qwen3_vl_{kind}"), f"model.batch_size={batch_size}")
     index, _, _ = execute(tmp_path, visual_dataset, "index", "index", *args)
     ids = json.loads((index / "ids.json").read_text())
     assert ids == ([] if empty_all else ["ACL_2022.example-1.2"])
     manifest = json.loads((index / "index-manifest.json").read_text())
-    assert manifest["provenance"]["encoding"]["skipped_pages"] == Encoder.metadata["skipped_pages"]
+    assert (
+        manifest["provenance"]["encoding"][f"skipped_{kind}"] == Encoder.metadata[f"skipped_{kind}"]
+    )
     cached, _, _ = execute(tmp_path, visual_dataset, "index", "cached-index", *args)
     assert json.loads((cached / "ids.json").read_text()) == ids
     cached_manifest = json.loads((cached / "index-manifest.json").read_text())

@@ -5,3 +5,4 @@ defaults:
 
 name: qwen3_vl_figures
 document_input: figures
+figure_overflow: skip
