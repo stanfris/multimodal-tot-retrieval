@@ -28,6 +28,7 @@ ROWS = (
     ("qwen3_vl_figures", "figures", "Qwen3-VL", "Visual"),
     ("openclip", "pages", "OpenCLIP", "Page"),
     ("qwen3_vl_pages", "pages", "Qwen3-VL", "Page"),
+    ("colqwen", "pages", "ColQwen2.5", "Page"),
     ("qwen3_vl_multimodal", "fulltext", "Qwen3-VL", "Text + Visual"),
 )
 METRICS = ("RR@10", "R@1", "R@10", "R@100", "index_bytes", "wall_seconds")

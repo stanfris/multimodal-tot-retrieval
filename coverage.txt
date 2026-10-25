@@ -1,0 +1,69 @@
+   Building scientific-tot-retrieval @ file:///Users/stanf/Documents/Uni/NII/multimodal-tot-retrieval
+      Built scientific-tot-retrieval @ file:///Users/stanf/Documents/Uni/NII/multimodal-tot-retrieval
+Uninstalled 1 package in 5ms
+Installed 1 package in 2ms
+Coverage by dataset (each metric has its own denominator):
+BM25 / Text:
+  RR@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@1: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@100: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  index_bytes: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  wall_seconds: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+E5 / Text:
+  RR@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@1: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@100: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  index_bytes: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  wall_seconds: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+ColBERTv2 / Text:
+  RR@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@1: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@100: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  index_bytes: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  wall_seconds: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+Qwen3-VL / Text:
+  RR@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@1: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@100: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  index_bytes: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  wall_seconds: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+OpenCLIP / Visual:
+  RR@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@1: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@100: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  index_bytes: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  wall_seconds: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+Qwen3-VL / Visual:
+  RR@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@1: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@100: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  index_bytes: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  wall_seconds: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+OpenCLIP / Page:
+  RR@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@1: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@100: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  index_bytes: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  wall_seconds: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+Qwen3-VL / Page:
+  RR@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@1: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@100: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  index_bytes: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  wall_seconds: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+Qwen3-VL / Text + Visual:
+  RR@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@1: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@100: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  index_bytes: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  wall_seconds: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+No matching completed benchmark measurements found.

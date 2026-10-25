@@ -1,0 +1,26 @@
+\begin{table}[t]
+\centering
+\caption{Retrieval effectiveness across methods and modalities. Each cell is an unweighted mean over available results from the five retrieval datasets; missing values are excluded. Index size (decimal GB) and construction time (hours, whole index stage) are also averaged over available datasets. A dash indicates no available measurements.}
+\label{tab:retrieval_results}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}llcccccc@{}}
+\toprule
+\textbf{Method} & \textbf{Modality} & \textbf{MRR@10} & \textbf{R@1} & \textbf{R@10} & \textbf{R@100} & \textbf{Index Size (GB)} & \textbf{Index Time (h)} \\
+\midrule
+BM25 & Text & - & - & - & - & - & - \\
+E5 & Text & - & - & - & - & - & - \\
+ColBERTv2 & Text & - & - & - & - & - & - \\
+Qwen3-VL & Text & - & - & - & - & - & - \\
+\midrule
+OpenCLIP & Visual & - & - & - & - & - & - \\
+Qwen3-VL & Visual & - & - & - & - & - & - \\
+\midrule
+OpenCLIP & Page & - & - & - & - & - & - \\
+Qwen3-VL & Page & - & - & - & - & - & - \\
+\midrule
+Qwen3-VL & Text + Visual & - & - & - & - & - & - \\
+\bottomrule
+\end{tabular}
+\end{table}
