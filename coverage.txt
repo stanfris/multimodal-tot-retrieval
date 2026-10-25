@@ -1,0 +1,147 @@
+Coverage by dataset (each metric has its own denominator):
+BM25 / Text:
+  RR@10: 2/5; missing: Biology, Engineering, Medicine
+  R@1: 2/5; missing: Biology, Engineering, Medicine
+  R@10: 2/5; missing: Biology, Engineering, Medicine
+  R@100: 2/5; missing: Biology, Engineering, Medicine
+  index_bytes: 5/5; missing: none
+  wall_seconds: 5/5; missing: none
+E5 / Text:
+  RR@10: 5/5; missing: none
+  R@1: 5/5; missing: none
+  R@10: 5/5; missing: none
+  R@100: 5/5; missing: none
+  index_bytes: 5/5; missing: none
+  wall_seconds: 5/5; missing: none
+ColBERTv2 / Text:
+  RR@10: 5/5; missing: none
+  R@1: 5/5; missing: none
+  R@10: 5/5; missing: none
+  R@100: 5/5; missing: none
+  index_bytes: 5/5; missing: none
+  wall_seconds: 5/5; missing: none
+Qwen3-VL / Text:
+  RR@10: 5/5; missing: none
+  R@1: 5/5; missing: none
+  R@10: 5/5; missing: none
+  R@100: 5/5; missing: none
+  index_bytes: 5/5; missing: none
+  wall_seconds: 5/5; missing: none
+OpenCLIP / Visual:
+  RR@10: 4/5; missing: Physics
+  R@1: 4/5; missing: Physics
+  R@10: 4/5; missing: Physics
+  R@100: 4/5; missing: Physics
+  index_bytes: 5/5; missing: none
+  wall_seconds: 5/5; missing: none
+Qwen3-VL / Visual:
+  RR@10: 3/5; missing: Engineering, Physics
+  R@1: 3/5; missing: Engineering, Physics
+  R@10: 3/5; missing: Engineering, Physics
+  R@100: 3/5; missing: Engineering, Physics
+  index_bytes: 5/5; missing: none
+  wall_seconds: 5/5; missing: none
+OpenCLIP / Page:
+  RR@10: 5/5; missing: none
+  R@1: 5/5; missing: none
+  R@10: 5/5; missing: none
+  R@100: 5/5; missing: none
+  index_bytes: 4/5; missing: ACL
+  wall_seconds: 4/5; missing: ACL
+Qwen3-VL / Page:
+  RR@10: 4/5; missing: Medicine
+  R@1: 4/5; missing: Medicine
+  R@10: 4/5; missing: Medicine
+  R@100: 4/5; missing: Medicine
+  index_bytes: 5/5; missing: none
+  wall_seconds: 5/5; missing: none
+Qwen3-VL / Text + Visual:
+  RR@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@1: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  R@100: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  index_bytes: 5/5; missing: none
+  wall_seconds: 5/5; missing: none
+Skipped results/indexes/colqwen_pages_d-ACL_c-all_fddfefa5210af504/manifest.json: outside the full-corpus test benchmark
+Skipped results/indexes/colqwen_pages_d-Biology_c-all_a4ba6a463bf8d06a/manifest.json: outside the full-corpus test benchmark
+Skipped results/indexes/colqwen_pages_d-Engineering_c-all_446dd71a684b47ec/manifest.json: outside the full-corpus test benchmark
+Skipped results/indexes/colqwen_pages_d-Medicine_c-all_47d37218e1aa0ec6/manifest.json: outside the full-corpus test benchmark
+Skipped results/indexes/colqwen_pages_d-Physics_c-all_2e45732a725516dd/manifest.json: outside the full-corpus test benchmark
+Skipped results/indexes/qwen3_vl_figures_figures_d-Physics_c-all_b7e702d408a579df/manifest.json: status=failed
+Source: results/evaluations/bm25_fulltext_c-all_q-test_5b4716330b7e0ee4/manifest.json
+Source: results/evaluations/bm25_fulltext_c-all_q-test_98b5b68d3d97051b/manifest.json
+Source: results/evaluations/colbert_fulltext_c-all_q-test_10f275877a4e61b7/manifest.json
+Source: results/evaluations/colbert_fulltext_c-all_q-test_3dace60e443c1f17/manifest.json
+Source: results/evaluations/colbert_fulltext_c-all_q-test_80f8a4eed6ef0dd5/manifest.json
+Source: results/evaluations/colbert_fulltext_c-all_q-test_c3e0051a9b82c47a/manifest.json
+Source: results/evaluations/colbert_fulltext_c-all_q-test_c8c73a2c5d437d97/manifest.json
+Source: results/evaluations/dense_fulltext_c-all_q-test_238bf8bf740d06c2/manifest.json
+Source: results/evaluations/dense_fulltext_c-all_q-test_2ece08f7ef527fd1/manifest.json
+Source: results/evaluations/dense_fulltext_c-all_q-test_3ba63bb681b4dc6f/manifest.json
+Source: results/evaluations/dense_fulltext_c-all_q-test_6c16eb1e57fc2f05/manifest.json
+Source: results/evaluations/dense_fulltext_c-all_q-test_a4f4bd9844493ede/manifest.json
+Source: results/evaluations/openclip_figures_figures_c-all_q-test_259ae54e167b65a2/manifest.json
+Source: results/evaluations/openclip_figures_figures_c-all_q-test_3ee21931a1e77540/manifest.json
+Source: results/evaluations/openclip_figures_figures_c-all_q-test_6771161582ec7e22/manifest.json
+Source: results/evaluations/openclip_figures_figures_c-all_q-test_d4364b5fdef162dc/manifest.json
+Source: results/evaluations/openclip_pages_c-all_q-test_142b87e09adb1911/manifest.json
+Source: results/evaluations/openclip_pages_c-all_q-test_7fef45db284b026f/manifest.json
+Source: results/evaluations/openclip_pages_c-all_q-test_82244ce56453168e/manifest.json
+Source: results/evaluations/openclip_pages_c-all_q-test_b75579f66e80784f/manifest.json
+Source: results/evaluations/openclip_pages_c-all_q-test_cb3f1b851f9fb358/manifest.json
+Source: results/evaluations/qwen3_vl_figures_figures_c-all_q-test_134e0de1340e1d7b/manifest.json
+Source: results/evaluations/qwen3_vl_figures_figures_c-all_q-test_70c0d0210fc00673/manifest.json
+Source: results/evaluations/qwen3_vl_figures_figures_c-all_q-test_8e0d8621278a726b/manifest.json
+Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_02cf4e823017bc51/manifest.json
+Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_16667752e13bf020/manifest.json
+Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_280855e050e71f40/manifest.json
+Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_b6d3db59e4349a04/manifest.json
+Source: results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_1b5affd999a781d2/manifest.json
+Source: results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_2334ca46a34dc660/manifest.json
+Source: results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_5f35ed20ca2471f6/manifest.json
+Source: results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_9e8847580bee7d6c/manifest.json
+Source: results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_bdd75ae5411617da/manifest.json
+Source: results/indexes/bm25_fulltext_d-ACL_c-all/manifest.json
+Source: results/indexes/bm25_fulltext_d-Biology_c-all/manifest.json
+Source: results/indexes/bm25_fulltext_d-Engineering_c-all/manifest.json
+Source: results/indexes/bm25_fulltext_d-Medicine_c-all/manifest.json
+Source: results/indexes/bm25_fulltext_d-Physics_c-all/manifest.json
+Source: results/indexes/colbert_fulltext_d-ACL_c-all/manifest.json
+Source: results/indexes/colbert_fulltext_d-Biology_c-all/manifest.json
+Source: results/indexes/colbert_fulltext_d-Engineering_c-all/manifest.json
+Source: results/indexes/colbert_fulltext_d-Medicine_c-all/manifest.json
+Source: results/indexes/colbert_fulltext_d-Physics_c-all/manifest.json
+Source: results/indexes/dense_fulltext_d-ACL_c-all/manifest.json
+Source: results/indexes/dense_fulltext_d-Biology_c-all/manifest.json
+Source: results/indexes/dense_fulltext_d-Engineering_c-all/manifest.json
+Source: results/indexes/dense_fulltext_d-Medicine_c-all/manifest.json
+Source: results/indexes/dense_fulltext_d-Physics_c-all/manifest.json
+Source: results/indexes/openclip_figures_figures_d-ACL_c-all_c529faad1c3bd7ac/manifest.json
+Source: results/indexes/openclip_figures_figures_d-Biology_c-all_c8d200c7fb5d628d/manifest.json
+Source: results/indexes/openclip_figures_figures_d-Engineering_c-all_d774b8f3ca05e002/manifest.json
+Source: results/indexes/openclip_figures_figures_d-Medicine_c-all_edad56acadced504/manifest.json
+Source: results/indexes/openclip_figures_figures_d-Physics_c-all_09c640c230a2ce08/manifest.json
+Source: results/indexes/openclip_pages_d-Biology_c-all_0da8d42b004e4093/manifest.json
+Source: results/indexes/openclip_pages_d-Engineering_c-all_3b7de3bbbfc18654/manifest.json
+Source: results/indexes/openclip_pages_d-Medicine_c-all_689f1337c2567da7/manifest.json
+Source: results/indexes/openclip_pages_d-Physics_c-all_b89b8070cf02cedf/manifest.json
+Source: results/indexes/qwen3_vl_figures_figures_d-ACL_c-all_5e3001dbea928f8e/manifest.json
+Source: results/indexes/qwen3_vl_figures_figures_d-Biology_c-all_94c1b311459540ba/manifest.json
+Source: results/indexes/qwen3_vl_figures_figures_d-Engineering_c-all_bd0ec93acc4af819/manifest.json
+Source: results/indexes/qwen3_vl_figures_figures_d-Medicine_c-all_813083b43cac5256/manifest.json
+Source: results/indexes/qwen3_vl_figures_figures_d-Physics_c-all_8a2e6c9ab7274602/manifest.json
+Source: results/indexes/qwen3_vl_multimodal_fulltext_d-ACL_c-all_33882a35bb0740b8/manifest.json
+Source: results/indexes/qwen3_vl_multimodal_fulltext_d-Biology_c-all_5be34596e1927209/manifest.json
+Source: results/indexes/qwen3_vl_multimodal_fulltext_d-Engineering_c-all_4014d1538a2c171e/manifest.json
+Source: results/indexes/qwen3_vl_multimodal_fulltext_d-Medicine_c-all_3ac4119d5a051a13/manifest.json
+Source: results/indexes/qwen3_vl_multimodal_fulltext_d-Physics_c-all_3845e7cf4441837f/manifest.json
+Source: results/indexes/qwen3_vl_pages_pages_d-ACL_c-all_6288d458581fae5e/manifest.json
+Source: results/indexes/qwen3_vl_pages_pages_d-Biology_c-all_67a20a73cfed330d/manifest.json
+Source: results/indexes/qwen3_vl_pages_pages_d-Engineering_c-all_7877de0015331370/manifest.json
+Source: results/indexes/qwen3_vl_pages_pages_d-Medicine_c-all_7001a387efe4e22b/manifest.json
+Source: results/indexes/qwen3_vl_pages_pages_d-Physics_c-all_a2dceb479dd86716/manifest.json
+Source: results/indexes/qwen3_vl_text_fulltext_d-ACL_c-all_4a832ac3601cc00b/manifest.json
+Source: results/indexes/qwen3_vl_text_fulltext_d-Biology_c-all_51da183d6025852d/manifest.json
+Source: results/indexes/qwen3_vl_text_fulltext_d-Engineering_c-all_b1c58131f18d8af1/manifest.json
+Source: results/indexes/qwen3_vl_text_fulltext_d-Medicine_c-all_76b63e7a2f7a44e8/manifest.json
+Source: results/indexes/qwen3_vl_text_fulltext_d-Physics_c-all_04f2e284b1583758/manifest.json
