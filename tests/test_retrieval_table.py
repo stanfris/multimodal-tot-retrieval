@@ -58,8 +58,8 @@ def test_partial_macro_average_and_independent_index_measurements(tmp_path):
     assert "BM25 & Text & 0.500 & 0.000 & 0.400 & - & 3.000 & 1.500" in table
     assert r"\textbf{Index Time (h)}" in table
     assert "E5 & Text & - & - & - & - & - & -" in table
-    assert "ColQwen" not in table
-    assert sum(line.count(" & ") == 7 for line in table.splitlines()) == 10
+    assert "ColQwen2.5 & Page & - & - & - & - & - & -" in table
+    assert sum(line.count(" & ") == 7 for line in table.splitlines()) == 11
     assert r"\begin{tabular}{@{}llcccccc@{}}" in table
     assert all(line.count(" & ") == 7 for line in table.splitlines() if " & " in line)
 

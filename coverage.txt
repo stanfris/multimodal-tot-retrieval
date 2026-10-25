@@ -60,6 +60,7 @@ Qwen3-VL / Text + Visual:
   R@1: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
   R@10: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
   R@100: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+<<<<<<< HEAD
   index_bytes: 5/5; missing: none
   wall_seconds: 5/5; missing: none
 Skipped results/indexes/colqwen_pages_d-ACL_c-all_fddfefa5210af504/manifest.json: outside the full-corpus test benchmark
@@ -145,3 +146,8 @@ Source: results/indexes/qwen3_vl_text_fulltext_d-Biology_c-all_51da183d6025852d/
 Source: results/indexes/qwen3_vl_text_fulltext_d-Engineering_c-all_b1c58131f18d8af1/manifest.json
 Source: results/indexes/qwen3_vl_text_fulltext_d-Medicine_c-all_76b63e7a2f7a44e8/manifest.json
 Source: results/indexes/qwen3_vl_text_fulltext_d-Physics_c-all_04f2e284b1583758/manifest.json
+=======
+  index_bytes: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+  wall_seconds: 0/5; missing: ACL, Biology, Engineering, Medicine, Physics
+No matching completed benchmark measurements found.
+>>>>>>> refs/remotes/origin/main
