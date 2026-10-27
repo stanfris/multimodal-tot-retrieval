@@ -1,0 +1,13 @@
+defaults:
+  - dense
+  - _self_
+
+name: qwen3_text
+model_id: Qwen/Qwen3-Embedding-4B
+revision: 5cf2132abc99cad020ac570b19d031efec650f2b
+batch_size: 2
+precision: bf16
+max_seq_length: 32768
+encoding:
+  query_prompt: "Instruct: Given a description of a scientific paper, retrieve the relevant scientific paper.\nQuery:"
+  document_prompt: ""

@@ -10,7 +10,7 @@ from scientific_tot.config_arguments import (
     configured_corpus,
     query_arguments,
 )
-from scientific_tot.configuration import VISUAL_DENSE_MODELS
+from scientific_tot.configuration import TEXT_DENSE_MODELS, VISUAL_DENSE_MODELS
 
 
 def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
@@ -27,7 +27,7 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
             from scientific_tot.integrations.colbert import retrieve_colbert
 
             return retrieve_colbert(cfg, run_dir)
-        if cfg.model.name in {"dense"} | VISUAL_DENSE_MODELS:
+        if cfg.model.name in TEXT_DENSE_MODELS | VISUAL_DENSE_MODELS:
             from scientific_tot.integrations.dense_batch import retrieve_dense
 
             return retrieve_dense(cfg, run_dir)
@@ -88,7 +88,7 @@ def execute_text_stage(cfg: DictConfig, *, run_dir: Path | None) -> dict:
             provenance = build_colbert_index(
                 corpus, inputs, cfg, reserved=Path(cfg.paths.index) == run_dir
             )
-        elif cfg.model.name in {"dense"} | VISUAL_DENSE_MODELS:
+        elif cfg.model.name in TEXT_DENSE_MODELS | VISUAL_DENSE_MODELS:
             from scientific_tot.integrations.dense_batch import build_dense_index
 
             provenance = build_dense_index(

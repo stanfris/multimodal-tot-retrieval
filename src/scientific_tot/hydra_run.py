@@ -16,7 +16,13 @@ from scientific_tot.config_artifacts import (
     verify_index,
     verify_retrieval,
 )
-from scientific_tot.configuration import VISUAL_DENSE_MODELS, absolute, overlaps, resolve_config
+from scientific_tot.configuration import (
+    TEXT_DENSE_MODELS,
+    VISUAL_DENSE_MODELS,
+    absolute,
+    overlaps,
+    resolve_config,
+)
 from scientific_tot.reporting import StageMonitor, phase
 
 
@@ -155,7 +161,9 @@ class FreshOutput(Callback):
 def execute_stage(cfg: DictConfig, *, run_dir: Path | None = None) -> dict | None:
     """Dispatch one operation using the already resolved application settings."""
     name = cfg.stage.name
-    if cfg.model.name in {"bm25", "dense", "colbert", "colqwen"} | VISUAL_DENSE_MODELS and name in {
+    if cfg.model.name in (
+        {"bm25", "colbert", "colqwen"} | TEXT_DENSE_MODELS | VISUAL_DENSE_MODELS
+    ) and name in {
         "prepare",
         "index",
         "retrieve",
@@ -309,7 +317,7 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
         if cfg.stage.name == "index":
             effective = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
             effective.dataset.revision = identity["index"]["dataset"]["revision"]
-            if cfg.model.name == "dense":
+            if cfg.model.name in TEXT_DENSE_MODELS:
                 effective.model.revision = identity["index"]["model"]["revision"]
             OmegaConf.set_readonly(effective, True)
             cfg = effective

@@ -75,6 +75,7 @@ def test_model_representation_matrix(tmp_path, model, rep):
     [
         ("bm25_fulltext", "bm25", "fulltext"),
         ("dense_fulltext", "dense", "fulltext"),
+        ("qwen3_text", "qwen3_text", "fulltext"),
         ("colbert_fulltext", "colbert", "fulltext"),
         ("visual_pages", "visual", "pages"),
     ],
@@ -469,6 +470,37 @@ def test_index_contract_and_integrity(tmp_path):
         verify_index(index, cfg)
 
 
+@pytest.mark.parametrize("model", ["qwen3_vl_figures", "qwen3_vl_multimodal"])
+def test_legacy_qwen_index_selection_without_figure_overflow(tmp_path, model):
+    from scientific_tot.config_artifacts import verify_index, write_index_manifest
+    from scientific_tot.stage_cli import find_artifact
+
+    index = tmp_path / "results/indexes/legacy"
+    index.mkdir(parents=True)
+    (index / "index.faiss").write_bytes(b"offline index")
+    built = resolve_config(config(f"experiment={model}", "stage=index"), tmp_path)
+    built = OmegaConf.create(OmegaConf.to_container(built, resolve=True))
+    del built.model.figure_overflow
+    provenance = {
+        "dataset_revision": None,
+        "model_revision": built.model.revision,
+        "corpus_sha256": "a" * 64,
+    }
+    write_index_manifest(index, built, provenance=provenance)
+    cfg = resolve_config(
+        config(f"experiment={model}", "stage=retrieve", f"paths.index={index}"), tmp_path
+    )
+    assert find_artifact(cfg, "index") == index
+    changed = resolve_config(
+        config(
+            f"experiment={model}", "stage=retrieve", f"paths.index={index}", "model.max_length=1024"
+        ),
+        tmp_path,
+    )
+    with pytest.raises(ValueError, match="configuration differs"):
+        verify_index(index, changed)
+
+
 def test_index_verification_does_not_hash_index_data(tmp_path, monkeypatch):
     from scientific_tot.config_artifacts import verify_index, write_index_manifest
 
@@ -786,3 +818,23 @@ def test_unknown_override_uses_hydra_error(tmp_path, override):
     assert result.returncode != 0
     assert "Could not override" in result.stderr
     assert not any(tmp_path.iterdir())
+
+
+def test_qwen3_text_configuration(tmp_path):
+    from scientific_tot.config_arguments import dense_arguments
+
+    cfg = resolve_config(config("experiment=qwen3_text"), tmp_path)
+    args = dense_arguments(cfg)
+    assert args["model_id"] == "Qwen/Qwen3-Embedding-4B"
+    assert args["precision"] == "bf16" and args["batch_size"] == 2
+    assert args["max_seq_length"] == 32768
+    assert args["document_prompt"] == ""
+    assert args["query_prompt"] == (
+        "Instruct: Given a description of a scientific paper, "
+        "retrieve the relevant scientific paper.\nQuery:"
+    )
+    for rep in ("pages", "figures"):
+        with pytest.raises(ValueError, match="incompatible"):
+            resolve_config(config("experiment=qwen3_text", f"representation={rep}"), tmp_path)
+    with pytest.raises(ValueError, match="max_seq_length must be positive"):
+        resolve_config(config("experiment=qwen3_text", "model.max_seq_length=0"), tmp_path)

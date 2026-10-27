@@ -8,6 +8,7 @@ benchmark:
   experiments:
     - bm25_fulltext
     - dense_fulltext
+    - qwen3_text
     - colbert_fulltext
     - colqwen_pages
     - openclip_pages

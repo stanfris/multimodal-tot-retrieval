@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from scientific_tot.retrieval_table import collect_results, main, render_table
+from scientific_tot.retrieval_table import (
+    collect_results,
+    main,
+    render_table,
+    retrieval_index_bytes,
+)
 
 
 def artifact(root, domain, *, stage="evaluate", name=None, metrics=None, performance=None):
@@ -44,6 +49,9 @@ def artifact(root, domain, *, stage="evaluate", name=None, metrics=None, perform
     )
     if metrics is not None:
         (directory / "metrics.csv").write_text(metrics)
+    if stage == "index":
+        with (directory / "data.properties").open("wb") as stream:
+            stream.truncate(int(performance["index_bytes"]))
     return directory
 
 
@@ -59,7 +67,7 @@ def test_partial_macro_average_and_independent_index_measurements(tmp_path):
     assert r"\textbf{Index Time (h)}" in table
     assert "E5 & Text & - & - & - & - & - & -" in table
     assert "ColQwen2.5 & Page & - & - & - & - & - & -" in table
-    assert sum(line.count(" & ") == 7 for line in table.splitlines()) == 11
+    assert sum(line.count(" & ") == 7 for line in table.splitlines()) == 12
     assert r"\begin{tabular}{@{}llcccccc@{}}" in table
     assert all(line.count(" & ") == 7 for line in table.splitlines() if " & " in line)
 
@@ -76,6 +84,36 @@ def test_missing_metrics_and_failed_or_test_runs(tmp_path):
     values, notes = collect_results(tmp_path)
     assert not values
     assert len(notes) == 3
+
+
+@pytest.mark.parametrize(
+    "model,names",
+    [
+        ("bm25", ["data.properties", "data.inverted.bf"]),
+        ("colbert", ["colbert/0.codes.pt", "colbert/metadata.json"]),
+        ("colqwen", ["qdrant/collection/pages/storage.sqlite"]),
+        ("dense", ["index.faiss"]),
+        ("qwen3_vl_multimodal", ["index.faiss"]),
+    ],
+)
+def test_retrieval_size_excludes_saved_inputs_and_provenance(tmp_path, model, names):
+    excluded = [
+        "unit-mapping.jsonl",
+        "index-manifest.json",
+        "manifest.json",
+        "ids.json",
+        "vectors.jsonl",
+        "page-mapping.jsonl",
+        "qdrant/meta.json",
+        "data.direct.bf",
+        "colbert/plan.json",
+        "colbert/0.metadata.json",
+    ]
+    for name in [*names, *excluded]:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"12345")
+    assert retrieval_index_bytes(tmp_path, model) == 5 * len(names)
 
 
 def test_repeated_dataset_is_ambiguous(tmp_path):
