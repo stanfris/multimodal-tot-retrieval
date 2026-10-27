@@ -20,7 +20,7 @@ retrieval. Preparation and saved-run evaluation require no GPU.
 | --- | --- | --- | --- | --- | --- |
 | BM25 fulltext | PyTerrier/Terrier BM25; no neural checkpoint | Full original Markdown text | One text document per paper; ranks papers directly | `experiment=bm25_fulltext` | CPU, bundled Java; default environment |
 | Standard dense (E5 fulltext) | `intfloat/e5-small-v2` | Full original Markdown text | One 384-dimensional vector per paper; ranks papers directly | `experiment=dense_fulltext` | CUDA encoding required; FAISS search as below; default environment |
-| Qwen3 text (0.6B, no vision) | `Qwen/Qwen3-Embedding-0.6B` | Original Markdown text, token-truncated | One normalized 1024-dimensional vector per paper; ranks papers directly | `experiment=qwen3_text` | CUDA/BF16 with FlashAttention 2; exact PyTorch GPU search; default environment with the `h200` dependency group |
+| Qwen3 text (0.6B, no vision) | `Qwen/Qwen3-Embedding-0.6B` | Original Markdown text, token-truncated | One normalized 1024-dimensional vector per paper; ranks papers directly | `experiment=qwen3_text` | CUDA/BF16 with PyTorch SDPA; exact PyTorch GPU search; default environment |
 | ColBERT fulltext | `colbert-ir/colbertv2.0` | Original Markdown, token-truncated | One paper PID with token multi-vectors; ColBERT late interaction ranks papers directly | `experiment=colbert_fulltext` | CUDA required; CUDA toolkit, compiler and Ninja; default environment |
 | ColQwen pages | `vidore/colqwen2.5-v0.2` with `vidore/colqwen2.5-base` | Individually rendered original PDF pages | One pooled multi-vector set per page; exact MaxSim per page, then maximum page score per paper | `experiment=colqwen_pages` | CUDA encoding and scoring required; CPU PDF rendering/storage; ColQwen environment |
 | OpenCLIP pages | `laion/CLIP-ViT-B-32-laion2B-s34B-b79K` (`ViT-B-32`, `laion2b_s34b_b79k`) | Individually rendered original PDF pages | One 512-dimensional vector per page; maximum page score per paper | `experiment=openclip_pages` | CUDA by default; explicit CPU/FP32 supported; FAISS search as below; default environment |
@@ -33,7 +33,7 @@ retrieval. Preparation and saved-run evaluation require no GPU.
 The text-only 0.6B method uses [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)
 through the existing Sentence Transformers pipeline, with a scientific-paper retrieval
 instruction for queries and no prompt for documents. Its H200 defaults use
-FlashAttention 2, left padding, disabled generation KV caching, **8 documents**
+PyTorch SDPA, left padding, disabled generation KV caching, **8 documents**
 per encoding batch and **64 queries** per encoding batch. These are initial
 estimates for the 0.6B model, not measured H200 optima. Override with
 `model.batch_size` and `model.query_batch_size`. The 32768-token context is retained.
@@ -50,11 +50,9 @@ It works with the locked `faiss-cpu` package. Use `retrieval.search_device=cpu` 
 CPU FAISS, or `cuda` with a separately installed GPU FAISS. Ties may be ordered
 differently between search libraries.
 
-On ABCI, rerun `scripts/setup_h200.sh` inside an H200 allocation to install the
-locked `h200` group (FlashAttention builds against the installed Torch ABI; the
-build uses `MAX_JOBS=8` unless overridden). Stage wrappers also select this group
-for `qwen3_text`. For a direct environment setup, use
-`uv sync --locked --group h200`. Run the method with:
+Qwen text uses the existing locked environment and PyTorch's built-in SDPA;
+no external `flash-attn` package, additional dependency group, or uv upgrade is
+required. Run the method with:
 
 ```bash
 ./scripts/02_index.sh experiment=qwen3_text 'dataset.domains=[ACL]'

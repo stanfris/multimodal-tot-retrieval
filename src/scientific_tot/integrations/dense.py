@@ -67,10 +67,8 @@ class EncodingConfig:
             value = getattr(self, field)
             if value is not None and (type(value) is not int or value < 1):
                 raise ValueError(f"{field} must be positive")
-        if self.attention not in {None, "sdpa", "flash_attention_2"}:
+        if self.attention not in {None, "sdpa"}:
             raise ValueError("Unsupported attention implementation")
-        if self.attention == "flash_attention_2" and self.precision == "fp32":
-            raise ValueError("FlashAttention requires bf16 or fp16")
         if self.padding_side not in {None, "left", "right"}:
             raise ValueError("Unsupported padding_side")
         if self.use_cache is not None and type(self.use_cache) is not bool:
@@ -349,7 +347,6 @@ def cached_encoding(
                 "torch",
                 "numpy",
                 "faiss",
-                *(("flash-attn",) if config.attention == "flash_attention_2" else ()),
             )
         },
     }
@@ -358,12 +355,10 @@ def cached_encoding(
     entry = cache / records_digest([configuration])
     with ExitStack() as stack:
         if config.checkpoint_size:
-            import portalocker
+            from filelock import FileLock
 
             cache.mkdir(parents=True, exist_ok=True)
-            stack.enter_context(
-                portalocker.Lock(cache / f"{entry.name}.lock", mode="a+", timeout=0)
-            )
+            stack.enter_context(FileLock(cache / f"{entry.name}.lock", timeout=0))
         hit = entry.exists()
         print(
             f"{task.capitalize()} embeddings: {len(rows):,} inputs; "

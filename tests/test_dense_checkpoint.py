@@ -14,14 +14,6 @@ from scientific_tot.integrations.dense import EncodingConfig, cached_encoding
 @pytest.mark.parametrize("corrupt", [False, True])
 @pytest.mark.parametrize("task,batch_size", [("document", 2), ("query", 3)])
 def test_resume_encoding_and_model_options(tmp_path, monkeypatch, task, batch_size, corrupt):
-    from scientific_tot import reporting
-
-    installed_version = reporting.version
-    monkeypatch.setattr(
-        reporting,
-        "version",
-        lambda name: "2.8.3.post2" if name == "flash-attn" else installed_version(name),
-    )
     monkeypatch.setattr("scientific_tot.integrations.dense.require_cuda", lambda: None)
     loaded, encoded = [], []
     state = {"interrupt": True}
@@ -53,7 +45,7 @@ def test_resume_encoding_and_model_options(tmp_path, monkeypatch, task, batch_si
         checkpoint_size=2,
         precision="bf16",
         max_seq_length=32768,
-        attention="flash_attention_2",
+        attention="sdpa",
         padding_side="left",
         use_cache=False,
     )
@@ -78,7 +70,7 @@ def test_resume_encoding_and_model_options(tmp_path, monkeypatch, task, batch_si
     assert manifest["encoding"]["batch_size"] == batch_size
     assert manifest["encoding"]["checkpoint_hits"] == 1
     assert loaded[0]["config_kwargs"]["use_cache"] is False
-    assert loaded[0]["model_kwargs"]["attn_implementation"] == "flash_attention_2"
+    assert loaded[0]["model_kwargs"]["attn_implementation"] == "sdpa"
     assert loaded[0]["processor_kwargs"] == {"padding_side": "left"}
     assert not list(tmp_path.glob("*.partial"))
     if task == "document":

@@ -383,13 +383,7 @@ def _validate(cfg: DictConfig) -> None:
             if model.get(field) is not None:
                 _require(_positive(model[field]), f"model.{field} must be positive")
         if model.get("attention") is not None:
-            _require(
-                model.attention in {"sdpa", "flash_attention_2"}, "Unsupported model.attention"
-            )
-            _require(
-                model.attention != "flash_attention_2" or model.precision in {"bf16", "fp16"},
-                "FlashAttention requires bf16 or fp16",
-            )
+            _require(model.attention == "sdpa", "Unsupported model.attention")
         if model.get("padding_side") is not None:
             _require(model.padding_side in {"left", "right"}, "Unsupported model.padding_side")
         if model.get("use_cache") is not None:

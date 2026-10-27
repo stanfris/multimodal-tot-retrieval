@@ -11,8 +11,7 @@ uv --version
 nvidia-smi --query-gpu=name,driver_version,memory.total,memory.free --format=csv
 # Do not silently download a different Python runtime or regenerate the dependency lock.
 uv python find --no-python-downloads 3.11
-MAX_JOBS="${MAX_JOBS:-8}" UV_PROJECT_ENVIRONMENT=.venv uv sync --locked --group h200 \
-  --python 3.11 --no-python-downloads
+UV_PROJECT_ENVIRONMENT=.venv uv sync --locked --python 3.11 --no-python-downloads
 UV_PROJECT_ENVIRONMENT=.venv-colqwen uv sync --locked --python 3.11 --no-python-downloads \
   --no-default-groups --extra colqwen --group dev
 

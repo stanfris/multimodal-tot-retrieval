@@ -192,7 +192,12 @@ def git_commit(root: Path) -> str | None:
 
 
 def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: Path) -> None:
-    if cfg.stage.name == "index" and cfg.model.name in {"colqwen", "qwen3_text"}:
+    if cfg.stage.name == "index" and cfg.model.name == "qwen3_text":
+        from filelock import FileLock
+
+        with FileLock(run_dir / ".run.lock", timeout=0):
+            _run_stage(cfg, run_dir, hydra_cfg, repo_root)
+    elif cfg.stage.name == "index" and cfg.model.name == "colqwen":
         import portalocker
 
         with portalocker.Lock(run_dir / ".run.lock", mode="a+", timeout=0):

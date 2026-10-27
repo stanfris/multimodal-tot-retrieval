@@ -54,7 +54,6 @@ colbert = [
     "ir-measures>=0.4,<1",
 ]
 dense = [
-    "portalocker>=3.2,<4",
     "faiss-cpu>=1.10,<2",
     "numpy>=1.26,<3",
     "pandas>=2.2,<4",
@@ -75,11 +74,9 @@ pyterrier = [
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
-h200 = ["flash-attn==2.8.3.post2; sys_platform == 'linux'"]
 # All scripts and both notebooks share the default .venv. Extras above remain
 # available for library consumers; project users do not need extra flags.
 examples = [
-    "portalocker>=3.2,<4",
     "open-clip-torch>=3.2,<4",
     "qwen-vl-utils>=0.0.14,<0.1",
     "pypdfium2==5.9.0",
@@ -139,12 +136,3 @@ conflicts = [
     [{ extra = "colqwen" }, { extra = "dense" }],
     [{ extra = "colqwen" }, { group = "examples" }],
 ]
-
-# Build FlashAttention against exactly the runtime Torch ABI.
-[tool.uv.extra-build-dependencies]
-flash-attn = [{ requirement = "torch", match-runtime = true }, "packaging", "ninja", "setuptools"]
-
-[[tool.uv.dependency-metadata]]
-name = "flash-attn"
-version = "2.8.3.post2"
-requires-dist = ["torch", "einops"]

@@ -58,8 +58,6 @@ def test_launchers_all_experiments(tmp_path, launcher, test_mode, experiment):
             return
         if experiment.startswith("qwen"):
             overrides.append("model.precision=fp32")
-            if experiment == "qwen3_text":
-                overrides.append("model.attention=sdpa")
     if test_mode:
         overrides.append("--test")
     for stage in ("prepare", "index", "retrieve", "evaluate"):

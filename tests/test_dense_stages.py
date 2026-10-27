@@ -35,14 +35,6 @@ def dataset(tmp_path):
 
 @pytest.fixture
 def encoder(monkeypatch):
-    from scientific_tot import reporting
-
-    installed_version = reporting.version
-    monkeypatch.setattr(
-        reporting,
-        "version",
-        lambda name: "2.8.3.post2" if name == "flash-attn" else installed_version(name),
-    )
     monkeypatch.setattr("scientific_tot.integrations.dense.require_cuda", lambda: None)
     calls = []
 

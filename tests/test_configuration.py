@@ -829,7 +829,7 @@ def test_qwen3_text_configuration(tmp_path):
     assert args["precision"] == "bf16" and args["batch_size"] == 8
     assert args["max_seq_length"] == 32768
     assert args["query_batch_size"] == 64 and args["checkpoint_size"] == 128
-    assert args["attention"] == "flash_attention_2" and args["padding_side"] == "left"
+    assert args["attention"] == "sdpa" and args["padding_side"] == "left"
     assert args["use_cache"] is False
     assert cfg.retrieval.search_device == "torch_cuda"
     assert args["document_prompt"] == ""
