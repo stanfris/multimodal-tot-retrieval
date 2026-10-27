@@ -49,24 +49,24 @@ OpenCLIP / Page:
   index_bytes: 5/5; missing: none
   wall_seconds: 4/5; missing: ACL
 Qwen3-VL / Page:
-  RR@10: 4/5; missing: Medicine
-  R@1: 4/5; missing: Medicine
-  R@10: 4/5; missing: Medicine
-  R@100: 4/5; missing: Medicine
+  RR@10: 5/5; missing: none
+  R@1: 5/5; missing: none
+  R@10: 5/5; missing: none
+  R@100: 5/5; missing: none
   index_bytes: 5/5; missing: none
   wall_seconds: 5/5; missing: none
 ColQwen2.5 / Page:
-  RR@10: 1/5; missing: Biology, Engineering, Medicine, Physics
-  R@1: 1/5; missing: Biology, Engineering, Medicine, Physics
-  R@10: 1/5; missing: Biology, Engineering, Medicine, Physics
-  R@100: 1/5; missing: Biology, Engineering, Medicine, Physics
+  RR@10: 5/5; missing: none
+  R@1: 5/5; missing: none
+  R@10: 5/5; missing: none
+  R@100: 5/5; missing: none
   index_bytes: 5/5; missing: none
   wall_seconds: 5/5; missing: none
 Qwen3-VL / Text + Visual:
-  RR@10: 1/5; missing: Biology, Engineering, Medicine, Physics
-  R@1: 1/5; missing: Biology, Engineering, Medicine, Physics
-  R@10: 1/5; missing: Biology, Engineering, Medicine, Physics
-  R@100: 1/5; missing: Biology, Engineering, Medicine, Physics
+  RR@10: 5/5; missing: none
+  R@1: 5/5; missing: none
+  R@10: 5/5; missing: none
+  R@100: 5/5; missing: none
   index_bytes: 5/5; missing: none
   wall_seconds: 5/5; missing: none
 Skipped results/indexes/qwen3_vl_figures_figures_d-Physics_c-all_b7e702d408a579df/manifest.json: status=failed
@@ -80,7 +80,11 @@ Source: results/evaluations/colbert_fulltext_c-all_q-test_3dace60e443c1f17/manif
 Source: results/evaluations/colbert_fulltext_c-all_q-test_80f8a4eed6ef0dd5/manifest.json
 Source: results/evaluations/colbert_fulltext_c-all_q-test_c3e0051a9b82c47a/manifest.json
 Source: results/evaluations/colbert_fulltext_c-all_q-test_c8c73a2c5d437d97/manifest.json
+Source: results/evaluations/colqwen_pages_c-all_q-test_64ca240e02c90241/manifest.json
 Source: results/evaluations/colqwen_pages_c-all_q-test_a5cf90e837619e2b/manifest.json
+Source: results/evaluations/colqwen_pages_c-all_q-test_acf91e084435b5da/manifest.json
+Source: results/evaluations/colqwen_pages_c-all_q-test_cbd480a9cee2f4c9/manifest.json
+Source: results/evaluations/colqwen_pages_c-all_q-test_ef1a200987afa797/manifest.json
 Source: results/evaluations/dense_fulltext_c-all_q-test_238bf8bf740d06c2/manifest.json
 Source: results/evaluations/dense_fulltext_c-all_q-test_2ece08f7ef527fd1/manifest.json
 Source: results/evaluations/dense_fulltext_c-all_q-test_3ba63bb681b4dc6f/manifest.json
@@ -101,10 +105,15 @@ Source: results/evaluations/qwen3_vl_figures_figures_c-all_q-test_70c0d0210fc006
 Source: results/evaluations/qwen3_vl_figures_figures_c-all_q-test_720f886beb49daf6/manifest.json
 Source: results/evaluations/qwen3_vl_figures_figures_c-all_q-test_8e0d8621278a726b/manifest.json
 Source: results/evaluations/qwen3_vl_figures_figures_c-all_q-test_aaf6e36a1ebb838e/manifest.json
+Source: results/evaluations/qwen3_vl_multimodal_fulltext_c-all_q-test_4ab39680f5605b87/manifest.json
+Source: results/evaluations/qwen3_vl_multimodal_fulltext_c-all_q-test_955fb255f8778638/manifest.json
+Source: results/evaluations/qwen3_vl_multimodal_fulltext_c-all_q-test_96246e98cf9f4338/manifest.json
+Source: results/evaluations/qwen3_vl_multimodal_fulltext_c-all_q-test_d3368019bb400834/manifest.json
 Source: results/evaluations/qwen3_vl_multimodal_fulltext_c-all_q-test_fd8903c2a1179333/manifest.json
 Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_02cf4e823017bc51/manifest.json
 Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_16667752e13bf020/manifest.json
 Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_280855e050e71f40/manifest.json
+Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_4a69493842896638/manifest.json
 Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_b6d3db59e4349a04/manifest.json
 Source: results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_1b5affd999a781d2/manifest.json
 Source: results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_2334ca46a34dc660/manifest.json
