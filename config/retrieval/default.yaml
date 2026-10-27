@@ -1,3 +1,3 @@
 top_k: 100  # Retriever.num_results / FAISS Index.search k; also used by search.
 batch_size: 32  # Query batches for FAISS and ColBERT encoding.
-search_device: auto  # FAISS: auto selects CUDA when available; cpu/cuda are explicit.
+search_device: auto  # auto/cpu/cuda use FAISS; torch_cuda uses exact PyTorch CUDA search.

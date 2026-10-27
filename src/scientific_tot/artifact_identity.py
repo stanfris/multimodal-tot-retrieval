@@ -65,6 +65,8 @@ def index_identity(cfg, provenance: dict) -> dict:
         settings["encoding_threads"] = cfg.launcher.threads.encoding
         settings["faiss_threads"] = cfg.launcher.threads.faiss
         names = ["sentence-transformers", "torch", "faiss", "numpy"]
+        if cfg.model.get("attention") == "flash_attention_2":
+            names.append("flash-attn")
         settings["versions"] = {name: package_version(name) for name in names}
     elif cfg.model.name in VISUAL_DENSE_MODELS:
         from scientific_tot.integrations.visual_dense import dependency_versions

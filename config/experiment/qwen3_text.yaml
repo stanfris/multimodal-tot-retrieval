@@ -4,3 +4,6 @@ defaults:
   - override /representation: fulltext
   - override /stage: index
   - _self_
+
+retrieval:
+  search_device: torch_cuda  # Exact FP32 CUDA search using the locked PyTorch.

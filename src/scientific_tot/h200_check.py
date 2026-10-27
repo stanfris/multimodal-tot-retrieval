@@ -104,6 +104,11 @@ def check(profile: str, cfg) -> None:
         print("ColQwen dependencies and CUDA verified; weights/inference not tested.", flush=True)
         return
 
+    if cfg.model.name == "qwen3_text" and cfg.model.attention == "flash_attention_2":
+        import flash_attn
+
+        print(f"FlashAttention={flash_attn.__version__}", flush=True)
+
     import faiss
     import numpy as np
     from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLModel  # noqa: F401

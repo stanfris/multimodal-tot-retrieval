@@ -153,3 +153,17 @@ def test_direct_script_without_installed_package_or_dependencies(tmp_path):
     )
     assert "BM25 & Text & 0.500" in result.stdout
     assert "RR@10: 1/5" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "model_id,accepted", [("Qwen/Qwen3-Embedding-0.6B", True), ("Qwen/Qwen3-Embedding-4B", False)]
+)
+def test_qwen_text_table_requires_the_configured_model(tmp_path, model_id, accepted):
+    directory = artifact(tmp_path, "ACL", metrics="name,RR@10\nQwen,0.5\n")
+    path = directory / "manifest.json"
+    manifest = json.loads(path.read_text())
+    identity = manifest["artifact_identity"]["source_identity"]["source_identity"]
+    identity["index"]["model"] = {"name": "qwen3_text", "model_id": model_id}
+    path.write_text(json.dumps(manifest))
+    values, _ = collect_results(tmp_path)
+    assert ("Qwen3-Embedding-0.6B & Text & 0.500" in render_table(values)) == accepted

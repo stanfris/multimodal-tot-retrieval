@@ -41,6 +41,7 @@ def index_settings(cfg: DictConfig, provenance: dict | None = None) -> dict:
     model.pop("retrieval", None)
     if model["name"] in TEXT_DENSE_MODELS:
         model["encoding"].pop("query_prompt")
+        model.pop("query_batch_size", None)
     if model["name"] in VISUAL_DENSE_MODELS - OPENCLIP_MODELS:
         model.pop("query_instruction")
     representation = data["representation"]

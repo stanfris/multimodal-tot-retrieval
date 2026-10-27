@@ -22,7 +22,7 @@ else:
 ROWS = (
     ("bm25", "fulltext", "BM25", "Text"),
     ("dense", "fulltext", "E5", "Text"),
-    ("qwen3_text", "fulltext", "Qwen3-Embedding-4B", "Text"),
+    ("qwen3_text", "fulltext", "Qwen3-Embedding-0.6B", "Text"),
     ("colbert", "fulltext", "ColBERTv2", "Text"),
     ("qwen3_vl_text", "fulltext", "Qwen3-VL", "Text"),
     ("openclip_figures", "figures", "OpenCLIP", "Visual"),
@@ -89,6 +89,7 @@ def collect_results(root: Path) -> tuple[dict, list[str]]:
             or (stage == "evaluate" and queries.get("split") != "test")
             or (stage == "evaluate" and queries.get("mode") != "visual-and-text")
             or (model["name"] == "dense" and model["model_id"] != "intfloat/e5-small-v2")
+            or (model["name"] == "qwen3_text" and model["model_id"] != "Qwen/Qwen3-Embedding-0.6B")
         ):
             notes.append(f"Skipped {path}: outside the full-corpus test benchmark")
             continue

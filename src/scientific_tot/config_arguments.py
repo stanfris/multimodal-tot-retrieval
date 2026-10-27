@@ -73,6 +73,11 @@ def dense_arguments(cfg: DictConfig) -> dict:
         "precision": cfg.model.precision,
         "batch_size": cfg.model.batch_size,
         "max_seq_length": cfg.model.get("max_seq_length"),
+        "query_batch_size": cfg.model.get("query_batch_size"),
+        "checkpoint_size": cfg.model.get("checkpoint_size"),
+        "attention": cfg.model.get("attention"),
+        "padding_side": cfg.model.get("padding_side"),
+        "use_cache": cfg.model.get("use_cache"),
         "profile": "model",  # YAML prompts are authoritative, including explicit empty strings.
         "query_prompt": cfg.model.encoding.query_prompt,
         "document_prompt": cfg.model.encoding.document_prompt,

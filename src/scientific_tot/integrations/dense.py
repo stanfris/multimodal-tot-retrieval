@@ -6,6 +6,7 @@ import json
 import os
 import re
 import tempfile
+from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 from importlib.metadata import version
 from pathlib import Path
@@ -39,6 +40,11 @@ class EncodingConfig:
     precision: str = "fp32"
     batch_size: int = 16
     max_seq_length: int | None = None
+    query_batch_size: int | None = None
+    checkpoint_size: int | None = None
+    attention: str | None = None
+    padding_side: str | None = None
+    use_cache: bool | None = None
     profile: str = "auto"
     query_prompt: str | None = None
     document_prompt: str | None = None
@@ -57,6 +63,18 @@ class EncodingConfig:
             raise ValueError("Batch size and thread counts must be positive")
         if self.max_seq_length is not None and self.max_seq_length < 1:
             raise ValueError("max_seq_length must be positive")
+        for field in ("query_batch_size", "checkpoint_size"):
+            value = getattr(self, field)
+            if value is not None and (type(value) is not int or value < 1):
+                raise ValueError(f"{field} must be positive")
+        if self.attention not in {None, "sdpa", "flash_attention_2"}:
+            raise ValueError("Unsupported attention implementation")
+        if self.attention == "flash_attention_2" and self.precision == "fp32":
+            raise ValueError("FlashAttention requires bf16 or fp16")
+        if self.padding_side not in {None, "left", "right"}:
+            raise ValueError("Unsupported padding_side")
+        if self.use_cache is not None and type(self.use_cache) is not bool:
+            raise ValueError("use_cache must be boolean")
         if self.profile not in {"auto", "model", "e5"} or self.similarity not in {"cosine", "dot"}:
             raise ValueError("Unknown encoding profile or similarity")
         for task in ("query", "document"):
@@ -181,6 +199,8 @@ def _encode_task(
     task: str,
     texts: list[str],
     kwargs: dict,
+    *,
+    checkpoint: Path | None = None,
 ) -> tuple:
     import torch
     from sentence_transformers import SentenceTransformer
@@ -188,29 +208,73 @@ def _encode_task(
     # Explicit CPU threading avoids oversubscription and the macOS ARM
     # FAISS/PyTorch OpenMP crash with the libraries' default thread pools.
     torch.set_num_threads(config.encoding_threads)
+    model_kwargs = {
+        "torch_dtype": {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}[
+            config.precision
+        ]
+    }
+    if config.attention is not None:
+        model_kwargs["attn_implementation"] = config.attention
+    processor_kwargs = {} if config.padding_side is None else {"padding_side": config.padding_side}
     model = SentenceTransformer(
         config.model_id,
         revision=revision,
         device=config.device,
         cache_folder=str(model_cache),
         trust_remote_code=False,
-        model_kwargs={
-            "torch_dtype": {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}[
-                config.precision
-            ]
-        },
+        model_kwargs=model_kwargs,
+        **(
+            {"config_kwargs": {"use_cache": config.use_cache}}
+            if config.use_cache is not None
+            else {}
+        ),
+        **({"processor_kwargs": processor_kwargs} if processor_kwargs else {}),
     )
     if config.max_seq_length is not None:
         model.max_seq_length = config.max_seq_length
-    vectors = getattr(model, f"encode_{task}")(
-        texts,
-        batch_size=config.batch_size,
+    batch_size = (
+        config.query_batch_size
+        if task == "query" and config.query_batch_size is not None
+        else config.batch_size
+    )
+    encode_kwargs = dict(
+        batch_size=batch_size,
         normalize_embeddings=config.similarity == "cosine",
         precision="float32",
         convert_to_numpy=True,
         show_progress_bar=True,
         **kwargs,
     )
+    checkpoint_hits = 0
+    if checkpoint is None:
+        vectors = getattr(model, f"encode_{task}")(texts, **encode_kwargs)
+    else:
+        # Keep length grouping across checkpoints, then restore canonical input order.
+        order = np.argsort([-len(text) for text in texts], kind="stable")
+        chunks = []
+        assert config.checkpoint_size is not None
+        for start in range(0, len(texts), config.checkpoint_size):
+            positions = order[start : start + config.checkpoint_size]
+            path = checkpoint / str(start)
+            expected = {"start": start, "positions": positions.tolist()}
+            if not path.exists():
+                values = getattr(model, f"encode_{task}")(
+                    [texts[position] for position in positions], **encode_kwargs
+                )
+                values = np.asarray(values, dtype=np.float32)
+                if (
+                    values.ndim != 2
+                    or len(values) != len(positions)
+                    or not np.isfinite(values).all()
+                ):
+                    raise ValueError("Model returned invalid checkpoint embeddings")
+                _write_cache(path, expected, values, {})
+            else:
+                checkpoint_hits += 1
+                print(f"Reusing {task} checkpoint: {start:,}/{len(texts):,}", flush=True)
+            values, _ = _read_cache(path, expected)
+            chunks.append(values)
+        vectors = np.concatenate(chunks)[np.argsort(order)]
     vectors = np.asarray(vectors, dtype=np.float32, order="C")
     if (
         vectors.ndim != 2
@@ -221,6 +285,11 @@ def _encode_task(
         raise ValueError("Model returned invalid embeddings")
     metadata = {
         "compute_precision": config.precision,
+        "batch_size": batch_size,
+        "checkpoint_hits": checkpoint_hits,
+        "attention": config.attention,
+        "padding_side": config.padding_side,
+        "use_cache": config.use_cache,
         "max_seq_length": model.max_seq_length,
         "cpu_threads": torch.get_num_threads(),
         "saved_prompts": model.prompts,
@@ -258,6 +327,11 @@ def cached_encoding(
     other = "query" if task == "document" else "document"
     for field in (f"{other}_prompt", f"{other}_prompt_name", "faiss_threads"):
         model.pop(field)
+    if task == "document":
+        model.pop("query_batch_size")
+    else:
+        model["batch_size"] = config.query_batch_size or config.batch_size
+        model.pop("query_batch_size")
     model.update(model_revision=revision, resolved_revision=revision)
     configuration = {
         "schema_version": 2,
@@ -269,38 +343,69 @@ def cached_encoding(
         "precision": "float32",
         "versions": {
             name: package_version(name)
-            for name in ("sentence-transformers", "transformers", "torch", "numpy", "faiss")
+            for name in (
+                "sentence-transformers",
+                "transformers",
+                "torch",
+                "numpy",
+                "faiss",
+                *(("flash-attn",) if config.attention == "flash_attention_2" else ()),
+            )
         },
     }
     if task == "document":
         configuration.update(representation=representation, index="FAISS IndexFlatIP")
     entry = cache / records_digest([configuration])
-    hit = entry.exists()
-    print(
-        f"{task.capitalize()} embeddings: {len(rows):,} inputs; "
-        f"cache={'hit' if hit else 'miss'}, model={config.model_id}@{revision}",
-        flush=True,
-    )
-    faiss.omp_set_num_threads(config.faiss_threads)
-    if not hit:
-        text_key = "text" if task == "document" else "query"
-        started = perf_counter()
-        with phase(f"Encode {len(rows):,} {task} inputs on {config.device} ({config.precision})"):
-            vectors, metadata = _encode_task(
-                config, revision, cache / "models", task, [row[text_key] for row in rows], kwargs
+    with ExitStack() as stack:
+        if config.checkpoint_size:
+            import portalocker
+
+            cache.mkdir(parents=True, exist_ok=True)
+            stack.enter_context(
+                portalocker.Lock(cache / f"{entry.name}.lock", mode="a+", timeout=0)
             )
-        metadata["generation_seconds"] = perf_counter() - started
-        index = None
-        ids = None
-        if task == "document":
-            index = faiss.IndexFlatIP(vectors.shape[1])
-            index.add(vectors)
-            ids = [row["docno"] for row in rows]
-        _write_cache(entry, configuration, vectors, metadata, index=index, ids=ids)
-    vectors, manifest = _read_cache(entry, configuration)
-    if len(vectors) != len(rows):
-        raise ValueError("Cached embedding count differs from the configured input")
-    return vectors, manifest, entry, hit
+        hit = entry.exists()
+        print(
+            f"{task.capitalize()} embeddings: {len(rows):,} inputs; "
+            f"cache={'hit' if hit else 'miss'}, model={config.model_id}@{revision}",
+            flush=True,
+        )
+        faiss.omp_set_num_threads(config.faiss_threads)
+        if not hit:
+            text_key = "text" if task == "document" else "query"
+            started = perf_counter()
+            with phase(
+                f"Encode {len(rows):,} {task} inputs on {config.device} ({config.precision})"
+            ):
+                vectors, metadata = _encode_task(
+                    config,
+                    revision,
+                    cache / "models",
+                    task,
+                    [row[text_key] for row in rows],
+                    kwargs,
+                    **(
+                        {"checkpoint": cache / f"{entry.name}.partial"}
+                        if config.checkpoint_size
+                        else {}
+                    ),
+                )
+            metadata["generation_seconds"] = perf_counter() - started
+            index = None
+            ids = None
+            if task == "document":
+                index = faiss.IndexFlatIP(vectors.shape[1])
+                index.add(vectors)
+                ids = [row["docno"] for row in rows]
+            _write_cache(entry, configuration, vectors, metadata, index=index, ids=ids)
+            if config.checkpoint_size:
+                import shutil
+
+                shutil.rmtree(cache / f"{entry.name}.partial")
+        vectors, manifest = _read_cache(entry, configuration)
+        if len(vectors) != len(rows):
+            raise ValueError("Cached embedding count differs from the configured input")
+        return vectors, manifest, entry, hit
 
 
 def dense_experiment(

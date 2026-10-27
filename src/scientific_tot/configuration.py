@@ -379,6 +379,21 @@ def _validate(cfg: DictConfig) -> None:
                 isinstance(model.encoding[f"{task}_prompt"], str),
                 f"model.encoding.{task}_prompt must be a string (empty is allowed)",
             )
+        for field in ("query_batch_size", "checkpoint_size"):
+            if model.get(field) is not None:
+                _require(_positive(model[field]), f"model.{field} must be positive")
+        if model.get("attention") is not None:
+            _require(
+                model.attention in {"sdpa", "flash_attention_2"}, "Unsupported model.attention"
+            )
+            _require(
+                model.attention != "flash_attention_2" or model.precision in {"bf16", "fp16"},
+                "FlashAttention requires bf16 or fp16",
+            )
+        if model.get("padding_side") is not None:
+            _require(model.padding_side in {"left", "right"}, "Unsupported model.padding_side")
+        if model.get("use_cache") is not None:
+            _require(type(model.use_cache) is bool, "model.use_cache must be boolean")
         if model.get("max_seq_length") is not None:
             _require(_positive(model.max_seq_length), "model.max_seq_length must be positive")
     elif model.name == "colqwen":
@@ -456,8 +471,8 @@ def _validate(cfg: DictConfig) -> None:
     _require(cfg.evaluation.backend == "ir_measures", "Unsupported evaluation backend")
     _require(_positive(cfg.retrieval.batch_size), "retrieval.batch_size must be positive")
     _require(
-        cfg.retrieval.search_device in {"auto", "cpu", "cuda"},
-        "retrieval.search_device must be auto, cpu or cuda",
+        cfg.retrieval.search_device in {"auto", "cpu", "cuda", "torch_cuda"},
+        "retrieval.search_device must be auto, cpu, cuda or torch_cuda",
     )
     if model.name in TEXT_DENSE_MODELS:
         _require(model.precision in {"fp32", "fp16", "bf16"}, "Unsupported model.precision")

@@ -61,3 +61,31 @@ def test_cuda_routing_preserves_deep_exact_results(monkeypatch, capsys):
     assert "depth > 2048" in capsys.readouterr().out
     assert FaissSearch(index, device="cuda", depth=2050).device == "cpu"
     assert len(clones) == 1  # Avoid copying an unused exhaustive passage index to VRAM.
+
+
+def test_torch_cuda_exact_search_without_gpu_faiss(monkeypatch):
+    import torch
+
+    # Execute the real Torch search operations on CPU; only device placement is stubbed.
+    as_tensor = torch.as_tensor
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch, "as_tensor", lambda data, **kwargs: as_tensor(data, device="cpu"))
+    rng = np.random.default_rng(12)
+    index = faiss.IndexFlatIP(8)
+    index.add(rng.standard_normal((29, 8)).astype(np.float32))
+    queries = rng.standard_normal((5, 8)).astype(np.float32)
+    search = FaissSearch(index, device="torch_cuda", depth=7)
+    batches = list(search.initial_batches(queries, 7, 2))
+    scores, positions = index.search(queries, 7)
+    np.testing.assert_allclose(np.concatenate([s for _, s, _ in batches]), scores, atol=2e-6)
+    np.testing.assert_array_equal(np.concatenate([p for _, _, p in batches]), positions)
+    assert search.report()["backend"] == "torch"
+    assert search.report()["gpu_query_searches"] == 5
+
+
+def test_torch_cuda_requires_gpu(monkeypatch):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    with pytest.raises(RuntimeError, match="available CUDA GPU"):
+        FaissSearch(faiss.IndexFlatIP(2), device="torch_cuda")

@@ -3,9 +3,14 @@ defaults:
   - _self_
 
 name: qwen3_text
-model_id: Qwen/Qwen3-Embedding-4B
-revision: 5cf2132abc99cad020ac570b19d031efec650f2b
-batch_size: 2
+model_id: Qwen/Qwen3-Embedding-0.6B
+revision: 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3
+batch_size: 8  # Initial H200 estimate for documents up to 32K tokens.
+query_batch_size: 64
+checkpoint_size: 128
+attention: flash_attention_2
+padding_side: left
+use_cache: false
 precision: bf16
 max_seq_length: 32768
 encoding:

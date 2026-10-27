@@ -17,3 +17,7 @@ if [[ "$stage_model" == colqwen || ( -z "$stage_model" && "$stage_experiment" ==
     export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-.venv-colqwen}"
     stage_uv_args=(--no-default-groups --extra colqwen --group dev)
 fi
+
+if [[ "$stage_model" == qwen3_text || ( -z "$stage_model" && "$stage_experiment" == qwen3_text ) ]]; then
+    stage_uv_args=(--group h200)
+fi

@@ -35,15 +35,25 @@ def dataset(tmp_path):
 
 @pytest.fixture
 def encoder(monkeypatch):
+    from scientific_tot import reporting
+
+    installed_version = reporting.version
+    monkeypatch.setattr(
+        reporting,
+        "version",
+        lambda name: "2.8.3.post2" if name == "flash-attn" else installed_version(name),
+    )
     monkeypatch.setattr("scientific_tot.integrations.dense.require_cuda", lambda: None)
     calls = []
 
-    def stub(config, revision, cache, task, texts, kwargs):
+    def stub(config, revision, cache, task, texts, kwargs, **options):
         assert revision == (
-            "5cf2132abc99cad020ac570b19d031efec650f2b"
-            if config.model_id == "Qwen/Qwen3-Embedding-4B"
+            "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
+            if config.model_id == "Qwen/Qwen3-Embedding-0.6B"
             else DEFAULT_MODEL_REVISION
         )
+        if options.get("checkpoint") is not None:
+            options["checkpoint"].mkdir(parents=True, exist_ok=True)
         calls.append((config, revision, {task: {"texts": texts, "kwargs": kwargs}}))
         vectors = np.array(
             [
@@ -80,7 +90,7 @@ def execute(base, dataset, stage, name, *overrides):
             ],
         )
     cfg = resolve_config(OmegaConf.masked_copy(raw, [k for k in raw if k != "hydra"]), base, output)
-    output.mkdir()
+    output.mkdir(exist_ok=True)
     run_stage(cfg, output, raw.hydra, ROOT)
     return output, json.loads((output / "manifest.json").read_text()), cfg
 
@@ -193,10 +203,14 @@ def test_qwen3_text_index_retrieve_and_evaluate(tmp_path, dataset, encoder):
     with initialize_config_dir(version_base="1.3", config_dir=str(CONFIG_DIR)):
         preset = compose(config_name="config", overrides=["experiment=qwen3_text"])
     prompt = preset.model.encoding.query_prompt
-    common = ("experiment=qwen3_text", f"model.encoding.query_prompt='{prompt}'")
+    common = (
+        "experiment=qwen3_text",
+        "retrieval.search_device=cpu",
+        f"model.encoding.query_prompt='{prompt}'",
+    )
     index, built, cfg = execute(tmp_path, dataset, "index", "qwen-built", *common)
     config, revision, tasks = encoder[0]
-    assert config.model_id == "Qwen/Qwen3-Embedding-4B"
+    assert config.model_id == "Qwen/Qwen3-Embedding-0.6B"
     assert config.precision == "bf16" and config.max_seq_length == 32768
     assert tasks["document"]["kwargs"] == {"prompt": ""}
     assert built["artifact_identity"]["index"]["model"]["name"] == "qwen3_text"
@@ -214,3 +228,42 @@ def test_qwen3_text_index_retrieve_and_evaluate(tmp_path, dataset, encoder):
         tmp_path, dataset, "evaluate", "qwen-metrics", *common, f"paths.run={output}"
     )
     assert pd.read_csv(metrics / "metrics.csv")["RR@2"].iloc[0] == 1.0
+
+
+def test_qwen3_text_retries_failed_index_and_preserves_attempt(
+    tmp_path, dataset, encoder, monkeypatch
+):
+    from scientific_tot.integrations import dense
+
+    encode = dense._encode_task
+    calls = 0
+
+    def interrupted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("interrupted encoding")
+        return encode(*args, **kwargs)
+
+    monkeypatch.setattr(dense, "_encode_task", interrupted)
+    with pytest.raises(RuntimeError, match="interrupted encoding"):
+        execute(tmp_path, dataset, "index", "qwen-retry", "experiment=qwen3_text")
+    output, manifest, _ = execute(tmp_path, dataset, "index", "qwen-retry", "experiment=qwen3_text")
+    assert manifest["status"] == "completed"
+    archived = list((tmp_path / ".failed/qwen-retry").glob("*/manifest.json"))
+    assert len(archived) == 1
+    assert json.loads(archived[0].read_text())["status"] == "failed"
+    assert (output / "index.faiss").is_file()
+
+
+def test_qwen_retry_rejects_changed_source(tmp_path, dataset, encoder, monkeypatch):
+    def interrupted(*args, **kwargs):
+        raise RuntimeError("interrupted encoding")
+
+    monkeypatch.setattr("scientific_tot.integrations.dense._encode_task", interrupted)
+    with pytest.raises(RuntimeError, match="interrupted encoding"):
+        execute(tmp_path, dataset, "index", "qwen-changed", "experiment=qwen3_text")
+    (dataset / "preprocessed/ACL/ACL_2022.example-1.1/markdown.md").write_text("changed paper")
+    with pytest.raises(ValueError, match="source identity differs"):
+        execute(tmp_path, dataset, "index", "qwen-changed", "experiment=qwen3_text")
+    assert not (tmp_path / ".failed").exists()

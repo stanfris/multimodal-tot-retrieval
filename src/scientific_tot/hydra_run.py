@@ -192,13 +192,38 @@ def git_commit(root: Path) -> str | None:
 
 
 def run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: Path) -> None:
-    if cfg.stage.name == "index" and cfg.model.name == "colqwen":
+    if cfg.stage.name == "index" and cfg.model.name in {"colqwen", "qwen3_text"}:
         import portalocker
 
         with portalocker.Lock(run_dir / ".run.lock", mode="a+", timeout=0):
             _run_stage(cfg, run_dir, hydra_cfg, repo_root)
     else:
         _run_stage(cfg, run_dir, hydra_cfg, repo_root)
+
+
+def _archive_dense_attempt(cfg, directory: Path) -> None:
+    """Retain a failed stage intact; encoding checkpoints live in the separate cache."""
+    import tempfile
+
+    from scientific_tot.artifact_identity import resolve_identity
+    from scientific_tot.config_artifacts import index_settings
+
+    manifest = json.loads((directory / "manifest.json").read_text())
+    snapshot = OmegaConf.load(directory / ".hydra/config.yaml")
+    if manifest["configuration_sha256"] != digest(OmegaConf.to_container(snapshot, resolve=True)):
+        raise ValueError("Interrupted index configuration checksum differs")
+    if snapshot.stage.name != "index" or index_settings(snapshot) != index_settings(cfg):
+        raise ValueError("Interrupted index configuration differs from requested build")
+    identity = resolve_identity(cfg)
+    if manifest.get("artifact_identity") not in (None, identity):
+        raise ValueError("Interrupted index source identity differs from requested build")
+    archive = directory.parent / ".failed" / directory.name
+    archive.mkdir(parents=True, exist_ok=True)
+    attempt = Path(tempfile.mkdtemp(dir=archive))
+    for path in directory.iterdir():
+        if path.name != ".run.lock":
+            path.rename(attempt / path.name)
+    print(f"Resuming dense encoding; previous attempt preserved at {attempt}", flush=True)
 
 
 def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root: Path) -> None:
@@ -220,12 +245,23 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
     )
 
     contents = {path.name for path in run_dir.iterdir()}
-    if cfg.stage.name == "index" and cfg.model.name == "colqwen":
+    if cfg.stage.name == "index" and cfg.model.name in {"colqwen", "qwen3_text"}:
         contents.discard(".run.lock")
-    if cfg.stage.name == "index" and (
-        INDEX_EXISTENCE.get(run_dir, False)
-        or (Path(cfg.paths.index).exists() and Path(cfg.paths.index) != run_dir)
-        or contents
+    retry = False
+    if cfg.stage.name == "index" and cfg.model.name == "qwen3_text" and contents:
+        saved = run_dir / "manifest.json"
+        if saved.is_file() and json.loads(saved.read_text()).get("status") in {"started", "failed"}:
+            _archive_dense_attempt(cfg, run_dir)
+            contents = set()
+            retry = True
+    if (
+        cfg.stage.name == "index"
+        and not retry
+        and (
+            INDEX_EXISTENCE.get(run_dir, False)
+            or (Path(cfg.paths.index).exists() and Path(cfg.paths.index) != run_dir)
+            or contents
+        )
     ):
         if cfg.model.name == "colqwen":
             location = Path(cfg.paths.index)
@@ -241,7 +277,7 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
                 else:
                     recover_index(location, requested=cfg)
                 return
-        if cfg.model.name in {"colbert", "colqwen"} | VISUAL_DENSE_MODELS:
+        if cfg.model.name in {"colbert", "colqwen", "qwen3_text"} | VISUAL_DENSE_MODELS:
             from scientific_tot.artifact_identity import resolve_identity
 
             verify_completed(Path(cfg.paths.index), cfg, resolve_identity(cfg))
@@ -260,7 +296,7 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
         print(f"Reusing verified {cfg.stage.name} artifact: {run_dir}", flush=True)
         return
     # Exclusive lock also protects direct callers racing on the same empty directory.
-    if not (cfg.stage.name == "index" and cfg.model.name == "colqwen"):
+    if not (cfg.stage.name == "index" and cfg.model.name in {"colqwen", "qwen3_text"}):
         with (run_dir / ".run.lock").open("x"):
             pass
     metadata_dir = run_dir / ".hydra"
