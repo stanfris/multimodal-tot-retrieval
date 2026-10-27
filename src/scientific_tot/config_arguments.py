@@ -6,6 +6,8 @@ from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
 
+from scientific_tot.configuration import TEXT_DENSE_MODELS
+
 _prepared_corpus = ContextVar("prepared_corpus", default=None)
 
 
@@ -59,7 +61,7 @@ def bm25_arguments(cfg: DictConfig, *, docno_bytes: int) -> tuple[dict, dict]:
 
 def dense_arguments(cfg: DictConfig) -> dict:
     """Map to EncodingConfig, whose fields feed ST, PyTorch, and FAISS calls."""
-    assert cfg.model.name == "dense"
+    assert cfg.model.name in TEXT_DENSE_MODELS
     if cfg.model.model_id.startswith(("/", "./", "../", "~")):
         raise NotImplementedError(
             "Existing dense model revision resolution requires a Hub model ID"
@@ -70,6 +72,7 @@ def dense_arguments(cfg: DictConfig) -> dict:
         "device": cfg.model.device,
         "precision": cfg.model.precision,
         "batch_size": cfg.model.batch_size,
+        "max_seq_length": cfg.model.get("max_seq_length"),
         "profile": "model",  # YAML prompts are authoritative, including explicit empty strings.
         "query_prompt": cfg.model.encoding.query_prompt,
         "document_prompt": cfg.model.encoding.document_prompt,

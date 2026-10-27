@@ -75,6 +75,7 @@ def test_model_representation_matrix(tmp_path, model, rep):
     [
         ("bm25_fulltext", "bm25", "fulltext"),
         ("dense_fulltext", "dense", "fulltext"),
+        ("qwen3_text", "qwen3_text", "fulltext"),
         ("colbert_fulltext", "colbert", "fulltext"),
         ("visual_pages", "visual", "pages"),
     ],
@@ -817,3 +818,23 @@ def test_unknown_override_uses_hydra_error(tmp_path, override):
     assert result.returncode != 0
     assert "Could not override" in result.stderr
     assert not any(tmp_path.iterdir())
+
+
+def test_qwen3_text_configuration(tmp_path):
+    from scientific_tot.config_arguments import dense_arguments
+
+    cfg = resolve_config(config("experiment=qwen3_text"), tmp_path)
+    args = dense_arguments(cfg)
+    assert args["model_id"] == "Qwen/Qwen3-Embedding-4B"
+    assert args["precision"] == "bf16" and args["batch_size"] == 2
+    assert args["max_seq_length"] == 32768
+    assert args["document_prompt"] == ""
+    assert args["query_prompt"] == (
+        "Instruct: Given a description of a scientific paper, "
+        "retrieve the relevant scientific paper.\nQuery:"
+    )
+    for rep in ("pages", "figures"):
+        with pytest.raises(ValueError, match="incompatible"):
+            resolve_config(config("experiment=qwen3_text", f"representation={rep}"), tmp_path)
+    with pytest.raises(ValueError, match="max_seq_length must be positive"):
+        resolve_config(config("experiment=qwen3_text", "model.max_seq_length=0"), tmp_path)

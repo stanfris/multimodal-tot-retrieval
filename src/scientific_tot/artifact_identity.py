@@ -24,7 +24,7 @@ from scientific_tot.config_artifacts import (
     verify_index,
     verify_retrieval,
 )
-from scientific_tot.configuration import VISUAL_DENSE_MODELS, resolve_config
+from scientific_tot.configuration import TEXT_DENSE_MODELS, VISUAL_DENSE_MODELS, resolve_config
 from scientific_tot.records import records_digest
 from scientific_tot.reporting import package_version, phase
 
@@ -61,7 +61,7 @@ def index_identity(cfg, provenance: dict) -> dict:
         settings["terrier_version"] = cfg.launcher.terrier_version
         settings["indexing_threads"] = cfg.launcher.threads.indexing
         settings["versions"] = {"pyterrier": version("pyterrier")}
-    elif cfg.model.name == "dense":
+    elif cfg.model.name in TEXT_DENSE_MODELS:
         settings["encoding_threads"] = cfg.launcher.threads.encoding
         settings["faiss_threads"] = cfg.launcher.threads.faiss
         names = ["sentence-transformers", "torch", "faiss", "numpy"]
@@ -139,7 +139,7 @@ def _resolve_identity(cfg) -> dict:
             "representation": OmegaConf.to_container(cfg.representation, resolve=True),
         }
     revision = None
-    if cfg.model.name == "dense":
+    if cfg.model.name in TEXT_DENSE_MODELS:
         from scientific_tot.integrations.dense import EncodingConfig, resolve_model_revision
 
         revision = resolve_model_revision(EncodingConfig(**dense_arguments(cfg)))

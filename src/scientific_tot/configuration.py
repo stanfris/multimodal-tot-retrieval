@@ -17,12 +17,14 @@ if not CONFIG_DIR.is_dir():
 
 STAGES = {"prepare", "index", "retrieve", "evaluate", "search", "export"}
 SPLITS = {"train", "test", "train+test", "all"}
+TEXT_DENSE_MODELS = {"dense", "qwen3_text"}
 OPENCLIP_MODELS = {"openclip", "openclip_figures"}
 QWEN_MODELS = {"qwen3_vl_pages", "qwen3_vl_figures", "qwen3_vl_text", "qwen3_vl_multimodal"}
 VISUAL_DENSE_MODELS = OPENCLIP_MODELS | QWEN_MODELS
 BACKENDS = {
     "bm25": "pyterrier",
     "dense": "sentence_transformers_faiss",
+    "qwen3_text": "sentence_transformers_faiss",
     "colbert": "colbert",
     "visual": "byaldi",
     "colqwen": "sentence_transformers_qdrant",
@@ -291,7 +293,7 @@ def _validate(cfg: DictConfig) -> None:
             and rep.rendering.scale > 0,
             "rendering.scale must be positive",
         )
-    if model.name in {"dense", "visual", "colqwen"} | VISUAL_DENSE_MODELS:
+    if model.name in {"visual", "colqwen"} | TEXT_DENSE_MODELS | VISUAL_DENSE_MODELS:
         _require(_text(model.model_id), f"model.model_id is required for {model.name}")
         _require(model.device == cfg.launcher.device, "model.device must match launcher.device")
     if model.name in VISUAL_DENSE_MODELS:
@@ -350,7 +352,7 @@ def _validate(cfg: DictConfig) -> None:
                     model.figure_overflow == "skip",
                     "Qwen figure inputs require figure_overflow=skip",
                 )
-    elif model.name == "dense":
+    elif model.name in TEXT_DENSE_MODELS:
         _require(
             model.revision is None or _text(model.revision), "model.revision must be null or text"
         )
@@ -377,6 +379,8 @@ def _validate(cfg: DictConfig) -> None:
                 isinstance(model.encoding[f"{task}_prompt"], str),
                 f"model.encoding.{task}_prompt must be a string (empty is allowed)",
             )
+        if model.get("max_seq_length") is not None:
+            _require(_positive(model.max_seq_length), "model.max_seq_length must be positive")
     elif model.name == "colqwen":
         _require(model.device == "cuda", "ColQwen encoding requires launcher.device=cuda")
         _require(rep.name == "pages", "ColQwen requires representation=pages")
@@ -455,7 +459,7 @@ def _validate(cfg: DictConfig) -> None:
         cfg.retrieval.search_device in {"auto", "cpu", "cuda"},
         "retrieval.search_device must be auto, cpu or cuda",
     )
-    if model.name == "dense":
+    if model.name in TEXT_DENSE_MODELS:
         _require(model.precision in {"fp32", "fp16", "bf16"}, "Unsupported model.precision")
     _require(_positive(cfg.retrieval.top_k), "retrieval.top_k must be positive")
     _require(

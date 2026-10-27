@@ -39,7 +39,11 @@ def encoder(monkeypatch):
     calls = []
 
     def stub(config, revision, cache, task, texts, kwargs):
-        assert revision == DEFAULT_MODEL_REVISION
+        assert revision == (
+            "5cf2132abc99cad020ac570b19d031efec650f2b"
+            if config.model_id == "Qwen/Qwen3-Embedding-4B"
+            else DEFAULT_MODEL_REVISION
+        )
         calls.append((config, revision, {task: {"texts": texts, "kwargs": kwargs}}))
         vectors = np.array(
             [
@@ -183,3 +187,30 @@ def test_corrupt_dense_index_and_changed_document_prompt_fail_before_inference(
     with pytest.raises(ValueError, match="corrupt"):
         execute(tmp_path, dataset, "retrieve", "corrupt", f"paths.index={index}")
     assert encoder == []
+
+
+def test_qwen3_text_index_retrieve_and_evaluate(tmp_path, dataset, encoder):
+    with initialize_config_dir(version_base="1.3", config_dir=str(CONFIG_DIR)):
+        preset = compose(config_name="config", overrides=["experiment=qwen3_text"])
+    prompt = preset.model.encoding.query_prompt
+    common = ("experiment=qwen3_text", f"model.encoding.query_prompt='{prompt}'")
+    index, built, cfg = execute(tmp_path, dataset, "index", "qwen-built", *common)
+    config, revision, tasks = encoder[0]
+    assert config.model_id == "Qwen/Qwen3-Embedding-4B"
+    assert config.precision == "bf16" and config.max_seq_length == 32768
+    assert tasks["document"]["kwargs"] == {"prompt": ""}
+    assert built["artifact_identity"]["index"]["model"]["name"] == "qwen3_text"
+    from scientific_tot.artifact_identity import artifact_name
+
+    assert artifact_name(cfg, {}).startswith("qwen3_text_fulltext_")
+    encoder.clear()
+    output, retrieved, _ = execute(
+        tmp_path, dataset, "retrieve", "qwen-ranked", *common, f"paths.index={index}"
+    )
+    assert [list(call[2]) for call in encoder] == [["query"]]
+    assert encoder[0][2]["query"]["kwargs"] == {"prompt": prompt}
+    assert retrieved["artifacts"]["ranking_level"] == "paper"
+    metrics, _, _ = execute(
+        tmp_path, dataset, "evaluate", "qwen-metrics", *common, f"paths.run={output}"
+    )
+    assert pd.read_csv(metrics / "metrics.csv")["RR@2"].iloc[0] == 1.0

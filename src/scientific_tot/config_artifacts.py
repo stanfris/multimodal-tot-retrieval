@@ -9,7 +9,7 @@ from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
 
-from scientific_tot.configuration import OPENCLIP_MODELS, VISUAL_DENSE_MODELS
+from scientific_tot.configuration import OPENCLIP_MODELS, TEXT_DENSE_MODELS, VISUAL_DENSE_MODELS
 
 BATCH_FILES = ("run.trec", "topics.jsonl", "qrels.tsv", "query-ids.jsonl", "corpus-ids.jsonl")
 
@@ -39,7 +39,7 @@ def index_settings(cfg: DictConfig, provenance: dict | None = None) -> dict:
     data = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
     model = data["model"]
     model.pop("retrieval", None)
-    if model["name"] == "dense":
+    if model["name"] in TEXT_DENSE_MODELS:
         model["encoding"].pop("query_prompt")
     if model["name"] in VISUAL_DENSE_MODELS - OPENCLIP_MODELS:
         model.pop("query_instruction")
@@ -51,7 +51,7 @@ def index_settings(cfg: DictConfig, provenance: dict | None = None) -> dict:
     }
     if provenance is not None:
         dataset["revision"] = provenance["dataset_revision"]
-        if model["name"] == "dense":
+        if model["name"] in TEXT_DENSE_MODELS:
             model["revision"] = provenance["model_revision"]
     settings = {
         "dataset": dataset,
@@ -118,7 +118,7 @@ def verify_index(index: Path, cfg: DictConfig, *, allow_building: bool = False) 
     if manifest.get("schema_version") != 2 or manifest.get("status") != "completed":
         raise ValueError("Index manifest is not a completed supported artifact")
     if (
-        cfg.model.name == "dense"
+        cfg.model.name in TEXT_DENSE_MODELS
         and cfg.stage.name != "index"
         and (
             not isinstance(cfg.model.revision, str)
@@ -193,12 +193,9 @@ def verify_retrieval(directory: Path, cfg: DictConfig | None = None) -> dict:
     # The sealed snapshot describes the run that actually happened. Evaluation
     # must not require inference settings added after that run was produced.
     built = OmegaConf.create(snapshot)
-    if built.stage.name != "retrieve" or built.model.name not in VISUAL_DENSE_MODELS | {
-        "bm25",
-        "dense",
-        "colbert",
-        "colqwen",
-    }:
+    if built.stage.name != "retrieve" or built.model.name not in (
+        VISUAL_DENSE_MODELS | TEXT_DENSE_MODELS | {"bm25", "colbert", "colqwen"}
+    ):
         raise ValueError("Saved batch configuration must describe a supported retrieve stage")
     if cfg is not None:
         if (
@@ -207,7 +204,7 @@ def verify_retrieval(directory: Path, cfg: DictConfig | None = None) -> dict:
             or built.split.queries != cfg.split.queries
             or built.model.get("retrieval") != cfg.model.get("retrieval")
             or built.representation != cfg.representation
-            or built.model.name == "dense"
+            or built.model.name in TEXT_DENSE_MODELS
             and built.model.encoding != cfg.model.encoding
             or built.model.name in VISUAL_DENSE_MODELS - OPENCLIP_MODELS
             and built.model.query_instruction != cfg.model.query_instruction
@@ -235,7 +232,7 @@ def _validate_provenance(cfg: DictConfig, provenance: dict) -> None:
     if cfg.dataset.source == "hub" and provenance["dataset_revision"] is None:
         raise ValueError("Hub index requires a resolved dataset revision")
     if (
-        cfg.model.name in {"dense", "colbert", "colqwen"} | VISUAL_DENSE_MODELS
+        cfg.model.name in {"colbert", "colqwen"} | TEXT_DENSE_MODELS | VISUAL_DENSE_MODELS
         and provenance["model_revision"] is None
     ):
         raise ValueError(f"{cfg.model.name} index requires a resolved model revision")
