@@ -469,6 +469,37 @@ def test_index_contract_and_integrity(tmp_path):
         verify_index(index, cfg)
 
 
+@pytest.mark.parametrize("model", ["qwen3_vl_figures", "qwen3_vl_multimodal"])
+def test_legacy_qwen_index_selection_without_figure_overflow(tmp_path, model):
+    from scientific_tot.config_artifacts import verify_index, write_index_manifest
+    from scientific_tot.stage_cli import find_artifact
+
+    index = tmp_path / "results/indexes/legacy"
+    index.mkdir(parents=True)
+    (index / "index.faiss").write_bytes(b"offline index")
+    built = resolve_config(config(f"experiment={model}", "stage=index"), tmp_path)
+    built = OmegaConf.create(OmegaConf.to_container(built, resolve=True))
+    del built.model.figure_overflow
+    provenance = {
+        "dataset_revision": None,
+        "model_revision": built.model.revision,
+        "corpus_sha256": "a" * 64,
+    }
+    write_index_manifest(index, built, provenance=provenance)
+    cfg = resolve_config(
+        config(f"experiment={model}", "stage=retrieve", f"paths.index={index}"), tmp_path
+    )
+    assert find_artifact(cfg, "index") == index
+    changed = resolve_config(
+        config(
+            f"experiment={model}", "stage=retrieve", f"paths.index={index}", "model.max_length=1024"
+        ),
+        tmp_path,
+    )
+    with pytest.raises(ValueError, match="configuration differs"):
+        verify_index(index, changed)
+
+
 def test_index_verification_does_not_hash_index_data(tmp_path, monkeypatch):
     from scientific_tot.config_artifacts import verify_index, write_index_manifest
 

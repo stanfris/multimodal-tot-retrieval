@@ -34,6 +34,25 @@ ROWS = (
 METRICS = ("RR@10", "R@1", "R@10", "R@100", "index_bytes", "wall_seconds")
 
 
+def retrieval_index_bytes(directory: Path, model: str) -> int:
+    """Measure the native search index, excluding external mappings and build artifacts."""
+    if model == "bm25":
+        files = [path for path in sorted(directory.glob("data.*")) if path.name != "data.direct.bf"]
+    elif model == "colbert":
+        files = [
+            path
+            for pattern in ("*.pt", "doclens.*.json", "metadata.json")
+            for path in sorted((directory / "colbert").glob(pattern))
+        ]
+    elif model == "colqwen":
+        files = [directory / "qdrant/collection/pages/storage.sqlite"]
+    else:
+        files = [directory / "index.faiss"]
+    if not files:
+        raise FileNotFoundError(f"No retrieval index files in {directory}")
+    return sum(path.stat().st_size for path in files)
+
+
 def collect_results(root: Path) -> tuple[dict, list[str]]:
     """Keep each dataset's value once; ambiguous repeated runs require selection."""
     if not root.is_dir():
@@ -87,7 +106,8 @@ def collect_results(root: Path) -> tuple[dict, list[str]]:
             record = records[0]
             metrics = METRICS[:4]
         else:
-            record = manifest.get("performance", {})
+            record = dict(manifest.get("performance", {}))
+            record["index_bytes"] = retrieval_index_bytes(path.parent, model["name"])
             metrics = METRICS[4:]
         for metric in metrics:
             raw = record.get(metric)
@@ -116,8 +136,9 @@ def render_table(values: dict) -> str:
         r"\centering",
         r"\caption{Retrieval effectiveness across methods and modalities. "
         r"Each cell is an unweighted mean over available results from the five retrieval "
-        r"datasets; missing values are excluded. Index size (decimal GB) and construction "
-        r"time (hours, whole index stage) are also averaged over available datasets. "
+        r"datasets; missing values are excluded. Native search index size (decimal GB; "
+        r"excluding external ID mappings, stored inputs, build artifacts and caches) "
+        r"and construction time (hours, whole index stage) are averaged over available datasets. "
         r"A dash indicates no available measurements.}",
         r"\label{tab:retrieval_results}",
         r"\footnotesize",

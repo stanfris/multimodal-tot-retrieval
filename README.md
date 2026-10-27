@@ -681,8 +681,13 @@ Omit the path to use `TOT_OUTPUT_ROOT`, or `./results` if unset. Each method and
 modality is averaged equally over the available datasets among ACL, Biology,
 Engineering, Medicine and Physics. Each cell has its own denominator; missing
 measurements are `-`, and zero scores remain zero. Coverage and source paths go
-to stderr. Index size uses decimal GB; index time is whole-stage wall time in
-hours. All table values use three decimal places. Index measurements can be
+to stderr. Index size measures the native search index on disk in decimal GB:
+FAISS files for E5, OpenCLIP and Qwen; Terrier files excluding the direct index
+for BM25; compressed search data and runtime metadata for ColBERT; and the
+SQLite vector store for ColQwen. External ID mappings, saved document inputs,
+build artifacts, provenance and embedding caches are excluded.
+The index files must be present alongside their manifests. Index time is whole-stage
+wall time in hours. All table values use three decimal places. Index measurements can be
 reported even before evaluation is available.
 The script runs directly with standard-library Python, without installing the
 package. It recursively finds `manifest.json` files under the given directory

@@ -133,9 +133,15 @@ def verify_index(index: Path, cfg: DictConfig, *, allow_building: bool = False) 
     built_config = OmegaConf.create(configuration)
     _validate_provenance(built_config, provenance)
     built = index_settings(built_config, provenance)
-    if built != manifest["index_settings"] or built != index_settings(
-        cfg, provenance if cfg.stage.name == "index" else None
+    requested = index_settings(cfg, provenance if cfg.stage.name == "index" else None)
+    if (
+        cfg.stage.name in {"retrieve", "search"}
+        and cfg.model.name in {"qwen3_vl_figures", "qwen3_vl_multimodal"}
+        and "figure_overflow" not in built["model"]
     ):
+        # Completed older indexes need no document overflow policy during retrieval.
+        requested["model"].pop("figure_overflow", None)
+    if built != manifest["index_settings"] or built != requested:
         raise ValueError("Index configuration differs from requested corpus/model/representation")
     _validate_provenance(cfg, provenance)
     if not manifest.get("artifact_identity") or not manifest.get("index_files"):
