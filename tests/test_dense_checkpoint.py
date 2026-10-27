@@ -13,7 +13,9 @@ from scientific_tot.integrations.dense import EncodingConfig, cached_encoding
 
 @pytest.mark.parametrize("corrupt", [False, True])
 @pytest.mark.parametrize("task,batch_size", [("document", 2), ("query", 3)])
-def test_resume_encoding_and_model_options(tmp_path, monkeypatch, task, batch_size, corrupt):
+def test_resume_encoding_and_model_options(
+    tmp_path, monkeypatch, capsys, task, batch_size, corrupt
+):
     monkeypatch.setattr("scientific_tot.integrations.dense.require_cuda", lambda: None)
     loaded, encoded = [], []
     state = {"interrupt": True}
@@ -28,6 +30,7 @@ def test_resume_encoding_and_model_options(tmp_path, monkeypatch, task, batch_si
 
         def encode_document(self, texts, **kwargs):
             assert kwargs["batch_size"] == batch_size
+            assert kwargs["show_progress_bar"] is False
             if state["interrupt"] and encoded:
                 state["interrupt"] = False
                 raise RuntimeError("scheduler stopped job")
@@ -65,6 +68,9 @@ def test_resume_encoding_and_model_options(tmp_path, monkeypatch, task, batch_si
         return
     vectors, manifest, entry, hit = cached_encoding(config, "a" * 40, tmp_path, **kwargs)
     assert not hit
+    progress = capsys.readouterr().err
+    assert f"Encoding {task} inputs" in progress
+    assert "2/5" in progress and "5/5" in progress
     assert encoded == ["eeeee", "bbbb", "ddd", "cc", "a"]  # No repeated completed chunk.
     np.testing.assert_array_equal(vectors[:, 0], [len(text) for text in texts])
     assert manifest["encoding"]["batch_size"] == batch_size

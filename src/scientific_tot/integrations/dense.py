@@ -20,7 +20,7 @@ from scientific_tot.config_artifacts import artifact_reference
 from scientific_tot.integrations.evaluation import evaluate_run
 from scientific_tot.integrations.pyterrier import to_pyterrier
 from scientific_tot.records import Records, records_digest
-from scientific_tot.reporting import package_version, phase
+from scientific_tot.reporting import package_version, phase, tqdm
 
 DEFAULT_MODEL = "intfloat/e5-small-v2"
 DEFAULT_MODEL_REVISION = "ffb93f3bd4047442299a41ebb6fa998a38507c52"
@@ -249,30 +249,49 @@ def _encode_task(
     else:
         # Keep length grouping across checkpoints, then restore canonical input order.
         order = np.argsort([-len(text) for text in texts], kind="stable")
-        chunks = []
+        chunks = {}
         assert config.checkpoint_size is not None
-        for start in range(0, len(texts), config.checkpoint_size):
-            positions = order[start : start + config.checkpoint_size]
+        starts = range(0, len(texts), config.checkpoint_size)
+        # Validate saved chunks before counting them as completed work.
+        for start in starts:
             path = checkpoint / str(start)
-            expected = {"start": start, "positions": positions.tolist()}
-            if not path.exists():
-                values = getattr(model, f"encode_{task}")(
-                    [texts[position] for position in positions], **encode_kwargs
-                )
-                values = np.asarray(values, dtype=np.float32)
-                if (
-                    values.ndim != 2
-                    or len(values) != len(positions)
-                    or not np.isfinite(values).all()
-                ):
-                    raise ValueError("Model returned invalid checkpoint embeddings")
-                _write_cache(path, expected, values, {})
-            else:
-                checkpoint_hits += 1
-                print(f"Reusing {task} checkpoint: {start:,}/{len(texts):,}", flush=True)
-            values, _ = _read_cache(path, expected)
-            chunks.append(values)
-        vectors = np.concatenate(chunks)[np.argsort(order)]
+            if path.exists():
+                positions = order[start : start + config.checkpoint_size]
+                expected = {"start": start, "positions": positions.tolist()}
+                chunks[start], _ = _read_cache(path, expected)
+        checkpoint_hits = len(chunks)
+        resumed = sum(len(values) for values in chunks.values())
+        encode_kwargs["show_progress_bar"] = False
+        with tqdm(
+            total=len(texts),
+            initial=resumed,
+            desc=f"Encoding {task} inputs",
+            unit="input",
+        ) as progress:
+            for start in starts:
+                if start in chunks:
+                    continue
+                positions = order[start : start + config.checkpoint_size]
+                batches = []
+                for offset in range(0, len(positions), batch_size):
+                    batch = positions[offset : offset + batch_size]
+                    values = getattr(model, f"encode_{task}")(
+                        [texts[position] for position in batch], **encode_kwargs
+                    )
+                    values = np.asarray(values, dtype=np.float32)
+                    if (
+                        values.ndim != 2
+                        or len(values) != len(batch)
+                        or not np.isfinite(values).all()
+                    ):
+                        raise ValueError("Model returned invalid checkpoint embeddings")
+                    batches.append(values)
+                    progress.update(len(batch))
+                values = np.concatenate(batches)
+                expected = {"start": start, "positions": positions.tolist()}
+                _write_cache(checkpoint / str(start), expected, values, {})
+                chunks[start] = values
+        vectors = np.concatenate([chunks[start] for start in starts])[np.argsort(order)]
     vectors = np.asarray(vectors, dtype=np.float32, order="C")
     if (
         vectors.ndim != 2
