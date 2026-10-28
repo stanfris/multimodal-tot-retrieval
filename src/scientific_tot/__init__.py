@@ -1,4 +1,4 @@
-"""Scientific ToT dataset adapters; no retrieval or generation runtime."""
+"""Public dataset adapter API for Scientific ToT retrieval."""
 
 from scientific_tot.adapter import DatasetAdapter, validate_qrels
 from scientific_tot.api import load_corpus, load_metadata, load_qrels, load_queries

@@ -38,7 +38,7 @@ class FreshOutput(Callback):
             config.launcher.cache_root,
             config.dataset.cache_dir,
         ]
-        if config.stage.name in {"retrieve", "search"} and config.paths.index is not None:
+        if config.stage.name == "retrieve" and config.paths.index is not None:
             inputs.append(config.paths.index)
         if config.paths.run is not None:
             inputs.append(config.paths.run)
@@ -160,23 +160,9 @@ class FreshOutput(Callback):
 
 def execute_stage(cfg: DictConfig, *, run_dir: Path | None = None) -> dict | None:
     """Dispatch one operation using the already resolved application settings."""
-    name = cfg.stage.name
-    if cfg.model.name in (
-        {"bm25", "colbert", "colqwen"} | TEXT_DENSE_MODELS | VISUAL_DENSE_MODELS
-    ) and name in {
-        "prepare",
-        "index",
-        "retrieve",
-        "evaluate",
-    }:
-        from scientific_tot.stages import execute_text_stage
+    from scientific_tot.stages import execute_text_stage
 
-        return execute_text_stage(cfg, run_dir=run_dir)
-    raise NotImplementedError(
-        f"stage={name} is not connected to execution yet. "
-        "Use dry_run=true to validate configuration. "
-        "The existing examples remain runnable independently."
-    )
+    return execute_text_stage(cfg, run_dir=run_dir)
 
 
 def git_commit(root: Path) -> str | None:
@@ -364,7 +350,7 @@ def _run_stage(cfg: DictConfig, run_dir: Path, hydra_cfg: DictConfig, repo_root:
             cfg = effective
             manifest["resolved_dataset_revision"] = cfg.dataset.revision
             manifest["resolved_model_revision"] = cfg.model.get("revision")
-        if cfg.stage.name in {"retrieve", "search"}:
+        if cfg.stage.name == "retrieve":
             manifest["index_provenance"] = verify_index(Path(cfg.paths.index), cfg)
         if cfg.stage.name == "evaluate":
             manifest["retrieval_provenance"] = verify_retrieval(Path(cfg.paths.run), cfg)

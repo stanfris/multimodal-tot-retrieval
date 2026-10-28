@@ -1,4 +1,4 @@
-"""Sentence Transformers encoding, FAISS search, and shared standard evaluation."""
+"""Sentence Transformers encoding and persistent embedding/FAISS caches."""
 
 from __future__ import annotations
 
@@ -8,18 +8,14 @@ import re
 import tempfile
 from contextlib import ExitStack
 from dataclasses import asdict, dataclass
-from importlib.metadata import version
 from pathlib import Path
 from time import perf_counter
 
 import numpy as np
-import pandas as pd
 from huggingface_hub import HfApi
 
 from scientific_tot.config_artifacts import artifact_reference
-from scientific_tot.integrations.evaluation import evaluate_run
-from scientific_tot.integrations.pyterrier import to_pyterrier
-from scientific_tot.records import Records, records_digest
+from scientific_tot.records import records_digest
 from scientific_tot.reporting import package_version, phase, tqdm
 
 DEFAULT_MODEL = "intfloat/e5-small-v2"
@@ -119,38 +115,6 @@ def resolve_model_revision(config: EncodingConfig) -> str:
     if revision and re.fullmatch(r"[0-9a-f]{40}", revision):
         return revision
     return HfApi().model_info(config.model_id, revision=revision).sha
-
-
-def verify_baseline(inputs, directory: str | Path) -> dict:
-    """Refuse a comparison unless corpus text, IDs, topics and qrels match BM25."""
-    root = Path(directory)
-    manifest = json.loads((root / "manifest.json").read_text())
-    if records_digest(inputs.documents) != manifest["corpus_sha256"]:
-        raise ValueError("Corpus text/order/IDs differ from the BM25 baseline")
-    if [d["docno"] for d in inputs.documents] != json.loads(
-        (root / "selected-documents.json").read_text()
-    ):
-        raise ValueError("Document IDs differ from the BM25 baseline")
-    topics = pd.read_json(root / "topics.jsonl", lines=True, dtype={"qid": str, "query": str})
-    mapping = pd.read_json(
-        root / "query-ids.jsonl",
-        lines=True,
-        dtype={"qid": str, "query_id": str, "query_key": str},
-    )
-    qrels = pd.read_csv(
-        root / "qrels.tsv", sep="\t", dtype={"qid": str, "docno": str}, keep_default_na=False
-    )
-    for actual, expected in [
-        (inputs.topics, topics),
-        (inputs.qrels, qrels),
-        (inputs.query_ids, mapping),
-    ]:
-        if actual.to_dict("records") != expected.to_dict("records"):
-            raise ValueError("Queries, qrels or query mappings differ from the BM25 baseline")
-    return {
-        "directory": str(root.resolve()),
-        "manifest_sha256": artifact_reference(root / "manifest.json")["sha256"],
-    }
 
 
 def _read_cache(path: Path, expected: dict):
@@ -420,142 +384,3 @@ def cached_encoding(
         if len(vectors) != len(rows):
             raise ValueError("Cached embedding count differs from the configured input")
         return vectors, manifest, entry, hit
-
-
-def dense_experiment(
-    corpus: Records,
-    queries: Records,
-    output: str | Path,
-    *,
-    cache: str | Path,
-    config: EncodingConfig | None = None,
-    baseline: str | Path | None = None,
-    settings=None,
-) -> pd.DataFrame:
-    """Encode in library batches, search a persistent FAISS IndexFlatIP, evaluate.
-
-    NumPy .npy files (memory-mapped on reuse) and FAISS's own index I/O persist
-    embeddings and the index. Fully cached runs neither load a model nor start Java.
-    """
-    import faiss
-
-    if settings is not None:
-        from scientific_tot.config_arguments import dense_arguments, require_corpus_settings
-        from scientific_tot.configuration import resolve_config
-
-        if config is not None:
-            raise ValueError("Pass Hydra settings or EncodingConfig, not both")
-        settings = resolve_config(settings, Path.cwd(), Path(output).resolve())
-        require_corpus_settings(settings, corpus, queries)
-        if Path(cache).resolve() != Path(settings.launcher.cache_root) / "embeddings":
-            raise ValueError("Hydra settings require cache=launcher.cache_root/embeddings")
-        config = EncodingConfig(**dense_arguments(settings))
-    config = config or EncodingConfig()
-    top_k = settings.retrieval.top_k if settings is not None else 100
-    inputs = to_pyterrier(corpus, queries)
-    baseline_info = verify_baseline(inputs, baseline) if baseline is not None else None
-    representations = {r["representation"] for r in corpus}
-    if len(representations) != 1:
-        raise ValueError("Use one corpus representation per experiment")
-    target = Path(output).resolve()
-    if target.exists():
-        raise FileExistsError(f"Choose a fresh experiment directory: {target}")
-    resolved_revision = resolve_model_revision(config)
-    cache_root = Path(cache).resolve()
-    corpus_sha = records_digest(inputs.documents)
-    doc_vectors, doc_manifest, doc_cache, doc_hit = cached_encoding(
-        config,
-        resolved_revision,
-        cache_root,
-        task="document",
-        rows=inputs.documents,
-        dataset_revision=corpus.provenance.get("revision"),
-        representation={"name": next(iter(representations))},
-    )
-    ids = [d["docno"] for d in inputs.documents]
-    index = faiss.read_index(str(doc_cache / "index.faiss"))
-    cached_ids = json.loads((doc_cache / "ids.json").read_text())
-    if cached_ids != ids or index.ntotal != len(ids) or index.d != doc_vectors.shape[1]:
-        raise ValueError("Cached FAISS index/ID mapping does not match canonical corpus")
-    query_vectors, query_manifest, query_cache, query_hit = cached_encoding(
-        config,
-        resolved_revision,
-        cache_root,
-        task="query",
-        rows=inputs.topics.to_dict("records"),
-        dataset_revision=queries.provenance.get("revision"),
-    )
-    if query_vectors.shape[1] != index.d:
-        raise ValueError("Cached query embeddings do not match topics/index")
-    print(
-        f"FAISS IndexFlatIP: {index.ntotal:,} documents, dimension={index.d}, "
-        f"normalized={config.similarity == 'cosine'}, precision=float32, device=cpu; "
-        f"domains={sorted({row['domain'] for row in corpus})}, "
-        f"corpus_split={corpus.provenance.get('selection', {}).get('split')}, "
-        f"representation={next(iter(representations))}, "
-        f"query_split={queries.provenance.get('selection', {}).get('split')}",
-        flush=True,
-    )
-    print(f"Searching {len(query_vectors):,} queries; top_k={top_k}...", flush=True)
-    # Search and ranking are wholly supplied by FAISS; only row numbers are mapped to IDs.
-    scores, positions = index.search(np.asarray(query_vectors), min(top_k, len(ids)))
-    print("FAISS search complete; saving and evaluating rankings...", flush=True)
-    rows = [
-        {"qid": qid, "docno": cached_ids[int(position)], "rank": rank, "score": float(score)}
-        for qid, matches, values in zip(inputs.topics.qid, positions, scores, strict=True)
-        for rank, (position, score) in enumerate(zip(matches, values, strict=True))
-        if position >= 0
-    ]
-    run = pd.DataFrame(rows, columns=["qid", "docno", "rank", "score"])
-    target.mkdir(parents=True)
-    metrics = evaluate_run(
-        run,
-        inputs.topics,
-        inputs.qrels,
-        inputs.query_ids,
-        target,
-        name="Dense",
-        evaluation=settings.evaluation if settings is not None else None,
-    )
-    manifest = {
-        "model": {**asdict(config), "resolved_revision": resolved_revision},
-        "dataset_revision": corpus.provenance.get("revision"),
-        "dataset_revision_status": "recorded"
-        if corpus.provenance.get("revision")
-        else "local/unrecorded",
-        "representation": next(iter(representations)),
-        "corpus_sha256": corpus_sha,
-        "documents": len(ids),
-        "queries": len(inputs.topics),
-        "qrels": len(inputs.qrels),
-        "index": {
-            "library": "faiss",
-            "class": "IndexFlatIP",
-            "metric": "inner_product",
-            "normalized_embeddings": config.similarity == "cosine",
-            "dimension": index.d,
-            "precision": "float32",
-            "device": "cpu",
-            "threads": config.faiss_threads,
-            "cutoff": top_k,
-        },
-        "encoding": {"documents": doc_manifest["encoding"], "queries": query_manifest["encoding"]},
-        "cache": {
-            "documents": str(doc_cache),
-            "queries": str(query_cache),
-            "document_hit": doc_hit,
-            "query_hit": query_hit,
-        },
-        "doc_ids_verified_against_index": True,
-        "baseline": baseline_info,
-        "versions": {
-            **doc_manifest["configuration"]["versions"],
-            **{name: version(name) for name in ("pyterrier", "ir-measures")},
-        },
-        "corpus_provenance": corpus.provenance,
-        "corpus_report": corpus.report.to_dict(),
-        "query_provenance": queries.provenance,
-    }
-    (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    (target / "selected-documents.json").write_text(json.dumps(ids, indent=2) + "\n")
-    return metrics

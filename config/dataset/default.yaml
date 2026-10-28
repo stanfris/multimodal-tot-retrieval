@@ -1,5 +1,5 @@
 name: scientific_tot
-source: local  # hub explicitly opts into network access in future stage implementations.
+source: local  # hub explicitly opts into network access.
 repo_id: kasys/multimodal-tip-of-the-tongue-retrieval-for-scientific-documents
 revision: ${oc.env:TOT_DATA_REVISION,null}  # Full commit SHA; local revisions are assertions.
 root: ${launcher.dataset_root}

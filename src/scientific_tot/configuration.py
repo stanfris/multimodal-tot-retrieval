@@ -15,7 +15,7 @@ CONFIG_DIR = Path(__file__).parent / "config"
 if not CONFIG_DIR.is_dir():
     CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 
-STAGES = {"prepare", "index", "retrieve", "evaluate", "search", "export"}
+STAGES = {"prepare", "index", "retrieve", "evaluate"}
 SPLITS = {"train", "test", "train+test", "all"}
 TEXT_DENSE_MODELS = {"dense", "qwen3_text"}
 OPENCLIP_MODELS = {"openclip", "openclip_figures"}
@@ -26,7 +26,6 @@ BACKENDS = {
     "dense": "sentence_transformers_faiss",
     "qwen3_text": "sentence_transformers_faiss",
     "colbert": "colbert",
-    "visual": "byaldi",
     "colqwen": "sentence_transformers_qdrant",
     "openclip": "visual_faiss",
     "openclip_figures": "visual_faiss",
@@ -270,8 +269,7 @@ def _validate(cfg: DictConfig) -> None:
     _require(model.backend == BACKENDS[model.name], f"Incorrect backend for model {model.name}")
     expected = (
         "image"
-        if model.name
-        in {"visual", "colqwen", "qwen3_vl_pages", "qwen3_vl_figures"} | OPENCLIP_MODELS
+        if model.name in {"colqwen", "qwen3_vl_pages", "qwen3_vl_figures"} | OPENCLIP_MODELS
         else "text"
     )
     _require(
@@ -293,7 +291,7 @@ def _validate(cfg: DictConfig) -> None:
             and rep.rendering.scale > 0,
             "rendering.scale must be positive",
         )
-    if model.name in {"visual", "colqwen"} | TEXT_DENSE_MODELS | VISUAL_DENSE_MODELS:
+    if model.name in {"colqwen"} | TEXT_DENSE_MODELS | VISUAL_DENSE_MODELS:
         _require(_text(model.model_id), f"model.model_id is required for {model.name}")
         _require(model.device == cfg.launcher.device, "model.device must match launcher.device")
     if model.name in VISUAL_DENSE_MODELS:
@@ -356,7 +354,7 @@ def _validate(cfg: DictConfig) -> None:
         _require(
             model.revision is None or _text(model.revision), "model.revision must be null or text"
         )
-        if cfg.stage.name in {"retrieve", "search"}:
+        if cfg.stage.name == "retrieve":
             _require(
                 isinstance(model.revision, str)
                 and re.fullmatch(r"[0-9a-f]{40}", model.revision) is not None,
@@ -434,17 +432,6 @@ def _validate(cfg: DictConfig) -> None:
             "ColBERT nbits must be 1, 2, or 4",
         )
         _require(_positive(model.retrieval.query_maxlen), "query_maxlen must be positive")
-    elif model.name == "visual":
-        _require(
-            type(model.indexing.store_collection_with_index) is bool,
-            "store_collection_with_index must be boolean",
-        )
-        _require(model.indexing.overwrite is False, "model.indexing.overwrite must remain false")
-        for key in ("max_image_width", "max_image_height"):
-            _require(
-                model.indexing[key] is None or _positive(model.indexing[key]),
-                f"model.indexing.{key} must be null or positive",
-            )
     elif model.name == "bm25":
         _require(type(model.indexing.blocks) is bool, "model.indexing.blocks must be boolean")
         _require(
@@ -484,22 +471,20 @@ def _validate(cfg: DictConfig) -> None:
         all(re.fullmatch(r"(nDCG|RR|R|P|AP)@[1-9][0-9]*", m) for m in metrics),
         "Unsupported evaluation.metrics; use nDCG, RR, R, P, or AP with positive @cutoffs",
     )
-    if cfg.stage.name in {"retrieve", "search"}:
+    if cfg.stage.name == "retrieve":
         if dataset.source == "hub":
             _require(
                 dataset.revision is not None,
                 "Hub index consumers require dataset.revision pinned to the build commit",
             )
         _require(_text(cfg.paths.index), f"stage={cfg.stage.name} requires an existing paths.index")
-    if cfg.stage.name == "search":
-        _require(_text(cfg.stage.query), "stage.query is required for search")
 
     if cfg.stage.name == "evaluate":
         _require(_text(cfg.paths.run), "stage=evaluate requires a completed retrieval paths.run")
     else:
         _require(cfg.paths.run is None, "paths.run is only consumed by stage=evaluate")
-    if cfg.stage.name not in {"index", "retrieve", "search"}:
-        _require(cfg.paths.index is None, "paths.index is only consumed by index/retrieve/search")
+    if cfg.stage.name not in {"index", "retrieve"}:
+        _require(cfg.paths.index is None, "paths.index is only consumed by index/retrieve")
 
 
 def overlaps(first: Path, second: Path) -> bool:

@@ -16,9 +16,7 @@ from scientific_tot.stage_cli import plan
 from scientific_tot.validate_dataset import validate
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPERIMENTS = sorted(
-    p.stem for p in (ROOT / "config/experiment").glob("*.yaml") if p.stem != "visual_pages"
-)
+EXPERIMENTS = sorted(p.stem for p in (ROOT / "config/experiment").glob("*.yaml"))
 
 
 @pytest.mark.parametrize("failed_command", ["", "unload", "load"])
@@ -29,9 +27,9 @@ def test_abci_toolkit_initialization(failed_command):
             "bash",
             "-ec",
             'source() { echo "init:$1"; }; '
-            f'failed_command={failed_command!r}; '
+            f"failed_command={failed_command!r}; "
             'module() { echo "module:$*"; [[ "$1" != "$failed_command" ]]; }; '
-            'builtin source scripts/h200_environment.sh; echo ready',
+            "builtin source scripts/h200_environment.sh; echo ready",
         ],
         cwd=ROOT,
         capture_output=True,
@@ -173,7 +171,7 @@ def test_benchmark_selection_shared_overrides_and_isolation(tmp_path, monkeypatc
 @pytest.mark.parametrize(
     "override",
     [
-        "benchmark.experiments=[visual_pages]",
+        "benchmark.experiments=[unknown]",
         "benchmark.domains=[Invalid]",
         "experiment=bm25_fulltext",
     ],

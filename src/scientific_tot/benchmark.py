@@ -42,7 +42,7 @@ def jobs(overrides: list[str]):
     experiments, domains = cfg.benchmark.experiments, cfg.benchmark.domains
     available = {path.stem for path in (CONFIG_DIR / "experiment").glob("*.yaml")}
     for values, choices, label in (
-        (experiments, available - {"visual_pages"}, "experiments"),
+        (experiments, available, "experiments"),
         (domains, set(DOMAINS), "domains"),
     ):
         if not OmegaConf.is_list(values) or not values or any(v not in choices for v in values):
@@ -62,8 +62,6 @@ def jobs(overrides: list[str]):
             arguments = [f"experiment={experiment}", f"dataset.domains=[{domain}]", *shared]
             for stage in stages:
                 resolved, _ = plan(stage, [*arguments, "dry_run=true"])
-                if resolved.model.name == "visual":
-                    raise ValueError("The Byaldi visual profile has no execution implementation")
                 log_root = (
                     Path(resolved.launcher.log_root)
                     if resolved.launcher.kind == "pbs"

@@ -136,7 +136,7 @@ def verify_index(index: Path, cfg: DictConfig, *, allow_building: bool = False) 
     built = index_settings(built_config, provenance)
     requested = index_settings(cfg, provenance if cfg.stage.name == "index" else None)
     if (
-        cfg.stage.name in {"retrieve", "search"}
+        cfg.stage.name == "retrieve"
         and cfg.model.name in {"qwen3_vl_figures", "qwen3_vl_multimodal"}
         and "figure_overflow" not in built["model"]
     ):

@@ -13,7 +13,7 @@ from omegaconf import OmegaConf
 from omegaconf.errors import MissingMandatoryValue
 
 from scientific_tot.configuration import CONFIG_DIR, resolve_config
-from scientific_tot.hydra_run import execute_stage, run_stage
+from scientific_tot.hydra_run import run_stage
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -53,14 +53,14 @@ def test_default_composition(tmp_path):
     "model,rep",
     list(
         itertools.product(
-            ["bm25", "dense", "colbert", "visual"],
+            ["bm25", "dense", "colbert", "openclip"],
             ["title_abstract", "fulltext", "figures", "pages"],
         )
     ),
 )
 def test_model_representation_matrix(tmp_path, model, rep):
     cfg = config(f"model={model}", f"representation={rep}")
-    compatible = (model == "visual") == (rep in {"figures", "pages"})
+    compatible = rep == "pages" if model == "openclip" else rep in {"title_abstract", "fulltext"}
     if model == "colbert":
         compatible = rep == "fulltext"
     if compatible:
@@ -77,7 +77,7 @@ def test_model_representation_matrix(tmp_path, model, rep):
         ("dense_fulltext", "dense", "fulltext"),
         ("qwen3_text", "qwen3_text", "fulltext"),
         ("colbert_fulltext", "colbert", "fulltext"),
-        ("visual_pages", "visual", "pages"),
+        ("openclip_pages", "openclip", "pages"),
     ],
 )
 def test_experiment_presets(tmp_path, profile, model, rep):
@@ -86,12 +86,12 @@ def test_experiment_presets(tmp_path, profile, model, rep):
     # Explicit CLI selections take precedence over preset group defaults.
     override = resolve_config(
         config(
-            f"experiment={profile}", "model=bm25", "representation=title_abstract", "stage=export"
+            f"experiment={profile}", "model=bm25", "representation=title_abstract", "stage=prepare"
         ),
         tmp_path,
     )
     assert override.model.name == "bm25"
-    assert override.stage.name == "export"
+    assert override.stage.name == "prepare"
 
 
 @pytest.mark.parametrize("source", ["default", "hub"])
@@ -112,20 +112,6 @@ def test_dataset_launcher_split_overrides(tmp_path, source, launcher, split):
     assert cfg.split.queries == split
     assert cfg.split.corpus == "all"
     assert list(cfg.dataset.domains) == ["Physics"]
-
-
-@pytest.mark.parametrize("stage", ["search", "export"])
-def test_remaining_stages_explicitly_unimplemented(tmp_path, stage):
-    overrides = [f"stage={stage}"]
-    if stage in {"index", "retrieve", "search"}:
-        overrides.append("paths.index=existing/index")
-    if stage == "evaluate":
-        overrides.append("paths.run=existing/retrieval")
-    if stage == "search":
-        overrides.append("stage.query=scientific query")
-    cfg = resolve_config(config(*overrides), tmp_path)
-    with pytest.raises(NotImplementedError, match=f"stage={stage}"):
-        execute_stage(cfg)
 
 
 @pytest.mark.parametrize(
@@ -166,8 +152,7 @@ def test_invalid_settings(tmp_path, override, message):
         (["model=dense", "model.indexing.factory=Unknown"], "FAISS"),
         (["model=colbert", "model.checkpoint=null"], "checkpoint"),
         (["model=colbert", "model.indexing.nbits=3"], "nbits"),
-        (["model=visual", "representation=pages", "model.model_id=null"], "model_id"),
-        (["model=visual", "representation=pages", "model.indexing.overwrite=true"], "overwrite"),
+        (["model=openclip", "representation=pages", "model.model_id=null"], "model_id"),
         (["stage=evaluate"], "paths.run"),
     ],
 )
@@ -215,9 +200,9 @@ def test_cli_invalid_parameters_and_show_config(tmp_path):
     bad = cli(tmp_path, "dry_run=true", "model=dense", "model.model_id=null")
     assert bad.returncode != 0
     assert "model.model_id" in bad.stderr
-    shown = cli(tmp_path, "--cfg", "job", "--resolve", "experiment=visual_pages")
+    shown = cli(tmp_path, "--cfg", "job", "--resolve", "experiment=openclip_pages")
     assert shown.returncode == 0, shown.stderr
-    assert OmegaConf.create(shown.stdout).model.name == "visual"
+    assert OmegaConf.create(shown.stdout).model.name == "openclip"
 
 
 def test_real_multirun(tmp_path):
@@ -225,7 +210,7 @@ def test_real_multirun(tmp_path):
         tmp_path,
         "--multirun",
         "dry_run=true",
-        "experiment=bm25_fulltext,dense_fulltext,visual_pages",
+        "experiment=bm25_fulltext,dense_fulltext,openclip_pages",
         "split=train,test",
         f"hydra.sweep.dir={tmp_path / 'sweep'}",
     )
@@ -351,7 +336,10 @@ def test_invalid_sweep_paths_cannot_bypass_output_guard(tmp_path, override, exis
         (["experiment=qwen3_vl_figures", "model.figure_overflow=truncate"], "figure_overflow"),
         (["experiment=qwen3_vl_multimodal", "model.figure_overflow=truncate"], "figure_overflow"),
         (["representation=title_abstract", "representation.fields=[title]"], "fields"),
-        (["model=visual", "representation=pages", "representation.rendering.scale=.inf"], "scale"),
+        (
+            ["model=openclip", "representation=pages", "representation.rendering.scale=.inf"],
+            "scale",
+        ),
         (["launcher.threads.encoding=true"], "positive"),
         (["launcher.cache_root=results/hydra/cache"], "cache overlap"),
         (["dataset.cache_dir=results/hydra"], "cache overlap"),
@@ -687,20 +675,14 @@ def test_argument_bindings(tmp_path):
 def test_every_yaml_profile_composes_and_validates(tmp_path, profile):
     group, name = profile.parent.name, profile.stem
     overrides = [f"{group}={name}"]
-    if (group == "model" and name == "visual") or (
-        group == "representation" and name in {"figures", "pages"}
-    ):
-        overrides += (
-            ["model=visual", "representation=pages"] if group == "model" else ["model=visual"]
-        )
+    if group == "representation" and name in {"figures", "pages"}:
+        overrides.append("model=openclip_figures" if name == "figures" else "model=openclip")
     if group == "model" and name == "colqwen":
         overrides.append("representation=pages")
-    if group == "stage" and name in {"retrieve", "search"}:
+    if group == "stage" and name == "retrieve":
         overrides.append("paths.index=prior-index")
     if group == "stage" and name == "evaluate":
         overrides.append("paths.run=prior-retrieval")
-    if group == "stage" and name == "search":
-        overrides.append("stage.query=test")
     assert resolve_config(config(*overrides), tmp_path)
 
 
@@ -763,7 +745,7 @@ def test_local_checkpoint_paths_share_original_base(tmp_path):
     cfg = resolve_config(config("model=colbert", "model.checkpoint=../checkpoints/model"), tmp_path)
     assert cfg.model.checkpoint == str((tmp_path / "../checkpoints/model").resolve())
     visual = resolve_config(
-        config("model=visual", "representation=pages", "model.model_id=./checkpoints/visual"),
+        config("model=openclip", "representation=pages", "model.model_id=./checkpoints/visual"),
         tmp_path,
     )
     assert visual.model.model_id == str(tmp_path / "checkpoints/visual")
@@ -804,7 +786,6 @@ def test_index_contract_records_resolved_commits_not_mutable_refs(tmp_path):
     "overrides,key",
     [
         (["model=dense", "model.model_id=???"], "model.model_id"),
-        (["stage=search", "paths.index=/tmp/prior-index"], "stage.query"),
     ],
 )
 def test_missing_value_uses_omegaconf_error(tmp_path, overrides, key):

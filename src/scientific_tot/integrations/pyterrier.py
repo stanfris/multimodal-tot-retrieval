@@ -1,8 +1,7 @@
-"""Thin PyTerrier data conversion and a standard Terrier BM25 experiment."""
+"""PyTerrier data conversion and persistent BM25 indexing."""
 
 from __future__ import annotations
 
-import json
 import os
 import platform
 from dataclasses import dataclass
@@ -13,7 +12,7 @@ from urllib.parse import quote
 import pandas as pd
 
 from scientific_tot.adapter import validate_qrels
-from scientific_tot.records import Records, Report, records_digest
+from scientific_tot.records import Records, records_digest
 
 
 @dataclass(frozen=True)
@@ -162,153 +161,4 @@ def _terrier_inputs(documents, queries: Records, canonical_qrels: Records) -> Te
         pd.DataFrame(topics, columns=["qid", "query"]),
         pd.DataFrame(qrels, columns=["qid", "docno", "label"]),
         pd.DataFrame(mapping, columns=["qid", "query_id", "query_key"]),
-    )
-
-
-def bm25_experiment(
-    corpus: Records,
-    queries: Records,
-    output: str | Path,
-    *,
-    threads: int = 1,
-    terrier_version: str = "5.11",
-    settings=None,
-) -> pd.DataFrame:
-    """Build a fresh Terrier index, retrieve, evaluate, and save TREC output.
-
-    Resolved Hydra settings bind model/depth/metric arguments when supplied.
-    Otherwise the existing top-100 tutorial defaults remain unchanged.
-    Uses IterDictIndexer, Retriever(wmodel='BM25'), Experiment, and ir_measures
-    metric objects. Existing output directories are refused to prevent stale
-    indexes/runs. Java starts only when this function is explicitly called.
-    """
-    import pyterrier as pt
-
-    if threads < 1:
-        raise ValueError("threads must be positive")
-    if settings is not None:
-        from scientific_tot.config_arguments import bm25_arguments, require_corpus_settings
-        from scientific_tot.configuration import resolve_config
-
-        settings = resolve_config(settings, Path.cwd(), Path(output).resolve())
-        require_corpus_settings(settings, corpus, queries)
-        terrier_version = settings.launcher.terrier_version
-        indexing_args, retrieval_args = bm25_arguments(
-            settings, docno_bytes=max(len(r["doc_id"].encode("utf-8")) for r in corpus)
-        )
-    else:
-        indexing_args = retrieval_args = None
-    inputs = to_pyterrier(corpus, queries)
-    target = Path(output).resolve()
-    if target.exists():
-        raise FileExistsError(f"Choose a fresh experiment directory: {target}")
-    _start_terrier(pt, terrier_version)
-    target.mkdir(parents=True)
-    # Terrier's metadata storage truncates at its configured capacity; compute
-    # enough space for the longest actual ID and then verify every indexed ID.
-    meta_length = max(len(row["docno"].encode("utf-8")) for row in inputs.documents)
-    if indexing_args is None:
-        indexing_args = {"meta": {"docno": meta_length}, "text_attrs": ["text"], "threads": threads}
-    else:
-        indexing_args["type"] = pt.terrier.IndexingType.CLASSIC
-    indexer = pt.terrier.IterDictIndexer(str(target / "index"), **indexing_args)
-    print(
-        f"BM25 / Terrier inverted index: {len(inputs.documents):,} documents, "
-        f"{len(inputs.topics):,} queries; "
-        f"domains={sorted({row['domain'] for row in corpus})}, "
-        f"corpus_split={corpus.provenance.get('selection', {}).get('split')}, "
-        f"representation={corpus[0]['representation']}; output={target}",
-        flush=True,
-    )
-    indexref = indexer.index(pt.tqdm(inputs.documents, desc="Indexing documents", unit="doc"))
-    index = pt.terrier.IndexFactory.of(indexref)
-    try:
-        _verify_document_ids(index, inputs.documents)
-        retrieval_args = retrieval_args or {
-            "wmodel": "BM25",
-            "num_results": 100,
-            "threads": threads,
-        }
-        retriever = pt.terrier.Retriever(index, verbose=True, **retrieval_args)
-        # Explicit tokenisation prevents literal '#1' text from selecting MatchOp parsing.
-        topics = pt.rewrite.tokenise().transform(inputs.topics)
-        run = retriever.transform(topics)
-        from scientific_tot.integrations.evaluation import evaluate_run
-
-        metrics = evaluate_run(
-            run,
-            inputs.topics,
-            inputs.qrels,
-            inputs.query_ids,
-            target,
-            name="BM25",
-            evaluation=settings.evaluation if settings is not None else None,
-        )
-        manifest = {
-            "documents": len(inputs.documents),
-            "queries": len(inputs.topics),
-            "qrels": len(inputs.qrels),
-            "corpus_sha256": records_digest(inputs.documents),
-            "doc_ids_verified_against_index": True,
-            "model": "Terrier BM25 defaults" if settings is None else dict(retrieval_args),
-            "cutoff": retrieval_args["num_results"],
-            "tokeniser": "Terrier English",
-            "stemmer": "PorterStemmer",
-            "stopwords": "Stopwords",
-            "metrics": [column for column in metrics.columns if column != "name"],
-            "versions": {name: version(name) for name in ["pyterrier", "pandas", "ir-measures"]},
-            "terrier_version": pt.terrier.version(),
-            "python": platform.python_version(),
-            "corpus_provenance": corpus.provenance,
-            "corpus_report": corpus.report.to_dict(),
-            "query_provenance": queries.provenance,
-        }
-        (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    finally:
-        index.close()
-    return metrics
-
-
-def select_demo_subset(
-    corpus: Records, queries: Records, documents: int | None, query_limit: int | None
-) -> tuple[Records, Records]:
-    """Deterministic demo selection retaining every selected query's positive targets."""
-    if documents is not None and documents < 1 or query_limit is not None and query_limit < 1:
-        raise ValueError("Subset limits must be positive")
-    selected_queries = list(queries)[:query_limit]
-    positives = {doc for row in selected_queries for doc in row["relevant_ids"]}
-    if documents is not None and len(positives) > documents:
-        raise ValueError("--documents is smaller than the selected queries' positive corpus")
-    ids = set(positives)
-    if documents is None:
-        ids.update(row["doc_id"] for row in corpus)
-    else:
-        for row in sorted(corpus, key=lambda row: row["doc_id"]):
-            if len(ids) >= documents:
-                break
-            ids.add(row["doc_id"])
-    corpus_rows = [row for row in corpus if row["doc_id"] in ids]
-    return (
-        Records(
-            "corpus",
-            corpus_rows,
-            Report(selected=len(corpus_rows), emitted=len(corpus_rows)),
-            {
-                **corpus.provenance,
-                "parent_report": corpus.report.to_dict(),
-                "subset": {"documents_requested": documents, "policy": "positives_then_sorted_ids"},
-            },
-        ),
-        Records(
-            "queries",
-            selected_queries,
-            Report(selected=len(selected_queries), emitted=len(selected_queries)),
-            {
-                **queries.provenance,
-                "subset": {
-                    "queries_requested": query_limit,
-                    "policy": "canonical_collection_order",
-                },
-            },
-        ),
     )

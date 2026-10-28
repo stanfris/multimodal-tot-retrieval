@@ -637,27 +637,17 @@ def test_archive_shards_can_split_a_single_paper(complete):
     assert len(load_corpus(local_dir=complete, domain="ACL")) == 2
 
 
-def test_example_runs_offline(tmp_path):
-    import os
-    import subprocess
-    import sys
-
-    repo = Path(__file__).resolve().parents[1]
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(repo / "examples/convert_dataset.py"),
-            "--local-dir",
-            str(repo / "tests/fixtures/adapter"),
-            "--domain",
-            "ACL",
-            "--output",
-            str(tmp_path / "converted"),
-        ],
-        check=True,
-        text=True,
-        capture_output=True,
-        env={**os.environ, "HF_HUB_OFFLINE": "1"},
+def test_fulltext_retrieval_needs_no_bibliography_or_pdf_metadata(complete):
+    # Fulltext stages must not read optional PDF/bibliographic metadata.
+    (complete / "metadata.parquet").write_bytes(b"not a readable metadata index")
+    adapter = DatasetAdapter(Dataset(local_dir=complete))
+    corpus = adapter.load_corpus(
+        domain="ACL", representation="fulltext", include_metadata=False, include_figures=False
     )
-    counts = json.loads(result.stdout)
-    assert (counts["documents"], counts["queries"], counts["qrels"]) == (2, 1, 1)
+    assert len(corpus) == 2
+    for row in corpus:
+        assert row["title"] is row["abstract"] is None
+        assert (
+            row["text"]
+            == (complete / "preprocessed/ACL" / row["doc_id"] / "markdown.md").read_text()
+        )

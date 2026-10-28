@@ -1,16 +1,15 @@
 # Scientific Tip of the Tongue Retrieval.
 
-This repository is the retrieval model implementation for **Multimodal Tip-of-the-Tongue Retrieval for Scientific Papers**, which introduces a
+This repository is the retrieval model implementation for the paper **Multimodal Tip-of-the-Tongue Retrieval for Scientific Papers**, which introduces a
 [multimodal scientific tip-of-the-tongue dataset](https://huggingface.co/datasets/kasys/multimodal-tip-of-the-tongue-retrieval-for-scientific-documents).
-In this repository we provide implementations of retrieval models to be used for evaluation. This package does not depend on the dataset generation pipeline at runtime
-and delegates ranking, pretrained encoding, and evaluation to PyTerrier,
+In this repository we provide implementations of retrieval models to be used for evaluation. This package does not depend on the dataset generation pipeline at runtime. We don't make any model implementations ourselves, and rely on implementations from PyTerrier,
 Sentence Transformers, FAISS, Stanford ColBERT, Qdrant, and ir_measures.
 
 
 ## Downloading the Dataset from Huggingface
 
 The base download script and its Python helpers are included in this repository;
-no generation checkout is needed. Install [`uv`](https://docs.astral.sh/uv/), then create and activate the environment:
+no generation checkout is needed. Install [`uv`](https://docs.astral.sh/uv/), then install the environment:
 
 ```bash
 uv sync --locked
@@ -34,7 +33,7 @@ To download all generated components without PDFs, use `--generated`. This also 
 scripts/packaging/download_huggingface_dataset.sh --generated
 ```
 
-The `data` argument is the destination directory; omit it to use `data/`, or replace it with another path. `--all` explicitly selects every component. `--pdfs` downloads `metadata.parquet` and PDF shards, then restores PDFs under `data/pdf_datasets/<SOURCE>/` with size and SHA-256 verification. `--generated` selects parsed content, clues, query collections, and splits. Use `--overwrite` to existing files that differ. `--help` lists other options. 
+The `data` argument is the destination directory; omit it to use `data/`, or replace it with another path. `--all` explicitly selects every component. `--pdfs` downloads `metadata.parquet` and PDF shards, then restores PDFs under `data/pdf_datasets/<SOURCE>/` with size and SHA-256 verification. `--generated` selects parsed content, clues, query collections, and splits. Use `--overwrite` to replace existing files that differ. `--help` lists other options.
 
 This will result in the following dataset structure:
 ```text
@@ -51,7 +50,10 @@ data/
     metadata.json                      # Retained collection provenance when supplied
 ```
 
-You are free to set any data or output path, please adjust `defaults.sh` to do so.
+Downloads and stage scripts both default to `./data`. Set `TOT_DATA_ROOT`,
+`TOT_CACHE_ROOT`, and `TOT_OUTPUT_ROOT` to override the default `./data`, `./cache`,
+and `./results` locations. When downloading elsewhere, pass the same destination
+to the download script and set `TOT_DATA_ROOT` for subsequent stages.
 
 
 ### Retrieval Baselines
@@ -86,7 +88,7 @@ The benchmark includes lexical, dense, late-interaction, and multimodal retrieva
 In this section, we describe how to run the baselines.
 
 ### Install environments
-If environments are not yet installed, please make sure to install them, and add the colqwen environment if you wish to use this method. 
+If environments are not yet installed, please make sure to install them, and add the colqwen environment if you wish to use this method.
 
 ```sh
 uv sync --locked
@@ -98,9 +100,9 @@ UV_PROJECT_ENVIRONMENT=.venv-colqwen uv sync --locked \
 ```
 
 ### Run experiments
-To run a method, we include scripts both to run the full benchmark, as well as to run indexing, retrieval and evaluation separately. 
+To run a method, we include scripts both to run the full benchmark, as well as to run indexing, retrieval and evaluation separately.
 
-We provide scripts to run the index, retrieval, and evaluation stages individually. Please select the dataset you wish to use from the five domains Biology, Medicine, ACL, Physics, and Engineering by adding the `--dataset.domains=[DOMAIN]` flag to the scripts. Below, we show an example to run indexing, retrieval and evaluation with Qwen3-emb on the ACL domain. 
+We provide scripts to run the index, retrieval, and evaluation stages individually. Please select the dataset you wish to use from the five domains Biology, Medicine, ACL, Physics, and Engineering by adding the `dataset.domains=[DOMAIN]` flag to the scripts. Below, we show an example to run indexing, retrieval and evaluation with Qwen3-emb on the ACL domain.
 
 
 ```bash
@@ -108,12 +110,37 @@ We provide scripts to run the index, retrieval, and evaluation stages individual
 ```
 To run separately, use:
 ```bash
-./scripts/02_index.sh experiment=qwen3_text 'dataset.domains=[ACL]'
-./scripts/03_retrieve.sh experiment=qwen3_text 'dataset.domains=[ACL]'
-./scripts/04_evaluate.sh experiment=qwen3_text 'dataset.domains=[ACL]'
+./scripts/02_index.sh experiment=qwen3_text launcher=local_gpu 'dataset.domains=[ACL]'
+./scripts/03_retrieve.sh experiment=qwen3_text launcher=local_gpu 'dataset.domains=[ACL]'
+./scripts/04_evaluate.sh experiment=qwen3_text launcher=local_gpu 'dataset.domains=[ACL]'
 ```
 
-As runs are likely to run for a significant amount of time, and require GPU usage, we recommend using a job scheduler, such as PBS or slurm. We provide an implementation script to run on a PBS cluster, to use this, add the `launcher=h200` flag to the scripts. Note, this script will run all experiments and domains, if you wish to run a subset, please edit the script accordingly. As evaluation is not computationally expensive, this can also be run locally.
+Individual stage scripts default to `launcher=local_cpu`. Use `launcher=local_gpu`
+for local CUDA runs or `launcher=h200` to submit a PBS job on ABCI. The benchmark
+runner defaults to `launcher=h200`; add `launcher=local_gpu` to run it locally.
+Select subsets with `benchmark.experiments` and `benchmark.domains`, as above;
+no script edits are needed. The benchmark runs index, retrieve, and evaluate in
+sequence; add `benchmark.prepare=true` to export prepared records first.
+
+Additional utilities:
+
+- `scripts/01_prepare.sh`: export validated corpus, queries, and qrels.
+- `scripts/00_test.sh --test`: run index, retrieve, and evaluate using test-split
+  documents with isolated `test/` outputs and caches. Accepts ordinary experiment
+  and launcher overrides.
+- `scripts/setup_h200.sh`: install and check both environments on ABCI H200 nodes.
+- `scripts/stage_dataset.sh dataset.revision=<commit-sha>`: download and restore
+  a pinned dataset snapshot for offline use. Select components with
+  `dataset.download.components=[queries,splits,preprocessed]`; add `pdfs` for pages.
+- `uv run python -m scientific_tot.validate_dataset`: check restored local data;
+  accepts the same Hydra overrides as the prepare stage.
+- `uv run python -m scientific_tot.retrieval_table results`: print a LaTeX results
+  table and a coverage report from completed benchmark artifacts.
+- `uv run python -m scientific_tot.check_qwen_batch`: replay a Qwen3-VL multimodal
+  index batch for diagnosis; run with `--help` for arguments.
+- `UV_PROJECT_ENVIRONMENT=.venv-colqwen uv run --no-default-groups --extra colqwen --group dev python -m scientific_tot.recover_colqwen --help`:
+  show arguments for finalizing a fully populated interrupted ColQwen index.
+  Ordinary index stage invocations also resume interrupted ColQwen builds automatically.
 
 ### Logs, offline execution and interruption
 
@@ -129,10 +156,25 @@ are appended and flushed while the job runs. You can inspect these application
 logs immediately without waiting for PBS to deliver its stdout/stderr files.
 
 
+Set `HF_HUB_OFFLINE=1` to use installed packages and cached models/data without
+network access. The scripts also set Transformers and uv offline mode. Dense
+encoding checkpoints and interrupted ColQwen indexes can be resumed by rerunning
+the index stage with the same settings.
+
 ### Metrics, reuse and output locations
 
 The default paper cutoff is `retrieval.top_k=100`. Default effectiveness metrics
 include **RR@10, R@1, R@10, R@100**, and **nDCG@10**.
+
+### Tests
+
+Run the default and ColQwen tests in their respective environments after installing
+both as described above. These commands exclude tests that download models or data.
+
+```bash
+uv run pytest --ignore=tests/test_colqwen.py
+.venv-colqwen/bin/python -m pytest tests/test_colqwen.py
+```
 
 ### License
 This repository uses the [MIT License](https://github.com/stanfris/multimodal-tot-retrieval/blob/main/LICENSE).

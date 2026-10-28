@@ -1,36 +1,23 @@
-"""Offline fixtures exercise real FAISS/evaluation; neural encoding is stubbed."""
+"""Encoding configuration and real embedding caches with stubbed neural inference."""
 
-import json
 import sys
 from dataclasses import replace
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 pytest.importorskip("numpy")
 pytest.importorskip("faiss")
-pytest.importorskip("pyterrier")
 
 import numpy as np
 
-from scientific_tot import Dataset, DatasetAdapter, Records
 from scientific_tot.integrations.dense import (
     DEFAULT_MODEL_REVISION,
     EncodingConfig,
-    dense_experiment,
+    cached_encoding,
     encoding_kwargs,
     resolve_model_revision,
 )
-
-
-@pytest.fixture
-def data():
-    adapter = DatasetAdapter(Dataset(local_dir=Path(__file__).parent / "fixtures/adapter"))
-    return (
-        adapter.load_corpus(domain="ACL", split="train+test", representation="fulltext"),
-        adapter.load_queries(domain="ACL", split="test"),
-    )
 
 
 @pytest.fixture
@@ -50,7 +37,7 @@ def encoder(monkeypatch):
                 },
             )
         )
-        vectors = np.array([[1, 0], [0, 1]] if task == "document" else [[1, 0]], dtype=np.float32)
+        vectors = np.eye(2, dtype=np.float32)[np.arange(len(texts)) % 2]
         return vectors, {"max_seq_length": 512, "dimension": 2}
 
     monkeypatch.setattr("scientific_tot.integrations.dense._encode_task", stub)
@@ -124,130 +111,10 @@ def test_model_ref_is_resolved_to_commit(monkeypatch):
     assert calls == [("org/custom", "v1")]
 
 
-def test_faiss_search_standard_metrics_and_cache_reuse(data, encoder, tmp_path):
-    docs, queries = data
-    metrics = dense_experiment(docs, queries, tmp_path / "first", cache=tmp_path / "cache")
-    assert metrics.iloc[0]["RR@10"] == pytest.approx(1)
-    assert set(metrics.columns) == {"name", "RR@10", "R@1", "R@10", "R@100", "nDCG@10"}
-    for measure in ["R@1", "R@10", "nDCG@10"]:
-        assert metrics.iloc[0][measure] == pytest.approx(1)
-    assert [c[0] for c in encoder] == ["load", "document", "load", "query"]
-    assert encoder[0][1]["revision"] == DEFAULT_MODEL_REVISION
-    assert encoder[1][1]["prompt"] == "passage: "
-    assert encoder[3][1]["prompt"] == "query: "
-    assert encoder[1][1]["batch_size"] == 16
-    assert encoder[1][1]["normalize_embeddings"] is True
-    encoder.clear()
-    dense_experiment(docs, queries, tmp_path / "second", cache=tmp_path / "cache")
-    assert encoder == []
-    manifest = json.loads((tmp_path / "second/manifest.json").read_text())
-    assert manifest["cache"]["document_hit"] and manifest["cache"]["query_hit"]
-    assert manifest["doc_ids_verified_against_index"] is True
-    assert manifest["dataset_revision_status"] == "local/unrecorded"
-    assert (tmp_path / "first/run.trec").read_bytes() == (tmp_path / "second/run.trec").read_bytes()
-    assert json.loads((tmp_path / "second/selected-documents.json").read_text()) == [
-        r["doc_id"] for r in docs
-    ]
-
-
-def test_changed_queries_reuse_document_index(data, encoder, tmp_path):
-    docs, queries = data
-    dense_experiment(docs, queries, tmp_path / "first", cache=tmp_path / "cache")
-    encoder.clear()
-    row = queries[0]
-    row["text"] = "A changed query"
-    changed = Records("queries", [row], queries.report, queries.provenance)
-    dense_experiment(docs, changed, tmp_path / "second", cache=tmp_path / "cache")
-    assert [c[0] for c in encoder] == ["load", "query"]
-    manifest = json.loads((tmp_path / "second/manifest.json").read_text())
-    assert manifest["cache"]["document_hit"] and not manifest["cache"]["query_hit"]
-
-
-def test_cache_detects_corruption_before_faiss_read(data, encoder, tmp_path):
-    docs, queries = data
-    dense_experiment(docs, queries, tmp_path / "first", cache=tmp_path / "cache")
-    index = next((tmp_path / "cache").glob("*/index.faiss"))
-    index.write_bytes(b"damaged index")
-    with pytest.raises(ValueError, match="Corrupt embedding/index cache"):
-        dense_experiment(docs, queries, tmp_path / "second", cache=tmp_path / "cache")
-
-
-def test_baseline_identity_checked_before_encoding(data, encoder, tmp_path):
-    docs, queries = data
-    dense_experiment(docs, queries, tmp_path / "first", cache=tmp_path / "cache")
-    encoder.clear()
-    dense_experiment(
-        docs, queries, tmp_path / "second", cache=tmp_path / "cache", baseline=tmp_path / "first"
-    )
-    assert encoder == []
-    rows = list(docs)
-    rows[0]["text"] += " changed corpus"
-    changed = Records("corpus", rows, docs.report, docs.provenance)
-    with pytest.raises(ValueError, match="BM25 baseline"):
-        dense_experiment(
-            changed,
-            queries,
-            tmp_path / "third",
-            cache=tmp_path / "cache",
-            baseline=tmp_path / "first",
-        )
-    assert encoder == []
-
-
-@pytest.mark.dense_live
-def test_pretrained_model_and_persistent_cache(data, tmp_path):
-    docs, queries = data
-    first = dense_experiment(docs, queries, tmp_path / "first", cache=tmp_path / "cache")
-    second = dense_experiment(docs, queries, tmp_path / "second", cache=tmp_path / "cache")
-    assert first.equals(second)
-    assert (tmp_path / "first/run.trec").read_bytes() == (tmp_path / "second/run.trec").read_bytes()
-    manifest = json.loads((tmp_path / "second/manifest.json").read_text())
-    assert manifest["encoding"]["documents"]["cpu_threads"] == 1
-    assert manifest["model"]["resolved_revision"] == DEFAULT_MODEL_REVISION
-    assert manifest["cache"]["document_hit"] and manifest["cache"]["query_hit"]
-
-
 @pytest.mark.parametrize("field", ["encoding_threads", "faiss_threads", "batch_size"])
 def test_rejects_invalid_thread_and_batch_settings(field):
     with pytest.raises(ValueError, match="must be positive"):
         EncodingConfig(**{field: 0})
-
-
-def test_hydra_settings_propagate_into_existing_dense_calls(data, encoder, tmp_path):
-    from hydra import compose, initialize_config_dir
-
-    from scientific_tot.configuration import CONFIG_DIR, resolve_config
-
-    with initialize_config_dir(version_base="1.3", config_dir=str(CONFIG_DIR)):
-        cfg = compose(
-            config_name="config",
-            overrides=[
-                "model=dense",
-                f"dataset.root={Path(__file__).parent / 'fixtures/adapter'}",
-                "split.corpus=train+test",
-                "model.batch_size=3",
-                "model.encoding.normalize_embeddings=false",
-                "model.encoding.query_prompt=Find: ",
-                "model.encoding.document_prompt=''",
-                "retrieval.top_k=1",
-                "evaluation.metrics=[nDCG@1,RR@1]",
-                f"launcher.cache_root={tmp_path / 'cache'}",
-            ],
-        )
-    cfg = resolve_config(cfg, tmp_path)
-    metrics = dense_experiment(
-        *data, tmp_path / "run", cache=tmp_path / "cache/embeddings", settings=cfg
-    )
-    assert encoder[1][1] == {"prompt": "", "batch_size": 3, "normalize_embeddings": False}
-    assert encoder[3][1]["prompt"] == "Find: "
-    assert metrics.iloc[0]["nDCG@1"] == pytest.approx(1)
-    assert "R@100" not in metrics.columns
-    manifest = json.loads((tmp_path / "run/manifest.json").read_text())
-    assert manifest["index"]["cutoff"] == 1
-    assert manifest["model"]["model_revision"] == cfg.model.revision
-    assert len((tmp_path / "run/run.trec").read_text().splitlines()) == 1
-    with pytest.raises(ValueError, match="cache=launcher"):
-        dense_experiment(*data, tmp_path / "second", cache=tmp_path / "other", settings=cfg)
 
 
 def test_sentence_transformer_external_arguments(monkeypatch, tmp_path):
@@ -309,39 +176,51 @@ def test_sentence_transformer_external_arguments(monkeypatch, tmp_path):
     )
 
 
-def test_changed_query_prompt_reuses_document_cache(data, encoder, tmp_path):
+def test_cache_reuse_and_corruption_detection(encoder, tmp_path):
+    args = dict(
+        task="document",
+        rows=[{"docno": "one", "text": "first"}, {"docno": "two", "text": "second"}],
+        dataset_revision=None,
+    )
     config = EncodingConfig()
-    dense_experiment(*data, tmp_path / "first", cache=tmp_path / "cache", config=config)
+    first, _, entry, hit = cached_encoding(config, DEFAULT_MODEL_REVISION, tmp_path, **args)
+    assert not hit
     encoder.clear()
-    dense_experiment(
-        *data,
-        tmp_path / "second",
-        cache=tmp_path / "cache",
-        config=replace(config, query_prompt="Find: "),
-    )
+    second, _, _, hit = cached_encoding(config, DEFAULT_MODEL_REVISION, tmp_path, **args)
+    assert hit and encoder == []
+    np.testing.assert_array_equal(first, second)
+    (entry / "index.faiss").write_bytes(b"damaged index")
+    with pytest.raises(ValueError, match="Corrupt embedding/index cache"):
+        cached_encoding(config, DEFAULT_MODEL_REVISION, tmp_path, **args)
+
+
+def test_query_prompt_change_reuses_document_cache(encoder, tmp_path):
+    config = EncodingConfig()
+    documents = dict(task="document", rows=[{"docno": "one", "text": "paper"}])
+    queries = dict(task="query", rows=[{"query": "question"}])
+    for args in (documents, queries):
+        cached_encoding(config, DEFAULT_MODEL_REVISION, tmp_path, dataset_revision=None, **args)
+    encoder.clear()
+    changed = replace(config, query_prompt="Find: ")
+    for args, expected_hit in ((documents, True), (queries, False)):
+        _, _, _, hit = cached_encoding(
+            changed, DEFAULT_MODEL_REVISION, tmp_path, dataset_revision=None, **args
+        )
+        assert hit == expected_hit
     assert [call[0] for call in encoder] == ["load", "query"]
-    manifest = json.loads((tmp_path / "second/manifest.json").read_text())
-    assert manifest["cache"]["document_hit"]
-    assert not manifest["cache"]["query_hit"]
 
 
-def test_baseline_preserves_na_identifiers(tmp_path):
-    import pandas as pd
-
-    from scientific_tot.integrations.dense import verify_baseline
-    from scientific_tot.records import records_digest
-
-    inputs = SimpleNamespace(
-        documents=({"docno": "NA", "text": "paper"},),
-        topics=pd.DataFrame([{"qid": "NA", "query": "query"}]),
-        qrels=pd.DataFrame([{"qid": "NA", "docno": "NA", "label": 1}]),
-        query_ids=pd.DataFrame([{"qid": "NA", "query_id": "NA", "query_key": "key"}]),
+@pytest.mark.dense_live
+def test_pretrained_model_and_persistent_cache(tmp_path):
+    args = dict(
+        task="document",
+        rows=[{"docno": "one", "text": "Scientific paper about language retrieval."}],
+        dataset_revision=None,
     )
-    (tmp_path / "manifest.json").write_text(
-        json.dumps({"corpus_sha256": records_digest(inputs.documents)})
-    )
-    (tmp_path / "selected-documents.json").write_text(json.dumps(["NA"]))
-    inputs.topics.to_json(tmp_path / "topics.jsonl", orient="records", lines=True)
-    inputs.query_ids.to_json(tmp_path / "query-ids.jsonl", orient="records", lines=True)
-    inputs.qrels.to_csv(tmp_path / "qrels.tsv", sep="\t", index=False)
-    assert verify_baseline(inputs, tmp_path)["directory"] == str(tmp_path.resolve())
+    config = EncodingConfig()
+    first, manifest, entry, hit = cached_encoding(config, DEFAULT_MODEL_REVISION, tmp_path, **args)
+    assert not hit
+    assert manifest["encoding"]["cpu_threads"] == 1
+    second, _, reused, hit = cached_encoding(config, DEFAULT_MODEL_REVISION, tmp_path, **args)
+    assert hit and reused == entry
+    np.testing.assert_array_equal(first, second)

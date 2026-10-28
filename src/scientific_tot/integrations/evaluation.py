@@ -1,26 +1,8 @@
-"""Shared standard PyTerrier evaluation/export; no Java or neural imports."""
-
-from pathlib import Path
+"""Shared retrieval metrics; no Java or neural imports."""
 
 import pandas as pd
 
 from scientific_tot.reporting import phase, tqdm
-
-
-def evaluate_run(
-    run, topics, qrels, query_ids, target: Path, *, name: str, evaluation=None
-) -> pd.DataFrame:
-    """Evaluate every selected query using established metric implementations."""
-    metrics, per_query = evaluate_metrics(run, topics, qrels, name=name, evaluation=evaluation)
-    import pyterrier as pt
-
-    pt.io.write_results(run, str(target / "run.trec"), format="trec", run_name=name)
-    metrics.to_csv(target / "metrics.csv", index=False)
-    per_query.to_csv(target / "per-query.csv", index=False)
-    topics.to_json(target / "topics.jsonl", orient="records", lines=True)
-    qrels.to_csv(target / "qrels.tsv", sep="\t", index=False)
-    query_ids.to_json(target / "query-ids.jsonl", orient="records", lines=True)
-    return metrics
 
 
 def evaluate_metrics(run, topics, qrels, *, name: str, evaluation=None) -> tuple:

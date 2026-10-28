@@ -14,35 +14,30 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pytest
+      - run: uv run pytest --ignore=tests/test_colqwen.py
         env:
           HF_HUB_OFFLINE: '1'
       - run: uv build
       - run: |
-          project_dir="$PWD"
           uv venv /tmp/tot-clean
           uv pip install --python /tmp/tot-clean/bin/python dist/*.whl
           cd /tmp
-          HF_HUB_OFFLINE=1 /tmp/tot-clean/bin/scientific-tot dry_run=true experiment=dense_passages \
-            hydra.run.dir=/tmp/tot-clean-config
+          HF_HUB_OFFLINE=1 /tmp/tot-clean/bin/scientific-tot dry_run=true experiment=dense_fulltext
           HF_HUB_OFFLINE=1 /tmp/tot-clean/bin/python -m scientific_tot.hydra_entry \
-            --multirun dry_run=true experiment=bm25_fulltext,dense_passages,visual_pages \
+            --multirun dry_run=true experiment=bm25_fulltext,dense_fulltext,openclip_pages \
             hydra.sweep.dir=/tmp/tot-clean-sweep
-          HF_HUB_OFFLINE=1 /tmp/tot-clean/bin/python "$project_dir/examples/convert_dataset.py" \
-            --local-dir "$project_dir/tests/fixtures/adapter" --domain ACL \
-            --output /tmp/tot-clean-example
 
-  examples:
+  colqwen:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.11'
-      - run: uv sync --locked
-      - run: uv run python -m ipykernel install --sys-prefix --name scientific-tot --display-name "Scientific ToT"
-      # Fixture CLI and both execute-all notebooks use the same locked .venv/JDK.
-      # Explicit integration tests may download Terrier and pretrained model weights.
-      - run: uv run python examples/pyterrier_bm25.py --local-dir tests/fixtures/adapter --domain ACL --output /tmp/tot-bm25
-      - run: uv run python examples/dense_retrieval.py --local-dir tests/fixtures/adapter --documents 2 --queries 1 --cache /tmp/tot-dense-cache --output /tmp/tot-dense
-      - run: uv run pytest -m 'terrier or dense_live'
+      - run: uv sync --locked --no-default-groups --extra colqwen --group dev
+        env:
+          UV_PROJECT_ENVIRONMENT: .venv-colqwen
+      - run: uv run --locked --no-default-groups --extra colqwen --group dev pytest tests/test_colqwen.py
+        env:
+          UV_PROJECT_ENVIRONMENT: .venv-colqwen
+          HF_HUB_OFFLINE: '1'

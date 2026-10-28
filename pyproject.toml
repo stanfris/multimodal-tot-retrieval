@@ -65,7 +65,6 @@ dense = [
     "torch>=2.6,<3",
 ]
 parquet = ["pyarrow>=18,<24"]
-notebook = ["ipykernel>=6,<8", "nbclient>=0.10,<1", "nbformat>=5,<6"]
 pyterrier = [
     "ir-measures>=0.4,<1",
     "pandas>=2.2,<4",
@@ -76,7 +75,7 @@ pyterrier = [
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
-# All scripts and both notebooks share the default .venv. Extras above remain
+# Stage scripts share the default .venv, except ColQwen. Extras above remain
 # available for library consumers; project users do not need extra flags.
 examples = [
     "open-clip-torch>=3.2,<4",
@@ -95,10 +94,6 @@ examples = [
     "jdk4py==25.0.2.1",
     "sentence-transformers>=5.1,<6",
     "torch>=2.6,<3",
-    "ipykernel>=6,<8",
-    "nbclient>=0.10,<1",
-    "nbformat>=5,<6",
-    "jupyterlab>=4,<5",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -108,7 +103,7 @@ packages = ["src/scientific_tot", "src/dataset_packaging"]
 "config" = "scientific_tot/config"
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "scripts/packaging", "config", "tests", "docs", "examples", "README.md", "LICENSE", "pyproject.toml", "uv.lock"]
+include = ["src", "scripts/packaging", "config", "tests", "README.md", "LICENSE", "pyproject.toml", "uv.lock"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
