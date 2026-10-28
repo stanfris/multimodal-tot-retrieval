@@ -31,7 +31,44 @@ ROWS = (
     ("colqwen", "pages", "ColQwen2.5", "Page"),
     ("qwen3_vl_multimodal", "fulltext", "Qwen3-VL", "Text + Visual"),
 )
-METRICS = ("RR@10", "R@1", "R@10", "R@100", "index_bytes", "wall_seconds")
+METRICS = ("RR@10", "R@1", "R@10", "R@100", "index_bytes", "wall_seconds", "query_seconds")
+
+
+def query_seconds(manifest: dict, model: str) -> float | None:
+    """Recover amortized encoding and search time, never whole-stage overhead."""
+    artifacts = manifest.get("artifacts", {})
+    phase_names = {
+        "bm25": ("Retrieve BM25 queries on CPU",),
+        "colbert": ("Encode queries in batches and score ColBERT candidates",),
+        "colqwen": (
+            "Encode ColQwen queries on CUDA",
+            "Score all PDF pages on CUDA and aggregate papers",
+        ),
+    }
+    if model in phase_names:
+        phases = manifest.get("performance", {}).get("phases", [])
+        durations = []
+        for name in phase_names[model]:
+            matches = [phase for phase in phases if phase["name"] == name]
+            if not matches:
+                return None
+            if len(matches) != 1 or matches[0]["status"] != "completed":
+                raise ValueError(f"Expected one completed timing phase: {name}")
+            durations.append(matches[0]["seconds"])
+    else:
+        durations = [
+            artifacts.get("encoding", {}).get("generation_seconds"),
+            artifacts.get("efficiency", {}).get("search_seconds"),
+        ]
+    if any(value is None for value in durations):
+        return None
+    count = artifacts.get("queries")
+    if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+        raise ValueError(f"Invalid retrieval query count: {count!r}")
+    seconds = [float(value) for value in durations]
+    if any(not math.isfinite(value) or value < 0 for value in seconds):
+        raise ValueError(f"Invalid retrieval timing: {durations!r}")
+    return sum(seconds) / count
 
 
 def retrieval_index_bytes(directory: Path, model: str) -> int:
@@ -62,7 +99,7 @@ def collect_results(root: Path) -> tuple[dict, list[str]]:
     for path in sorted(root.rglob("manifest.json")):
         manifest = json.loads(path.read_text())
         stage = manifest.get("stage")
-        if stage not in {"evaluate", "index"}:
+        if stage not in {"evaluate", "index", "retrieve"}:
             continue
         if manifest["status"] != "completed":
             notes.append(f"Skipped {path}: status={manifest['status']}")
@@ -70,7 +107,7 @@ def collect_results(root: Path) -> tuple[dict, list[str]]:
         # Evaluation embeds the retrieval identity, which embeds the index
         # identity. All method/domain metadata survives copying the outputs.
         identity = manifest.get("artifact_identity", {})
-        queries = {}
+        queries = identity.get("queries", {})
         while "source_identity" in identity:
             identity = identity["source_identity"] or {}
             if "queries" in identity:
@@ -85,8 +122,8 @@ def collect_results(root: Path) -> tuple[dict, list[str]]:
             key not in supported
             or settings.get("test_mode", False)
             or settings["corpus_split"] != "all"
-            or (stage == "evaluate" and queries.get("split") != "test")
-            or (stage == "evaluate" and queries.get("mode") != "visual-and-text")
+            or (stage != "index" and queries.get("split") != "test")
+            or (stage != "index" and queries.get("mode") != "visual-and-text")
             or (model["name"] == "dense" and model["model_id"] != "intfloat/e5-small-v2")
             or (model["name"] == "qwen3_text" and model["model_id"] != "Qwen/Qwen3-Embedding-0.6B")
         ):
@@ -106,10 +143,15 @@ def collect_results(root: Path) -> tuple[dict, list[str]]:
                 raise ValueError(f"Expected one aggregate metrics row: {metrics_path}")
             record = records[0]
             metrics = METRICS[:4]
-        else:
+        elif stage == "index":
             record = dict(manifest.get("performance", {}))
             record["index_bytes"] = retrieval_index_bytes(path.parent, model["name"])
-            metrics = METRICS[4:]
+            metrics = METRICS[4:6]
+        else:
+            record = {"query_seconds": query_seconds(manifest, model["name"])}
+            metrics = ("query_seconds",)
+            if record["query_seconds"] is None:
+                notes.append(f"Missing query encoding/search timings: {path}")
         for metric in metrics:
             raw = record.get(metric)
             if raw is None or raw == "":
@@ -140,16 +182,18 @@ def render_table(values: dict) -> str:
         r"datasets; missing values are excluded. Native search index size (decimal GB; "
         r"excluding external ID mappings, stored inputs, build artifacts and caches) "
         r"and construction time (hours, whole index stage) are averaged over available datasets. "
+        r"Query time (ms/query) is amortized batch encoding plus search time; "
+        r"recorded setup, transfer and aggregation costs may be included. "
         r"A dash indicates no available measurements.}",
         r"\label{tab:retrieval_results}",
         r"\footnotesize",
         r"\setlength{\tabcolsep}{4pt}",
         r"\renewcommand{\arraystretch}{1.1}",
-        r"\begin{tabular}{@{}llcccccc@{}}",
+        r"\begin{tabular}{@{}llccccccc@{}}",
         r"\toprule",
         r"\textbf{Method} & \textbf{Modality} & \textbf{MRR@10} & \textbf{R@1} & "
         r"\textbf{R@10} & \textbf{R@100} & \textbf{Index Size (GB)} & "
-        r"\textbf{Index Time (h)} \\",
+        r"\textbf{Index Time (h)} & \textbf{Query Time (ms)} \\",
         r"\midrule",
     ]
     previous = None
@@ -165,6 +209,8 @@ def render_table(values: dict) -> str:
                     average /= 1e9
                 elif metric == "wall_seconds":
                     average /= 3600
+                elif metric == "query_seconds":
+                    average *= 1000
                 cells.append(format(average, ".3f"))
             else:
                 cells.append("-")
@@ -181,7 +227,7 @@ def main() -> None:
         nargs="?",
         type=Path,
         default=Path(os.environ.get("TOT_OUTPUT_ROOT", "results")),
-        help="root with evaluations/ and indexes/ (default: TOT_OUTPUT_ROOT or results)",
+        help="artifact root, including retrievals (default: TOT_OUTPUT_ROOT or results)",
     )
     args = parser.parse_args()
     values, notes = collect_results(args.results)

@@ -10,13 +10,14 @@ import pytest
 from scientific_tot.retrieval_table import (
     collect_results,
     main,
+    query_seconds,
     render_table,
     retrieval_index_bytes,
 )
 
 
 def artifact(root, domain, *, stage="evaluate", name=None, metrics=None, performance=None):
-    folder = "evaluations" if stage == "evaluate" else "indexes"
+    folder = {"evaluate": "evaluations", "index": "indexes", "retrieve": "runs"}[stage]
     directory = root / folder / (name or domain)
     directory.mkdir(parents=True)
     settings = {
@@ -26,7 +27,7 @@ def artifact(root, domain, *, stage="evaluate", name=None, metrics=None, perform
         "dataset": {"domains": [domain]},
     }
     identity = {"stage": "index", "index": settings}
-    if stage == "evaluate":
+    if stage in {"evaluate", "retrieve"}:
         identity = {
             "stage": "evaluate",
             "source_identity": {
@@ -37,6 +38,8 @@ def artifact(root, domain, *, stage="evaluate", name=None, metrics=None, perform
                 "source_identity": identity,
             },
         }
+        if stage == "retrieve":
+            identity = identity["source_identity"]
     (directory / "manifest.json").write_text(
         json.dumps(
             {
@@ -67,9 +70,9 @@ def test_partial_macro_average_and_independent_index_measurements(tmp_path):
     assert r"\textbf{Index Time (h)}" in table
     assert "E5 & Text & - & - & - & - & - & -" in table
     assert "ColQwen2.5 & Page & - & - & - & - & - & -" in table
-    assert sum(line.count(" & ") == 7 for line in table.splitlines()) == 11
-    assert r"\begin{tabular}{@{}llcccccc@{}}" in table
-    assert all(line.count(" & ") == 7 for line in table.splitlines() if " & " in line)
+    assert sum(line.count(" & ") == 8 for line in table.splitlines()) == 11
+    assert r"\begin{tabular}{@{}llccccccc@{}}" in table
+    assert all(line.count(" & ") == 8 for line in table.splitlines() if " & " in line)
 
 
 def test_missing_metrics_and_failed_or_test_runs(tmp_path):
@@ -173,3 +176,91 @@ def test_qwen_text_table_requires_the_configured_model(tmp_path, model, model_id
     values, _ = collect_results(tmp_path)
     assert ("Qwen3-Embedding-0.6B & Text & 0.500" in render_table(values)) == accepted
     assert "Qwen3-VL & Text &" not in render_table(values)
+
+
+@pytest.mark.parametrize(
+    "model,names",
+    [
+        ("bm25", ["Retrieve BM25 queries on CPU"]),
+        ("colbert", ["Encode queries in batches and score ColBERT candidates"]),
+        (
+            "colqwen",
+            ["Encode ColQwen queries on CUDA", "Score all PDF pages on CUDA and aggregate papers"],
+        ),
+    ],
+)
+def test_query_time_from_phases(model, names):
+    manifest = {
+        "artifacts": {"queries": 10},
+        "performance": {
+            "wall_seconds": 999,
+            "phases": [{"name": name, "seconds": 2, "status": "completed"} for name in names]
+            + [{"name": "2/4 Retrieve", "seconds": 999, "status": "completed"}],
+        },
+    }
+    assert query_seconds(manifest, model) == 2 * len(names) / 10
+    manifest["performance"]["phases"].pop(0)
+    assert query_seconds(manifest, model) is None
+
+
+@pytest.mark.parametrize("cache_hit", [True, False])
+def test_dense_query_time_includes_original_encoding_on_cache_hit(cache_hit):
+    manifest = {
+        "artifacts": {
+            "queries": 10,
+            "encoding": {"generation_seconds": 3},
+            "efficiency": {"search_seconds": 2, "seconds_per_query": 0.2},
+            "cache": {"query_hit": cache_hit},
+        }
+    }
+    assert query_seconds(manifest, "qwen3_text") == 0.5
+    del manifest["artifacts"]["encoding"]
+    assert query_seconds(manifest, "qwen3_text") is None
+
+
+@pytest.mark.parametrize(
+    "count,duration", [(0, 1), (-1, 1), (2, -1), (2, float("nan")), (2, float("inf"))]
+)
+def test_invalid_query_timings_fail(count, duration):
+    manifest = {
+        "artifacts": {
+            "queries": count,
+            "encoding": {"generation_seconds": duration},
+            "efficiency": {"search_seconds": 1},
+        }
+    }
+    with pytest.raises(ValueError, match="Invalid retrieval"):
+        query_seconds(manifest, "dense")
+
+
+def test_retrieval_query_time_macro_average_and_selection(tmp_path):
+    for domain, count, seconds in [("ACL", 10, 1), ("Biology", 100, 30)]:
+        directory = artifact(
+            tmp_path,
+            domain,
+            stage="retrieve",
+            performance={
+                "phases": [
+                    {
+                        "name": "Retrieve BM25 queries on CPU",
+                        "seconds": seconds,
+                        "status": "completed",
+                    }
+                ]
+            },
+        )
+        path = directory / "manifest.json"
+        manifest = json.loads(path.read_text())
+        manifest["artifacts"] = {"queries": count}
+        path.write_text(json.dumps(manifest))
+    artifact(tmp_path, "Physics", stage="retrieve")
+    values, notes = collect_results(tmp_path)
+    assert render_table(values).split("BM25 & Text & ")[1].splitlines()[0] == (
+        r"- & - & - & - & - & - & 200.000 \\"
+    )
+    assert len(notes) == 1
+    assert "Missing query encoding/search timings" in notes[0]
+    manifest["artifact_identity"]["queries"]["split"] = "train"
+    path.write_text(json.dumps(manifest))
+    values, _ = collect_results(tmp_path)
+    assert len(values[("bm25", "fulltext", "query_seconds")]) == 1

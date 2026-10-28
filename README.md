@@ -724,9 +724,21 @@ build artifacts, provenance and embedding caches are excluded.
 The index files must be present alongside their manifests. Index time is whole-stage
 wall time in hours. All table values use three decimal places. Index measurements can be
 reported even before evaluation is available.
+Query Time (ms) is encoding plus search time divided by the number of queries,
+then macro-averaged across available datasets. It measures amortized batch time,
+not single-query latency or latency percentiles. Dense methods use
+`artifacts.encoding.generation_seconds` (the original encoding duration even on
+cache hits) plus `artifacts.efficiency.search_seconds`. This includes recorded
+model setup and index transfer costs. BM25 uses its retrieval phase; ColBERT uses
+its combined encoding/scoring phase; ColQwen sums its query encoding and page
+scoring phases, including page I/O and score output. These historical timing
+scopes differ and should not be interpreted as a controlled latency benchmark.
+Missing component timings produce a dash, never a whole-stage wall-time estimate.
+Include retrieval manifests under the results root to recover query times;
+`coverage.txt` reports their coverage and sources independently of other metrics.
 The script runs directly with standard-library Python, without installing the
 package. It recursively finds `manifest.json` files under the given directory
-and reads completed evaluation and index stages. Method, representation and
+and reads completed evaluation, index and retrieval stages. Method, representation and
 dataset come from the manifest's embedded index identity (following evaluation
 and retrieval `source_identity` links); folder names and saved Hydra files are
 not needed. You can also pass `results/evaluations` to report only effectiveness.
