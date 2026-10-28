@@ -166,15 +166,5 @@ the index stage with the same settings.
 The default paper cutoff is `retrieval.top_k=100`. Default effectiveness metrics
 include **RR@10, R@1, R@10, R@100**, and **nDCG@10**.
 
-### Tests
-
-Run the default and ColQwen tests in their respective environments after installing
-both as described above. These commands exclude tests that download models or data.
-
-```bash
-uv run pytest --ignore=tests/test_colqwen.py
-.venv-colqwen/bin/python -m pytest tests/test_colqwen.py
-```
-
 ### License
 This repository uses the [MIT License](https://github.com/stanfris/multimodal-tot-retrieval/blob/main/LICENSE).
