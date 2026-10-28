@@ -1,4 +1,4 @@
-"""Pin a selective Hub snapshot and delegate canonical restoration to the producer."""
+"""Pin a selective Hub snapshot and restore it using the bundled packaging helpers."""
 
 from __future__ import annotations
 
@@ -19,21 +19,15 @@ def stage(cfg) -> Path:
         raise ValueError("Pass dataset.revision=<full Hub commit SHA> for reproducible staging")
     if os.environ.get("HF_HUB_OFFLINE") == "1":
         raise ValueError("Dataset staging downloads files; unset offline mode on the staging host")
-    try:
-        from dataset_packaging.download_hf_dataset import (
-            BUILD_ARTIFACTS,
-            allow_patterns,
-            copy_stream,
-            restore_archive_component,
-            restore_plain_component,
-            safe_destination,
-        )
-        from dataset_packaging.restore_hf_dataset import restore_dataset
-    except ImportError as exc:
-        raise ImportError(
-            "Set TOT_GENERATION_REPO to the dataset generation checkout; "
-            "only staging needs its packaging modules"
-        ) from exc
+    from dataset_packaging.download_hf_dataset import (
+        BUILD_ARTIFACTS,
+        allow_patterns,
+        copy_stream,
+        restore_archive_component,
+        restore_plain_component,
+        safe_destination,
+    )
+    from dataset_packaging.restore_hf_dataset import restore_dataset
 
     components = set(cfg.dataset.download.components)
     names = {
