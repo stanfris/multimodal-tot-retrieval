@@ -24,7 +24,6 @@ ROWS = (
     ("dense", "fulltext", "E5", "Text"),
     ("qwen3_text", "fulltext", "Qwen3-Embedding-0.6B", "Text"),
     ("colbert", "fulltext", "ColBERTv2", "Text"),
-    ("qwen3_vl_text", "fulltext", "Qwen3-VL", "Text"),
     ("openclip_figures", "figures", "OpenCLIP", "Visual"),
     ("qwen3_vl_figures", "figures", "Qwen3-VL", "Visual"),
     ("openclip", "pages", "OpenCLIP", "Page"),

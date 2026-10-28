@@ -712,7 +712,9 @@ python src/scientific_tot/retrieval_table.py results > retrieval_results.tex 2> 
 
 Omit the path to use `TOT_OUTPUT_ROOT`, or `./results` if unset. Each method and
 modality is averaged equally over the available datasets among ACL, Biology,
-Engineering, Medicine and Physics. Each cell has its own denominator; missing
+Engineering, Medicine and Physics. The Qwen text row uses `qwen3_text`
+(`Qwen/Qwen3-Embedding-0.6B`); `qwen3_vl_text` results are excluded.
+Each cell has its own denominator; missing
 measurements are `-`, and zero scores remain zero. Coverage and source paths go
 to stderr. Index size measures the native search index on disk in decimal GB:
 FAISS files for E5, OpenCLIP and Qwen; Terrier files excluding the direct index

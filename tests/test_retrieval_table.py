@@ -67,7 +67,7 @@ def test_partial_macro_average_and_independent_index_measurements(tmp_path):
     assert r"\textbf{Index Time (h)}" in table
     assert "E5 & Text & - & - & - & - & - & -" in table
     assert "ColQwen2.5 & Page & - & - & - & - & - & -" in table
-    assert sum(line.count(" & ") == 7 for line in table.splitlines()) == 12
+    assert sum(line.count(" & ") == 7 for line in table.splitlines()) == 11
     assert r"\begin{tabular}{@{}llcccccc@{}}" in table
     assert all(line.count(" & ") == 7 for line in table.splitlines() if " & " in line)
 
@@ -156,14 +156,20 @@ def test_direct_script_without_installed_package_or_dependencies(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "model_id,accepted", [("Qwen/Qwen3-Embedding-0.6B", True), ("Qwen/Qwen3-Embedding-4B", False)]
+    "model,model_id,accepted",
+    [
+        ("qwen3_text", "Qwen/Qwen3-Embedding-0.6B", True),
+        ("qwen3_text", "Qwen/Qwen3-Embedding-4B", False),
+        ("qwen3_vl_text", "Qwen/Qwen3-VL-Embedding-2B", False),
+    ],
 )
-def test_qwen_text_table_requires_the_configured_model(tmp_path, model_id, accepted):
+def test_qwen_text_table_requires_the_configured_model(tmp_path, model, model_id, accepted):
     directory = artifact(tmp_path, "ACL", metrics="name,RR@10\nQwen,0.5\n")
     path = directory / "manifest.json"
     manifest = json.loads(path.read_text())
     identity = manifest["artifact_identity"]["source_identity"]["source_identity"]
-    identity["index"]["model"] = {"name": "qwen3_text", "model_id": model_id}
+    identity["index"]["model"] = {"name": model, "model_id": model_id}
     path.write_text(json.dumps(manifest))
     values, _ = collect_results(tmp_path)
     assert ("Qwen3-Embedding-0.6B & Text & 0.500" in render_table(values)) == accepted
+    assert "Qwen3-VL & Text &" not in render_table(values)
