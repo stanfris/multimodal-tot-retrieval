@@ -8,8 +8,7 @@ Sentence Transformers, FAISS, Stanford ColBERT, Qdrant, and ir_measures.
 
 ## Downloading the Dataset from Huggingface
 
-The base download script and its Python helpers are included in this repository;
-no generation checkout is needed. Install [`uv`](https://docs.astral.sh/uv/), then install the environment:
+The base download script and its Python helpers are included in this repository; please see the [generation code](https://github.com/stanfris/multimodal-tip-of-tongue-for-scientific-papers) for how these artifacts are made and more detailed dataset download instruction. Install [`uv`](https://docs.astral.sh/uv/), then install the environment:
 
 ```bash
 uv sync --locked
