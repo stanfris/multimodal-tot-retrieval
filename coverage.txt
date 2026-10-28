@@ -6,6 +6,7 @@ BM25 / Text:
   R@100: 5/5; missing: none
   index_bytes: 5/5; missing: none
   wall_seconds: 5/5; missing: none
+  query_seconds: 5/5; missing: none
 E5 / Text:
   RR@10: 5/5; missing: none
   R@1: 5/5; missing: none
@@ -13,6 +14,15 @@ E5 / Text:
   R@100: 5/5; missing: none
   index_bytes: 5/5; missing: none
   wall_seconds: 5/5; missing: none
+  query_seconds: 5/5; missing: none
+Qwen3-Embedding-0.6B / Text:
+  RR@10: 5/5; missing: none
+  R@1: 5/5; missing: none
+  R@10: 5/5; missing: none
+  R@100: 5/5; missing: none
+  index_bytes: 5/5; missing: none
+  wall_seconds: 5/5; missing: none
+  query_seconds: 5/5; missing: none
 ColBERTv2 / Text:
   RR@10: 5/5; missing: none
   R@1: 5/5; missing: none
@@ -20,13 +30,7 @@ ColBERTv2 / Text:
   R@100: 5/5; missing: none
   index_bytes: 5/5; missing: none
   wall_seconds: 5/5; missing: none
-Qwen3-VL / Text:
-  RR@10: 5/5; missing: none
-  R@1: 5/5; missing: none
-  R@10: 5/5; missing: none
-  R@100: 5/5; missing: none
-  index_bytes: 5/5; missing: none
-  wall_seconds: 5/5; missing: none
+  query_seconds: 5/5; missing: none
 OpenCLIP / Visual:
   RR@10: 5/5; missing: none
   R@1: 5/5; missing: none
@@ -34,6 +38,7 @@ OpenCLIP / Visual:
   R@100: 5/5; missing: none
   index_bytes: 5/5; missing: none
   wall_seconds: 5/5; missing: none
+  query_seconds: 5/5; missing: none
 Qwen3-VL / Visual:
   RR@10: 5/5; missing: none
   R@1: 5/5; missing: none
@@ -41,6 +46,7 @@ Qwen3-VL / Visual:
   R@100: 5/5; missing: none
   index_bytes: 5/5; missing: none
   wall_seconds: 5/5; missing: none
+  query_seconds: 5/5; missing: none
 OpenCLIP / Page:
   RR@10: 5/5; missing: none
   R@1: 5/5; missing: none
@@ -48,6 +54,7 @@ OpenCLIP / Page:
   R@100: 5/5; missing: none
   index_bytes: 5/5; missing: none
   wall_seconds: 4/5; missing: ACL
+  query_seconds: 5/5; missing: none
 Qwen3-VL / Page:
   RR@10: 5/5; missing: none
   R@1: 5/5; missing: none
@@ -55,6 +62,7 @@ Qwen3-VL / Page:
   R@100: 5/5; missing: none
   index_bytes: 5/5; missing: none
   wall_seconds: 5/5; missing: none
+  query_seconds: 5/5; missing: none
 ColQwen2.5 / Page:
   RR@10: 5/5; missing: none
   R@1: 5/5; missing: none
@@ -62,6 +70,7 @@ ColQwen2.5 / Page:
   R@100: 5/5; missing: none
   index_bytes: 5/5; missing: none
   wall_seconds: 5/5; missing: none
+  query_seconds: 5/5; missing: none
 Qwen3-VL / Text + Visual:
   RR@10: 5/5; missing: none
   R@1: 5/5; missing: none
@@ -69,7 +78,23 @@ Qwen3-VL / Text + Visual:
   R@100: 5/5; missing: none
   index_bytes: 5/5; missing: none
   wall_seconds: 5/5; missing: none
+  query_seconds: 5/5; missing: none
+Skipped results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_1b5affd999a781d2/manifest.json: outside the full-corpus test benchmark
+Skipped results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_2334ca46a34dc660/manifest.json: outside the full-corpus test benchmark
+Skipped results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_5f35ed20ca2471f6/manifest.json: outside the full-corpus test benchmark
+Skipped results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_9e8847580bee7d6c/manifest.json: outside the full-corpus test benchmark
+Skipped results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_bdd75ae5411617da/manifest.json: outside the full-corpus test benchmark
 Skipped results/indexes/qwen3_vl_figures_figures_d-Physics_c-all_b7e702d408a579df/manifest.json: status=failed
+Skipped results/indexes/qwen3_vl_text_fulltext_d-ACL_c-all_4a832ac3601cc00b/manifest.json: outside the full-corpus test benchmark
+Skipped results/indexes/qwen3_vl_text_fulltext_d-Biology_c-all_51da183d6025852d/manifest.json: outside the full-corpus test benchmark
+Skipped results/indexes/qwen3_vl_text_fulltext_d-Engineering_c-all_b1c58131f18d8af1/manifest.json: outside the full-corpus test benchmark
+Skipped results/indexes/qwen3_vl_text_fulltext_d-Medicine_c-all_76b63e7a2f7a44e8/manifest.json: outside the full-corpus test benchmark
+Skipped results/indexes/qwen3_vl_text_fulltext_d-Physics_c-all_04f2e284b1583758/manifest.json: outside the full-corpus test benchmark
+Skipped results/models/qwen3_vl_text_fulltext_c-all_q-test_447c94102f03aad1/manifest.json: outside the full-corpus test benchmark
+Skipped results/models/qwen3_vl_text_fulltext_c-all_q-test_90bad169536feb57/manifest.json: outside the full-corpus test benchmark
+Skipped results/models/qwen3_vl_text_fulltext_c-all_q-test_d0a8af7cd82431cf/manifest.json: outside the full-corpus test benchmark
+Skipped results/models/qwen3_vl_text_fulltext_c-all_q-test_d1c471532d456bff/manifest.json: outside the full-corpus test benchmark
+Skipped results/models/qwen3_vl_text_fulltext_c-all_q-test_d730604d1af1c46a/manifest.json: outside the full-corpus test benchmark
 Source: results/evaluations/bm25_fulltext_c-all_q-test_53feb7ffdf421a29/manifest.json
 Source: results/evaluations/bm25_fulltext_c-all_q-test_565988f03c41c5a4/manifest.json
 Source: results/evaluations/bm25_fulltext_c-all_q-test_5b4716330b7e0ee4/manifest.json
@@ -100,6 +125,11 @@ Source: results/evaluations/openclip_pages_c-all_q-test_7fef45db284b026f/manifes
 Source: results/evaluations/openclip_pages_c-all_q-test_82244ce56453168e/manifest.json
 Source: results/evaluations/openclip_pages_c-all_q-test_b75579f66e80784f/manifest.json
 Source: results/evaluations/openclip_pages_c-all_q-test_cb3f1b851f9fb358/manifest.json
+Source: results/evaluations/qwen3_text_fulltext_c-all_q-test_1b1ab539bcb39752/manifest.json
+Source: results/evaluations/qwen3_text_fulltext_c-all_q-test_7d65598a9b4861fd/manifest.json
+Source: results/evaluations/qwen3_text_fulltext_c-all_q-test_89c6c6e1ac0fb8e7/manifest.json
+Source: results/evaluations/qwen3_text_fulltext_c-all_q-test_92c5324fbf0b61d1/manifest.json
+Source: results/evaluations/qwen3_text_fulltext_c-all_q-test_d5b0324ed97d452e/manifest.json
 Source: results/evaluations/qwen3_vl_figures_figures_c-all_q-test_134e0de1340e1d7b/manifest.json
 Source: results/evaluations/qwen3_vl_figures_figures_c-all_q-test_70c0d0210fc00673/manifest.json
 Source: results/evaluations/qwen3_vl_figures_figures_c-all_q-test_720f886beb49daf6/manifest.json
@@ -115,11 +145,6 @@ Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_16667752e13bf020/m
 Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_280855e050e71f40/manifest.json
 Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_4a69493842896638/manifest.json
 Source: results/evaluations/qwen3_vl_pages_pages_c-all_q-test_b6d3db59e4349a04/manifest.json
-Source: results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_1b5affd999a781d2/manifest.json
-Source: results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_2334ca46a34dc660/manifest.json
-Source: results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_5f35ed20ca2471f6/manifest.json
-Source: results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_9e8847580bee7d6c/manifest.json
-Source: results/evaluations/qwen3_vl_text_fulltext_c-all_q-test_bdd75ae5411617da/manifest.json
 Source: results/indexes/bm25_fulltext_d-ACL_c-all/manifest.json
 Source: results/indexes/bm25_fulltext_d-Biology_c-all/manifest.json
 Source: results/indexes/bm25_fulltext_d-Engineering_c-all/manifest.json
@@ -150,6 +175,11 @@ Source: results/indexes/openclip_pages_d-Biology_c-all_0da8d42b004e4093/manifest
 Source: results/indexes/openclip_pages_d-Engineering_c-all_3b7de3bbbfc18654/manifest.json
 Source: results/indexes/openclip_pages_d-Medicine_c-all_689f1337c2567da7/manifest.json
 Source: results/indexes/openclip_pages_d-Physics_c-all_b89b8070cf02cedf/manifest.json
+Source: results/indexes/qwen3_text_fulltext_d-ACL_c-all/manifest.json
+Source: results/indexes/qwen3_text_fulltext_d-Biology_c-all/manifest.json
+Source: results/indexes/qwen3_text_fulltext_d-Engineering_c-all/manifest.json
+Source: results/indexes/qwen3_text_fulltext_d-Medicine_c-all/manifest.json
+Source: results/indexes/qwen3_text_fulltext_d-Physics_c-all/manifest.json
 Source: results/indexes/qwen3_vl_figures_figures_d-ACL_c-all_5e3001dbea928f8e/manifest.json
 Source: results/indexes/qwen3_vl_figures_figures_d-Biology_c-all_94c1b311459540ba/manifest.json
 Source: results/indexes/qwen3_vl_figures_figures_d-Engineering_c-all_bd0ec93acc4af819/manifest.json
@@ -165,8 +195,53 @@ Source: results/indexes/qwen3_vl_pages_pages_d-Biology_c-all_67a20a73cfed330d/ma
 Source: results/indexes/qwen3_vl_pages_pages_d-Engineering_c-all_7877de0015331370/manifest.json
 Source: results/indexes/qwen3_vl_pages_pages_d-Medicine_c-all_7001a387efe4e22b/manifest.json
 Source: results/indexes/qwen3_vl_pages_pages_d-Physics_c-all_a2dceb479dd86716/manifest.json
-Source: results/indexes/qwen3_vl_text_fulltext_d-ACL_c-all_4a832ac3601cc00b/manifest.json
-Source: results/indexes/qwen3_vl_text_fulltext_d-Biology_c-all_51da183d6025852d/manifest.json
-Source: results/indexes/qwen3_vl_text_fulltext_d-Engineering_c-all_b1c58131f18d8af1/manifest.json
-Source: results/indexes/qwen3_vl_text_fulltext_d-Medicine_c-all_76b63e7a2f7a44e8/manifest.json
-Source: results/indexes/qwen3_vl_text_fulltext_d-Physics_c-all_04f2e284b1583758/manifest.json
+Source: results/models/bm25_fulltext_c-all_q-test_1e66715961aaebba/manifest.json
+Source: results/models/bm25_fulltext_c-all_q-test_2c8b3b1f98ed9c16/manifest.json
+Source: results/models/bm25_fulltext_c-all_q-test_8679fd71c63702c1/manifest.json
+Source: results/models/bm25_fulltext_c-all_q-test_a08168274d666868/manifest.json
+Source: results/models/bm25_fulltext_c-all_q-test_f01d02c49141efd3/manifest.json
+Source: results/models/colbert_fulltext_c-all_q-test_2af4d1b6e000df77/manifest.json
+Source: results/models/colbert_fulltext_c-all_q-test_6307044b60e27ca6/manifest.json
+Source: results/models/colbert_fulltext_c-all_q-test_ad9cdd3286a23261/manifest.json
+Source: results/models/colbert_fulltext_c-all_q-test_b9f137157013827b/manifest.json
+Source: results/models/colbert_fulltext_c-all_q-test_bd4abd8d80186803/manifest.json
+Source: results/models/colqwen_pages_c-all_q-test_048fb232030103a1/manifest.json
+Source: results/models/colqwen_pages_c-all_q-test_058bdceabd4d2963/manifest.json
+Source: results/models/colqwen_pages_c-all_q-test_4b6f6d9c5693917b/manifest.json
+Source: results/models/colqwen_pages_c-all_q-test_8cc1c3d5eed14299/manifest.json
+Source: results/models/colqwen_pages_c-all_q-test_da59f1d3e7fb72af/manifest.json
+Source: results/models/dense_fulltext_c-all_q-test_27fe1186f8dae1f4/manifest.json
+Source: results/models/dense_fulltext_c-all_q-test_5d9f589c100e70a8/manifest.json
+Source: results/models/dense_fulltext_c-all_q-test_867c0976b709e55d/manifest.json
+Source: results/models/dense_fulltext_c-all_q-test_a18378a7c4aab853/manifest.json
+Source: results/models/dense_fulltext_c-all_q-test_ed3ef6f61e05fba8/manifest.json
+Source: results/models/openclip_figures_figures_c-all_q-test_53b73948004be3b9/manifest.json
+Source: results/models/openclip_figures_figures_c-all_q-test_5eaa9990d54b93e9/manifest.json
+Source: results/models/openclip_figures_figures_c-all_q-test_ad728aadaae00d18/manifest.json
+Source: results/models/openclip_figures_figures_c-all_q-test_b19fe11f95261b05/manifest.json
+Source: results/models/openclip_figures_figures_c-all_q-test_e1be53ab0e540177/manifest.json
+Source: results/models/openclip_pages_c-all_q-test_2503ceb6bb743b27/manifest.json
+Source: results/models/openclip_pages_c-all_q-test_3c878c8cad3946ed/manifest.json
+Source: results/models/openclip_pages_c-all_q-test_a55074e96ceafe02/manifest.json
+Source: results/models/openclip_pages_c-all_q-test_b8a11d08d4e711d7/manifest.json
+Source: results/models/openclip_pages_c-all_q-test_c531b9ee2b27f0f6/manifest.json
+Source: results/models/qwen3_text_fulltext_c-all_q-test_199348bef78b1fb4/manifest.json
+Source: results/models/qwen3_text_fulltext_c-all_q-test_53aae1d14c992cea/manifest.json
+Source: results/models/qwen3_text_fulltext_c-all_q-test_59483ae3ecf74353/manifest.json
+Source: results/models/qwen3_text_fulltext_c-all_q-test_6992552fd27e3157/manifest.json
+Source: results/models/qwen3_text_fulltext_c-all_q-test_964af63c0abea696/manifest.json
+Source: results/models/qwen3_vl_figures_figures_c-all_q-test_0ebc5c17dd59680a/manifest.json
+Source: results/models/qwen3_vl_figures_figures_c-all_q-test_3ab47bb14a1f3ca8/manifest.json
+Source: results/models/qwen3_vl_figures_figures_c-all_q-test_4fe5ef57e1a51c80/manifest.json
+Source: results/models/qwen3_vl_figures_figures_c-all_q-test_e2abd9dfb9aec49f/manifest.json
+Source: results/models/qwen3_vl_figures_figures_c-all_q-test_e4dce2be83acf16a/manifest.json
+Source: results/models/qwen3_vl_multimodal_fulltext_c-all_q-test_168d222ca1432434/manifest.json
+Source: results/models/qwen3_vl_multimodal_fulltext_c-all_q-test_32e7bc5f2e10cfbd/manifest.json
+Source: results/models/qwen3_vl_multimodal_fulltext_c-all_q-test_340d13f98770f6dc/manifest.json
+Source: results/models/qwen3_vl_multimodal_fulltext_c-all_q-test_5173f351e0bb2b0e/manifest.json
+Source: results/models/qwen3_vl_multimodal_fulltext_c-all_q-test_8e85d0525f3cbfc1/manifest.json
+Source: results/models/qwen3_vl_pages_pages_c-all_q-test_5986f1f59f91c94b/manifest.json
+Source: results/models/qwen3_vl_pages_pages_c-all_q-test_88dc3ddf4b1845a3/manifest.json
+Source: results/models/qwen3_vl_pages_pages_c-all_q-test_920986166b5b03bc/manifest.json
+Source: results/models/qwen3_vl_pages_pages_c-all_q-test_a34591ba38374d20/manifest.json
+Source: results/models/qwen3_vl_pages_pages_c-all_q-test_a397f35feebf1647/manifest.json
