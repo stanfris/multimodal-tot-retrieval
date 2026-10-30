@@ -62,16 +62,16 @@ The benchmark includes lexical, dense, late-interaction, and multimodal retrieva
 | Method | Model | Document input | Indexing and aggregation | Input limit | Configuration (`experiment=...`) |
 |---|---|---|---|---|---|
 | BM25 | `BM25` (PyTerrier Implementation) | Full Markdown text | Paper-level lexical index | No explicit limit | `bm25_fulltext` |
-| E5 | `e5-small-v2` | Markdown text | One vector per paper | 512 tokens | `dense_fulltext` |
-| Qwen3 Text | `Qwen3-Embedding-0.6B` | Markdown text | One vector per paper | 32,768 tokens | `qwen3_text` |
-| ColBERTv2 | `colbertv2.0` | Markdown text | Token-level late interaction per paper | 220 doc / 32 query tokens | `colbert_fulltext` |
-| ColQwen2.5 | `colqwen2.5-v0.2` | Rendered PDF pages | Page-level late interaction; max score per paper | All pages | `colqwen_pages` |
-| OpenCLIP | `ViT-B-32` | Rendered PDF pages | Page embeddings; max score per paper | All pages | `openclip_pages` |
-| OpenCLIP | `ViT-B-32` | Extracted figures/tables | Image embeddings; max score per paper | All images | `openclip_figures` |
-| Qwen3-VL | `Qwen3-VL-Embedding-2B` | Markdown text | One vector per paper | 32,768 tokens | `qwen3_vl_text` |
-| Qwen3-VL | `Qwen3-VL-Embedding-2B` | Extracted figures/tables | One vector per paper | 32,768 tokens | `qwen3_vl_figures` |
-| Qwen3-VL | `Qwen3-VL-Embedding-2B` | Rendered PDF pages | One vector per paper | First 18 pages; 32,768 tokens | `qwen3_vl_pages` |
-| Qwen3-VL | `Qwen3-VL-Embedding-2B` | Figures/tables + Markdown | One multimodal vector per paper | 32,768 tokens | `qwen3_vl_multimodal` |
+| E5 | `intfloat/e5-small-v2` | Markdown text | One vector per paper | 512 tokens | `dense_fulltext` |
+| Qwen3 Text | `Qwen/Qwen3-Embedding-0.6B` | Markdown text | One vector per paper | 32,768 tokens | `qwen3_text` |
+| ColBERTv2 | `colbert-ir/colbertv2.0` | Markdown text | Token-level late interaction per paper | 220 doc / 32 query tokens | `colbert_fulltext` |
+| ColQwen2.5 | `vidore/colqwen2.5-v0.2` | Rendered PDF pages | Page-level late interaction; max score per paper | All pages | `colqwen_pages` |
+| OpenCLIP | `laion/CLIP-ViT-B-32-laion2B-s34B-b79K` | Rendered PDF pages | Page embeddings; max score per paper | All pages | `openclip_pages` |
+| OpenCLIP | `laion/CLIP-ViT-B-32-laion2B-s34B-b79K` | Extracted figures/tables | Image embeddings; max score per paper | All images | `openclip_figures` |
+| Qwen3-VL | `Qwen/Qwen3-VL-Embedding-2B` | Markdown text | One vector per paper | 32,768 tokens | `qwen3_vl_text` |
+| Qwen3-VL | `Qwen/Qwen3-VL-Embedding-2B` | Extracted figures/tables | One vector per paper | 32,768 tokens | `qwen3_vl_figures` |
+| Qwen3-VL | `Qwen/Qwen3-VL-Embedding-2B` | Rendered PDF pages | One vector per paper | First 18 pages; 32,768 tokens | `qwen3_vl_pages` |
+| Qwen3-VL | `Qwen/Qwen3-VL-Embedding-2B` | Figures/tables + Markdown | One multimodal vector per paper | 32,768 tokens | `qwen3_vl_multimodal` |
 
 **Notes:**
 - Select a retrieval method using its Hydra configuration, e.g. `experiment=qwen3_vl_multimodal`.
