@@ -1,6 +1,6 @@
 # Scientific Tip of the Tongue Retrieval.
 
-This repository is the retrieval model implementation for the paper **Multimodal Tip-of-the-Tongue Retrieval for Scientific Papers**, which introduces a
+This repository is the retrieval model implementation for the paper **SciToTMultimodal Tip-of-the-Tongue Retrieval for Scientific Papers**, which introduces SciToT, a
 [multimodal scientific tip-of-the-tongue dataset](https://huggingface.co/datasets/kasys/multimodal-tip-of-the-tongue-retrieval-for-scientific-documents).
 In this repository we provide implementations of retrieval models to be used for evaluation. This package does not depend on the dataset generation pipeline at runtime. We don't make any model implementations ourselves, and rely on implementations from PyTerrier,
 Sentence Transformers, FAISS, Stanford ColBERT, Qdrant, and ir_measures.
